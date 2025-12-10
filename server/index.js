@@ -154,8 +154,9 @@ function getPlayersInRoom(roomId, excludeId = null) {
                 rotation: player.rotation,
                 appearance: player.appearance,
                 puffle: player.puffle,
-                pufflePosition: player.pufflePosition, // Include puffle position
-                emote: player.emote
+                pufflePosition: player.pufflePosition,
+                emote: player.emote,
+                seatedOnFurniture: player.seatedOnFurniture || false
             });
         }
     }
@@ -299,7 +300,9 @@ function handleMessage(playerId, message) {
                     rotation: player.rotation,
                     appearance: player.appearance,
                     puffle: player.puffle,
-                    pufflePosition: player.pufflePosition
+                    pufflePosition: player.pufflePosition,
+                    emote: player.emote || null,
+                    seatedOnFurniture: player.seatedOnFurniture || false
                 }
             }, playerId);
             
@@ -352,12 +355,15 @@ function handleMessage(playerId, message) {
         case 'emote': {
             // Emote triggered
             player.emote = message.emote;
+            // Track if seated on furniture (bench/chair) vs ground sit emote
+            player.seatedOnFurniture = message.seatedOnFurniture || false;
             
             if (player.room) {
                 broadcastToRoom(player.room, {
                     type: 'player_emote',
                     playerId: playerId,
-                    emote: message.emote
+                    emote: message.emote,
+                    seatedOnFurniture: player.seatedOnFurniture
                 }, playerId);
             }
             
@@ -365,6 +371,7 @@ function handleMessage(playerId, message) {
             if (message.emote !== 'Sit') {
                 setTimeout(() => {
                     player.emote = null;
+                    player.seatedOnFurniture = false;
                 }, 3000);
             }
             break;
@@ -372,12 +379,14 @@ function handleMessage(playerId, message) {
         
         case 'stop_emote': {
             player.emote = null;
+            player.seatedOnFurniture = false;
             
             if (player.room) {
                 broadcastToRoom(player.room, {
                     type: 'player_emote',
                     playerId: playerId,
-                    emote: null
+                    emote: null,
+                    seatedOnFurniture: false
                 }, playerId);
             }
             break;
@@ -415,7 +424,10 @@ function handleMessage(playerId, message) {
                         position: player.position,
                         rotation: player.rotation,
                         appearance: player.appearance,
-                        puffle: player.puffle
+                        puffle: player.puffle,
+                        pufflePosition: player.pufflePosition,
+                        emote: player.emote || null,
+                        seatedOnFurniture: player.seatedOnFurniture || false
                     }
                 }, playerId);
                 

@@ -2021,7 +2021,8 @@ const VoxelWorld = ({
                 }
             }
             
-            const animateMesh = (meshWrapper, isMoving, emoteType, emoteStartTime) => {
+            // animateMesh now accepts isSeatedOnFurniture as 5th param (per-player state)
+            const animateMesh = (meshWrapper, isMoving, emoteType, emoteStartTime, isSeatedOnFurniture = false) => {
                 if (!meshWrapper || !meshWrapper.children[0]) return;
                 const meshInner = meshWrapper.children[0];
                 const flipperL = meshInner.getObjectByName('flipper_l');
@@ -2062,22 +2063,22 @@ const VoxelWorld = ({
                         if(flipperR) flipperR.rotation.z = -Math.sin(eTime * 10) * 1;
                     }
                     else if (emoteType === 'Sit') {
-                        // Check if seated on furniture (bench) vs ground sitting emote
-                        if (seatedRef.current) {
+                        // Use passed isSeatedOnFurniture flag (per-player, not global)
+                        if (isSeatedOnFurniture) {
                             // FURNITURE SITTING: Elevate to sit ON TOP of bench
-                            meshInner.position.y = 1.6; // Elevated to bench surface
+                            meshInner.position.y = 1.6;
                         } else {
                             // GROUND SITTING: Sit on the ground, lower position
                             meshInner.position.y = 0.5;
                         }
-                        // Feet extend forward when sitting - push out in front of body
+                        // Feet extend forward when sitting
                         if(footL) {
                             footL.rotation.x = -Math.PI / 2.5;
-                            footL.position.z = 2.5; // Push foot forward, clear of body
+                            footL.position.z = 2.5;
                         }
                         if(footR) {
                             footR.rotation.x = -Math.PI / 2.5;
-                            footR.position.z = 2.5; // Push foot forward, clear of body
+                            footR.position.z = 2.5;
                         }
                         // Flippers rest on sides
                         if(flipperL) flipperL.rotation.z = 0.3;
@@ -2113,7 +2114,8 @@ const VoxelWorld = ({
             };
 
             if (playerRef.current) {
-                animateMesh(playerRef.current, moving, emoteRef.current.type, emoteRef.current.startTime);
+                // Pass local player's seatedRef state for furniture sitting
+                animateMesh(playerRef.current, moving, emoteRef.current.type, emoteRef.current.startTime, !!seatedRef.current);
             }
             
             // --- AI UPDATE LOOP (runs always, AI have their own room state) ---
@@ -2585,7 +2587,8 @@ const VoxelWorld = ({
                     Math.abs(playerData.position.x - meshData.mesh.position.x) > 0.1 ||
                     Math.abs(playerData.position.z - meshData.mesh.position.z) > 0.1
                 );
-                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime);
+                // Pass each player's seatedOnFurniture state (synced from server)
+                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false);
                 
                 // Handle chat bubbles
                 if (playerData.chatMessage && playerData.chatTime) {
@@ -2683,8 +2686,8 @@ const VoxelWorld = ({
     const triggerEmote = (type) => {
         emoteRef.current = { type, startTime: Date.now() };
         setShowEmoteWheel(false);
-        // Send emote to other players
-        mpSendEmote(type);
+        // Send emote to other players (emote wheel = ground emotes, not furniture)
+        mpSendEmote(type, false);
     };
     
     useEffect(() => {
@@ -2952,16 +2955,17 @@ const VoxelWorld = ({
                         playerRef.current.rotation.y = rotRef.current;
                     }
                     
-                    // Trigger sit emote
+                    // Trigger sit emote (furniture sit - elevated)
                     emoteRef.current = { type: 'Sit', startTime: Date.now() };
-                    mpSendEmote('Sit');
+                    mpSendEmote('Sit', true); // true = seatedOnFurniture
                     
                     // Clear the interaction prompt
                     setNearbyInteraction(null);
                 }
                 else if (nearbyInteraction.emote) {
                     emoteRef.current = { type: nearbyInteraction.emote, startTime: Date.now() };
-                    mpSendEmote(nearbyInteraction.emote);
+                    // Ground sit emote (not on furniture)
+                    mpSendEmote(nearbyInteraction.emote, false);
                 }
                 if (nearbyInteraction.action === 'interact_snowman') {
                     setActiveBubble(nearbyInteraction.message);
@@ -3149,12 +3153,14 @@ const VoxelWorld = ({
                 bubble: null, 
                 puffleMesh, 
                 nameSprite,
-                currentEmote: null,
-                emoteStartTime: 0
+                // Initialize emote from playerData (player might already be sitting)
+                currentEmote: playerData.emote || null,
+                emoteStartTime: playerData.emoteStartTime || Date.now()
             });
             
             // Clear the needsMesh flag
             playerData.needsMesh = false;
+            console.log(`🐧 Created mesh for ${playerData.name}, emote: ${playerData.emote}, seatedOnFurniture: ${playerData.seatedOnFurniture}`);
         }
     }, [playerList, createNameSprite]);
     
@@ -3355,12 +3361,12 @@ const VoxelWorld = ({
                                         }
                                         
                                         emoteRef.current = { type: 'Sit', startTime: Date.now() };
-                                        mpSendEmote('Sit');
+                                        mpSendEmote('Sit', true); // true = seatedOnFurniture
                                         setNearbyInteraction(null);
                                     }
                                     else if (nearbyInteraction.emote) {
                                         emoteRef.current = { type: nearbyInteraction.emote, startTime: Date.now() };
-                                        mpSendEmote(nearbyInteraction.emote);
+                                        mpSendEmote(nearbyInteraction.emote, false); // Ground emote
                                     }
                                     if (nearbyInteraction.action === 'interact_snowman') {
                                         setActiveBubble(nearbyInteraction.message);

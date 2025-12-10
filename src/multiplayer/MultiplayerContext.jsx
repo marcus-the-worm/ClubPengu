@@ -131,7 +131,7 @@ export function MultiplayerProvider({ children }) {
                 playersDataRef.current.clear();
                 const ids = [];
                 message.players.forEach(p => {
-                    console.log(`  - ${p.name}`, p.puffle ? `with ${p.puffle.color} puffle` : '(no puffle)');
+                    console.log(`  - ${p.name}`, p.puffle ? `with ${p.puffle.color} puffle` : '(no puffle)', p.emote ? `emoting: ${p.emote}` : '');
                     const playerData = {
                         id: p.id,
                         name: p.name,
@@ -141,6 +141,8 @@ export function MultiplayerProvider({ children }) {
                         puffle: p.puffle || null,
                         pufflePosition: p.pufflePosition || null,
                         emote: p.emote || null,
+                        emoteStartTime: p.emote ? Date.now() : null, // Initialize emote time if player is emoting
+                        seatedOnFurniture: p.seatedOnFurniture || false,
                         needsMesh: true
                     };
                     playersDataRef.current.set(p.id, playerData);
@@ -151,7 +153,7 @@ export function MultiplayerProvider({ children }) {
                 break;
                 
             case 'player_joined':
-                console.log(`👋 ${message.player.name} joined`, message.player.puffle ? `with ${message.player.puffle.color} puffle` : '(no puffle)');
+                console.log(`👋 ${message.player.name} joined`, message.player.puffle ? `with ${message.player.puffle.color} puffle` : '(no puffle)', message.player.emote ? `emoting: ${message.player.emote}` : '');
                 // Add to ref immediately with all data including puffle
                 const joinedPlayerData = {
                     id: message.player.id,
@@ -162,6 +164,8 @@ export function MultiplayerProvider({ children }) {
                     puffle: message.player.puffle || null,
                     pufflePosition: message.player.pufflePosition || null,
                     emote: message.player.emote || null,
+                    emoteStartTime: message.player.emote ? Date.now() : null,
+                    seatedOnFurniture: message.player.seatedOnFurniture || false,
                     needsMesh: true
                 };
                 playersDataRef.current.set(message.player.id, joinedPlayerData);
@@ -199,6 +203,7 @@ export function MultiplayerProvider({ children }) {
                 if (emotingPlayer) {
                     emotingPlayer.emote = message.emote;
                     emotingPlayer.emoteStartTime = Date.now();
+                    emotingPlayer.seatedOnFurniture = message.seatedOnFurniture || false;
                 }
                 callbacksRef.current.onPlayerEmote?.(message.playerId, message.emote);
                 break;
@@ -289,11 +294,12 @@ export function MultiplayerProvider({ children }) {
         });
     }, [send]);
     
-    // Send emote
-    const sendEmote = useCallback((emote) => {
+    // Send emote (with optional seatedOnFurniture flag for furniture sit vs ground sit)
+    const sendEmote = useCallback((emote, seatedOnFurniture = false) => {
         send({
             type: 'emote',
-            emote
+            emote,
+            seatedOnFurniture
         });
     }, [send]);
     

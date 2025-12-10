@@ -3,16 +3,34 @@ import { VOXEL_SIZE, PALETTE } from './constants';
 import { ASSETS } from './assets';
 import { generateBaseBody, generateFlippers, generateFeet, generateHead } from './generators';
 import { IconSettings, IconChevronLeft, IconChevronRight, IconCamera, IconWorld } from './Icons';
+import { useMultiplayer } from './multiplayer';
 
 function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     const mountRef = useRef(null);
     const [scriptsLoaded, setScriptsLoaded] = useState(false);
+    
+    // Multiplayer context for username
+    const { setName } = useMultiplayer();
+    
+    // Username state with localStorage persistence
+    const [username, setUsername] = useState(() => {
+        return localStorage.getItem('penguin_name') || '';
+    });
     
     const [skinColor, setSkinColor] = useState(currentData?.skin || 'blue');
     const [hat, setHat] = useState(currentData?.hat || 'none');
     const [eyes, setEyes] = useState(currentData?.eyes || 'normal');
     const [mouth, setMouth] = useState(currentData?.mouth || 'beak');
     const [bodyItem, setBodyItem] = useState(currentData?.bodyItem || 'none');
+    
+    // Save username to localStorage and multiplayer context when it changes
+    const handleUsernameChange = (value) => {
+        // Limit to 20 characters
+        const trimmed = value.slice(0, 20);
+        setUsername(trimmed);
+        localStorage.setItem('penguin_name', trimmed);
+        if (setName) setName(trimmed);
+    };
     
     useEffect(() => {
         if(updateData) updateData({skin: skinColor, hat, eyes, mouth, bodyItem});
@@ -446,9 +464,23 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                         </div>
                     ))}
                     
+                    {/* Username Input */}
+                    <div className="mt-4">
+                        <label className="block text-xs text-yellow-400 mb-1 retro-text">USERNAME</label>
+                        <input
+                            type="text"
+                            value={username}
+                            onChange={(e) => handleUsernameChange(e.target.value)}
+                            maxLength={20}
+                            placeholder="Enter your name..."
+                            className="w-full px-3 py-2 bg-black/50 border-2 border-yellow-500/50 rounded-lg text-white text-sm focus:border-yellow-400 focus:outline-none placeholder-white/30"
+                        />
+                        <p className="text-xs text-white/40 mt-1 text-right">{username.length}/20</p>
+                    </div>
+                    
                     <button 
                         onClick={onEnterWorld}
-                        className="mt-4 w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg shadow-lg transform active:scale-95 transition-all retro-text text-xs border-b-4 border-yellow-700 flex justify-center items-center gap-2"
+                        className="mt-2 w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg shadow-lg transform active:scale-95 transition-all retro-text text-xs border-b-4 border-yellow-700 flex justify-center items-center gap-2"
                     >
                         <IconWorld size={16} /> ENTER WORLD
                     </button>
