@@ -32,12 +32,14 @@ const VoxelWorld = ({
     const roomRef = useRef(room); // Track current room
     const townCenterRef = useRef(null); // TownCenter room instance
     
-    // Multiplayer
+    // Multiplayer - OPTIMIZED: use refs for positions, state only for player list changes
     const {
         connected,
         playerId,
         playerName,
-        otherPlayers,
+        playerCount,
+        playerList,           // Triggers mesh creation/removal
+        playersDataRef,       // Real-time position data (no re-renders)
         joinRoom: mpJoinRoom,
         sendPosition,
         sendChat: mpSendChat,
@@ -1265,6 +1267,24 @@ const VoxelWorld = ({
         window.addEventListener('keydown', handleDown);
         window.addEventListener('keyup', handleUp);
         
+        // --- CACHED VALUES FOR GAME LOOP (calculated once, not every frame) ---
+        // centerX and centerZ already declared above at line ~739
+        const dojoBuilding = BUILDINGS[0];
+        const dojoBxCached = centerX + dojoBuilding.position.x;
+        const dojoBzCached = centerZ + dojoBuilding.position.z;
+        const dojoHdCached = dojoBuilding.size.d / 2;
+        
+        // Reusable Maps for AI lookups (updated when AI list changes, not every frame)
+        let puffleMap = new Map();
+        let aiMap = new Map();
+        const rebuildAIMaps = () => {
+            puffleMap.clear();
+            aiPufflesRef.current.forEach(entry => puffleMap.set(entry.id, entry));
+            aiMap.clear();
+            aiAgentsRef.current.forEach(ai => aiMap.set(ai.id, ai));
+        };
+        rebuildAIMaps(); // Initial build
+        
         // --- GAME LOOP ---
         const update = () => {
             reqRef.current = requestAnimationFrame(update);
@@ -1454,6 +1474,8 @@ const VoxelWorld = ({
                     if (emoteType !== 'Sit' && eTime > 3) {
                         if (playerRef.current === meshWrapper) {
                             emoteRef.current.type = null;
+                            // Notify server that emote ended
+                            mpSendEmote(null);
                         }
                     }
                 } else if (isMoving) {
@@ -1474,21 +1496,7 @@ const VoxelWorld = ({
             
             // --- AI UPDATE LOOP (runs always, AI have their own room state) ---
             const now = Date.now();
-            const centerX = (CITY_SIZE / 2) * BUILDING_SCALE;
-            const centerZ = (CITY_SIZE / 2) * BUILDING_SCALE;
-            
-            // OPTIMIZATION: Cache dojo building reference (don't search every frame)
-            const dojoBuilding = BUILDINGS[0]; // Dojo is first building
-            const dojoBxCached = centerX + dojoBuilding.position.x;
-            const dojoBzCached = centerZ + dojoBuilding.position.z;
-            const dojoHdCached = dojoBuilding.size.d / 2;
-            
-            // OPTIMIZATION: Create Maps for O(1) lookups instead of O(n) find()
-            const puffleMap = new Map();
-            aiPufflesRef.current.forEach(entry => puffleMap.set(entry.id, entry));
-            
-            const aiMap = new Map();
-            aiAgentsRef.current.forEach(ai => aiMap.set(ai.id, ai));
+            // Using cached values: centerX, centerZ, dojoBxCached, dojoBzCached, dojoHdCached, puffleMap, aiMap
             
             aiAgentsRef.current.forEach(ai => {
                 let aiMoving = false;
@@ -1873,6 +1881,117 @@ const VoxelWorld = ({
                 }
             }); // End AI update loop
 
+            // ==================== OTHER PLAYERS UPDATE (60fps in game loop) ====================
+            const otherMeshes = otherPlayerMeshesRef.current;
+            const playersData = playersDataRef.current;
+            
+            for (const [id, meshData] of otherMeshes) {
+                const playerData = playersData.get(id);
+                if (!playerData || !meshData.mesh) continue;
+                
+                // Smooth position interpolation (lerp factor based on delta for consistent speed)
+                const lerpFactor = Math.min(1, delta * 10); // Smooth catch-up
+                
+                if (playerData.position) {
+                    meshData.mesh.position.x += (playerData.position.x - meshData.mesh.position.x) * lerpFactor;
+                    meshData.mesh.position.z += (playerData.position.z - meshData.mesh.position.z) * lerpFactor;
+                }
+                
+                if (playerData.rotation !== undefined) {
+                    // Smooth rotation interpolation
+                    let rotDiff = playerData.rotation - meshData.mesh.rotation.y;
+                    while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+                    while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+                    meshData.mesh.rotation.y += rotDiff * lerpFactor;
+                }
+                
+                // Handle puffle creation/removal dynamically
+                if (playerData.needsPuffleUpdate) {
+                    playerData.needsPuffleUpdate = false;
+                    
+                    // Remove old puffle mesh if exists
+                    if (meshData.puffleMesh) {
+                        scene.remove(meshData.puffleMesh);
+                        meshData.puffleMesh = null;
+                    }
+                    
+                    // Create new puffle if player has one
+                    if (playerData.puffle) {
+                        console.log(`🐾 Creating puffle for ${playerData.name}: ${playerData.puffle.color}`);
+                        const puffleInstance = new Puffle({
+                            color: playerData.puffle.color,
+                            name: playerData.puffle.name
+                        });
+                        meshData.puffleMesh = puffleInstance.createMesh(THREE);
+                        const pufflePos = playerData.pufflePosition || {
+                            x: (playerData.position?.x || 0) + 1.5,
+                            z: (playerData.position?.z || 0) + 1.5
+                        };
+                        meshData.puffleMesh.position.set(pufflePos.x, 0.5, pufflePos.z);
+                        scene.add(meshData.puffleMesh);
+                    }
+                }
+                
+                // Update puffle position (with fallback to player position offset)
+                if (meshData.puffleMesh) {
+                    const targetPufflePos = playerData.pufflePosition || {
+                        x: (playerData.position?.x || 0) + 1.5,
+                        z: (playerData.position?.z || 0) + 1.5
+                    };
+                    meshData.puffleMesh.position.x += (targetPufflePos.x - meshData.puffleMesh.position.x) * lerpFactor;
+                    meshData.puffleMesh.position.z += (targetPufflePos.z - meshData.puffleMesh.position.z) * lerpFactor;
+                    meshData.puffleMesh.position.y = 0.5;
+                }
+                
+                // Handle emotes - sync with playerData
+                if (playerData.emote !== meshData.currentEmote) {
+                    meshData.currentEmote = playerData.emote;
+                    meshData.emoteStartTime = playerData.emoteStartTime || Date.now();
+                }
+                
+                // Auto-end emotes after 3.5 seconds (client-side fallback)
+                if (meshData.currentEmote && meshData.currentEmote !== 'Sit') {
+                    const emoteAge = (Date.now() - meshData.emoteStartTime) / 1000;
+                    if (emoteAge > 3.5) {
+                        meshData.currentEmote = null;
+                        playerData.emote = null; // Also clear in data
+                    }
+                }
+                
+                // Animate other player mesh (walking/emotes)
+                const isMoving = playerData.position && (
+                    Math.abs(playerData.position.x - meshData.mesh.position.x) > 0.1 ||
+                    Math.abs(playerData.position.z - meshData.mesh.position.z) > 0.1
+                );
+                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime);
+                
+                // Handle chat bubbles
+                if (playerData.chatMessage && playerData.chatTime) {
+                    const chatAge = Date.now() - playerData.chatTime;
+                    
+                    // Create bubble if new message
+                    if (!meshData.bubble || meshData.lastChatTime !== playerData.chatTime) {
+                        // Remove old bubble
+                        if (meshData.bubble) {
+                            meshData.mesh.remove(meshData.bubble);
+                        }
+                        // Create new bubble
+                        meshData.bubble = createChatSprite(playerData.chatMessage);
+                        if (meshData.bubble) {
+                            meshData.mesh.add(meshData.bubble);
+                        }
+                        meshData.lastChatTime = playerData.chatTime;
+                    }
+                    
+                    // Remove bubble after 5 seconds
+                    if (chatAge > 5000 && meshData.bubble) {
+                        meshData.mesh.remove(meshData.bubble);
+                        meshData.bubble = null;
+                        playerData.chatMessage = null;
+                    }
+                }
+            }
+
             // Animate butterflies (only in town)
             if (butterflyGroup) {
                 butterflyGroup.children.forEach(b => {
@@ -2146,145 +2265,22 @@ const VoxelWorld = ({
         return () => window.removeEventListener('keydown', handleInteract);
     }, [nearbyInteraction, showEmoteWheel, nearbyPortal]);
     
-    // ==================== MULTIPLAYER SYNC ====================
-    
-    // Join room when connected and scene is ready
-    useEffect(() => {
-        if (connected && sceneRef.current && playerId) {
-            // Join the current room with our appearance
-            const puffleData = playerPuffle ? {
-                id: playerPuffle.id,
-                color: playerPuffle.color,
-                name: playerPuffle.name
-            } : null;
-            
-            mpJoinRoom(room, penguinData, puffleData);
-        }
-    }, [connected, playerId, room, penguinData]);
-    
-    // Send position updates (throttled)
-    useEffect(() => {
-        if (!connected) return;
-        
-        const interval = setInterval(() => {
-            const pos = posRef.current;
-            const rot = rotRef.current;
-            const last = lastPositionSentRef.current;
-            
-            // Only send if position changed significantly
-            const dx = pos.x - last.x;
-            const dz = pos.z - last.z;
-            const dRot = Math.abs(rot - last.rot);
-            const distSq = dx * dx + dz * dz;
-            
-            if (distSq > 0.01 || dRot > 0.05) {
-                const pufflePos = playerPuffleRef.current?.position || null;
-                sendPosition(pos, rot, pufflePos);
-                
-                lastPositionSentRef.current = { x: pos.x, z: pos.z, rot, time: Date.now() };
-            }
-        }, 50); // 20 updates per second max
-        
-        return () => clearInterval(interval);
-    }, [connected, sendPosition]);
-    
-    // Handle other players rendering and updates
-    useEffect(() => {
-        if (!sceneRef.current || !window.THREE) return;
-        
-        const THREE = window.THREE;
-        const scene = sceneRef.current;
-        const meshes = otherPlayerMeshesRef.current;
-        
-        // Get current player IDs from server state
-        const currentPlayerIds = new Set(otherPlayers.keys());
-        
-        // Remove meshes for players who left
-        for (const [id, data] of meshes) {
-            if (!currentPlayerIds.has(id)) {
-                if (data.mesh) scene.remove(data.mesh);
-                if (data.bubble) scene.remove(data.bubble);
-                if (data.puffleMesh) scene.remove(data.puffleMesh);
-                if (data.nameSprite) scene.remove(data.nameSprite);
-                meshes.delete(id);
-            }
-        }
-        
-        // Add/update meshes for current players
-        for (const [id, playerData] of otherPlayers) {
-            let data = meshes.get(id);
-            
-            // Create mesh if doesn't exist
-            if (!data) {
-                // Build penguin mesh using the stored function
-                if (buildPenguinMeshRef.current && playerData.appearance) {
-                    const mesh = buildPenguinMeshRef.current(playerData.appearance);
-                    mesh.position.set(
-                        playerData.position?.x || 0,
-                        0,
-                        playerData.position?.z || 0
-                    );
-                    mesh.rotation.y = playerData.rotation || 0;
-                    scene.add(mesh);
-                    
-                    // Create name tag
-                    const nameSprite = createNameSprite(playerData.name || 'Player');
-                    nameSprite.position.set(0, 5, 0);
-                    mesh.add(nameSprite);
-                    
-                    data = { mesh, bubble: null, puffleMesh: null, nameSprite };
-                    meshes.set(id, data);
-                }
-            }
-            
-            // Update existing mesh position (smooth interpolation)
-            if (data && data.mesh && playerData.position) {
-                const targetX = playerData.position.x;
-                const targetZ = playerData.position.z;
-                const targetRot = playerData.rotation || 0;
-                
-                // Smooth interpolation
-                data.mesh.position.x += (targetX - data.mesh.position.x) * 0.3;
-                data.mesh.position.z += (targetZ - data.mesh.position.z) * 0.3;
-                data.mesh.rotation.y += (targetRot - data.mesh.rotation.y) * 0.3;
-            }
-            
-            // Handle puffle
-            if (data && playerData.puffle && !data.puffleMesh) {
-                // Create puffle mesh
-                const puffleInstance = new Puffle({
-                    color: playerData.puffle.color,
-                    name: playerData.puffle.name
-                });
-                const puffleMesh = puffleInstance.createMesh(THREE);
-                scene.add(puffleMesh);
-                data.puffleMesh = puffleMesh;
-                data.puffleInstance = puffleInstance;
-            }
-            
-            // Update puffle position
-            if (data && data.puffleMesh && playerData.pufflePosition) {
-                data.puffleMesh.position.x += (playerData.pufflePosition.x - data.puffleMesh.position.x) * 0.3;
-                data.puffleMesh.position.z += (playerData.pufflePosition.z - data.puffleMesh.position.z) * 0.3;
-                data.puffleMesh.position.y = 0.5;
-            }
-        }
-    }, [otherPlayers]);
+    // ==================== MULTIPLAYER SYNC (OPTIMIZED) ====================
     
     // Helper to create name sprite for other players
     const createNameSprite = useCallback((name) => {
         const THREE = window.THREE;
+        if (!THREE) return null;
+        
         const canvas = document.createElement('canvas');
         canvas.width = 256;
         canvas.height = 64;
         const ctx = canvas.getContext('2d');
         
-        // Background
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.roundRect(0, 0, 256, 64, 10);
         ctx.fill();
         
-        // Text
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 28px sans-serif';
         ctx.textAlign = 'center';
@@ -2298,27 +2294,162 @@ const VoxelWorld = ({
         return sprite;
     }, []);
     
-    // Handle chat messages from other players
-    useEffect(() => {
-        if (!sceneRef.current || !window.THREE) return;
+    // Helper to create chat bubble sprite
+    const createOtherPlayerChatSprite = useCallback((message) => {
+        const THREE = window.THREE;
+        if (!THREE) return null;
         
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const fontSize = 32;
+        const padding = 15;
+        
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        const textWidth = Math.min(ctx.measureText(message).width, 300);
+        
+        canvas.width = textWidth + padding * 2;
+        canvas.height = fontSize + padding * 2;
+        
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 3;
+        
+        const r = 12;
+        ctx.beginPath();
+        ctx.roundRect(0, 0, canvas.width, canvas.height, r);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.fillStyle = 'black';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(message.substring(0, 50), canvas.width / 2, canvas.height / 2);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(canvas.width * 0.015, canvas.height * 0.015, 1);
+        sprite.position.set(0, 4.5, 0);
+        return sprite;
+    }, []);
+    
+    // Join room when connected and scene is ready
+    useEffect(() => {
+        if (connected && sceneRef.current && playerId) {
+            const puffleData = playerPuffle ? {
+                id: playerPuffle.id,
+                color: playerPuffle.color,
+                name: playerPuffle.name
+            } : null;
+            mpJoinRoom(room, penguinData, puffleData);
+        }
+    }, [connected, playerId, room, penguinData]);
+    
+    // Send position updates (throttled) - OPTIMIZED: 100ms interval, only when changed
+    useEffect(() => {
+        if (!connected) return;
+        
+        const interval = setInterval(() => {
+            const pos = posRef.current;
+            const rot = rotRef.current;
+            const last = lastPositionSentRef.current;
+            
+            const dx = pos.x - last.x;
+            const dz = pos.z - last.z;
+            const dRot = Math.abs(rot - last.rot);
+            const distSq = dx * dx + dz * dz;
+            
+            // Only send if moved significantly
+            if (distSq > 0.05 || dRot > 0.1) {
+                const pufflePos = playerPuffleRef.current?.position || null;
+                sendPosition(pos, rot, pufflePos);
+                lastPositionSentRef.current = { x: pos.x, z: pos.z, rot, time: Date.now() };
+            }
+        }, 100); // 10 updates per second (was 20)
+        
+        return () => clearInterval(interval);
+    }, [connected, sendPosition]);
+    
+    // Handle player list changes - CREATE/REMOVE meshes only
+    useEffect(() => {
+        if (!sceneRef.current || !window.THREE || !buildPenguinMeshRef.current) return;
+        
+        const THREE = window.THREE;
         const scene = sceneRef.current;
         const meshes = otherPlayerMeshesRef.current;
+        const playersData = playersDataRef.current;
         
-        // Find the most recent chat message for each player
-        for (const [id, playerData] of otherPlayers) {
-            const data = meshes.get(id);
-            if (!data || !data.mesh) continue;
-            
-            // Check if player has emote
-            if (playerData.emote && !data.currentEmote) {
-                data.currentEmote = playerData.emote;
-                data.emoteStartTime = playerData.emoteStartTime || Date.now();
-            } else if (!playerData.emote && data.currentEmote) {
-                data.currentEmote = null;
+        // Current player IDs from server
+        const currentPlayerIds = new Set(playerList);
+        
+        // Remove meshes for players who left
+        for (const [id, data] of meshes) {
+            if (!currentPlayerIds.has(id)) {
+                if (data.mesh) scene.remove(data.mesh);
+                if (data.bubble) scene.remove(data.bubble);
+                if (data.puffleMesh) scene.remove(data.puffleMesh);
+                meshes.delete(id);
             }
         }
-    }, [otherPlayers]);
+        
+        // Create meshes for new players
+        for (const id of playerList) {
+            if (meshes.has(id)) continue; // Already has mesh
+            
+            const playerData = playersData.get(id);
+            if (!playerData || !playerData.appearance) continue;
+            
+            console.log(`🐧 Creating mesh for ${playerData.name}`, playerData.puffle ? `with ${playerData.puffle.color} puffle` : '(no puffle)');
+            
+            const mesh = buildPenguinMeshRef.current(playerData.appearance);
+            mesh.position.set(
+                playerData.position?.x || 0,
+                0,
+                playerData.position?.z || 0
+            );
+            mesh.rotation.y = playerData.rotation || 0;
+            scene.add(mesh);
+            
+            // Create name tag
+            const nameSprite = createNameSprite(playerData.name || 'Player');
+            if (nameSprite) {
+                nameSprite.position.set(0, 5, 0);
+                mesh.add(nameSprite);
+            }
+            
+            // Create puffle if player has one
+            let puffleMesh = null;
+            if (playerData.puffle) {
+                console.log(`🐾 Creating puffle mesh: ${playerData.puffle.color}`);
+                const puffleInstance = new Puffle({
+                    color: playerData.puffle.color,
+                    name: playerData.puffle.name
+                });
+                puffleMesh = puffleInstance.createMesh(THREE);
+                // Set initial puffle position
+                const pufflePos = playerData.pufflePosition || {
+                    x: (playerData.position?.x || 0) + 1.5,
+                    z: (playerData.position?.z || 0) + 1.5
+                };
+                puffleMesh.position.set(pufflePos.x, 0.5, pufflePos.z);
+                scene.add(puffleMesh);
+                console.log(`🐾 Puffle mesh added at`, pufflePos);
+            }
+            
+            meshes.set(id, { 
+                mesh, 
+                bubble: null, 
+                puffleMesh, 
+                nameSprite,
+                currentEmote: null,
+                emoteStartTime: 0
+            });
+            
+            // Clear the needsMesh flag
+            playerData.needsMesh = false;
+        }
+    }, [playerList, createNameSprite]);
     
     // Notify server when changing rooms
     useEffect(() => {
@@ -2389,7 +2520,7 @@ const VoxelWorld = ({
                  <div className="flex items-center gap-2 mt-2">
                      <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
                      <span className="text-[10px] opacity-80">
-                         {connected ? `Online • ${otherPlayers.size + 1} players` : 'Connecting...'}
+                         {connected ? `Online • ${playerCount + 1} players` : 'Connecting...'}
                      </span>
                  </div>
              </div>

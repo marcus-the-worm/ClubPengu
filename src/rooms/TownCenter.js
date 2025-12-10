@@ -384,8 +384,8 @@ class TownCenter {
         const C = TownCenter.CENTER;
         const radius = TownCenter.WORLD_SIZE / 2 - 8; // Island radius
         
-        // Add ring of collision points around water edge
-        const segments = 32;
+        // Add ring of collision points around water edge - OPTIMIZED: fewer, larger segments
+        const segments = 16; // Reduced from 32
         for (let i = 0; i < segments; i++) {
             const angle = (i / segments) * Math.PI * 2;
             const x = C + Math.cos(angle) * (radius + 5);
@@ -394,7 +394,7 @@ class TownCenter {
             this.collisionSystem.addCollider(
                 x,
                 z,
-                { type: 'cylinder', radius: 8, height: 2 },
+                { type: 'cylinder', radius: 12, height: 2 }, // Larger radius to compensate
                 CollisionSystem.TYPES.WATER,
                 { name: 'water_boundary' }
             );

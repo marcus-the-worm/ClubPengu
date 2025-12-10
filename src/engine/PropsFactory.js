@@ -150,20 +150,22 @@ class PropsFactory {
             snow.castShadow = true;
             group.add(snow);
             
-            // Snow clumps on branches (randomized)
-            const clumpCount = Math.floor(3 + Math.random() * 3);
-            for (let j = 0; j < clumpCount; j++) {
-                const angle = (j / clumpCount) * Math.PI * 2 + Math.random() * 0.5;
-                const dist = radius * (0.5 + Math.random() * 0.3);
-                const clumpGeo = new THREE.SphereGeometry(0.15 + Math.random() * 0.1, 6, 6);
-                const clump = new THREE.Mesh(clumpGeo, snowMat);
-                clump.position.set(
-                    Math.cos(angle) * dist,
-                    currentY + height * 0.3 + Math.random() * height * 0.3,
-                    Math.sin(angle) * dist
-                );
-                clump.scale.y = 0.6;
-                group.add(clump);
+            // Snow clumps on branches - REDUCED for performance (only on larger trees)
+            if (size !== 'small' && i < 2) { // Only bottom 2 layers, skip small trees
+                const clumpCount = 2; // Reduced from 3-6
+                for (let j = 0; j < clumpCount; j++) {
+                    const angle = (j / clumpCount) * Math.PI * 2;
+                    const dist = radius * 0.6;
+                    const clumpGeo = new THREE.SphereGeometry(0.18, 4, 4); // Lower poly
+                    const clump = new THREE.Mesh(clumpGeo, snowMat);
+                    clump.position.set(
+                        Math.cos(angle) * dist,
+                        currentY + height * 0.4,
+                        Math.sin(angle) * dist
+                    );
+                    clump.scale.y = 0.5;
+                    group.add(clump);
+                }
             }
             
             currentY += height * 0.65;
@@ -393,14 +395,12 @@ class PropsFactory {
         globe.position.y = postHeight + 0.3;
         group.add(globe);
         
-        // Point light
+        // Point light - NO SHADOWS for performance (many lamps in scene)
         let light = null;
         if (isOn) {
-            light = new THREE.PointLight(0xFFE4B5, 1.2, 12, 2);
+            light = new THREE.PointLight(0xFFE4B5, 0.8, 10, 2);
             light.position.y = postHeight + 0.3;
-            light.castShadow = true;
-            light.shadow.mapSize.set(512, 512);
-            light.shadow.radius = 4;
+            light.castShadow = false; // PERFORMANCE: Shadows disabled - too many lights
             group.add(light);
         }
         
@@ -578,21 +578,7 @@ class PropsFactory {
             group.add(mound);
         }
         
-        // Sparkle points (small bright spots)
-        const sparkleMat = this.getMaterial(PropsFactory.COLORS.snowBright, { 
-            emissive: '#FFFFFF', 
-            emissiveIntensity: 0.3 
-        });
-        for (let i = 0; i < 5 * cfg.scale; i++) {
-            const sparkleGeo = new THREE.SphereGeometry(0.03, 4, 4);
-            const sparkle = new THREE.Mesh(sparkleGeo, sparkleMat);
-            sparkle.position.set(
-                (Math.random() - 0.5) * 2 * cfg.scale,
-                0.3 * cfg.scale + Math.random() * 0.2,
-                (Math.random() - 0.5) * 1.5 * cfg.scale
-            );
-            group.add(sparkle);
-        }
+        // PERFORMANCE: Sparkle points removed - too many small meshes
         
         // No collision - decorative only
         group.userData.collision = null;

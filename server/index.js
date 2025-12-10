@@ -106,6 +106,7 @@ function getPlayersInRoom(roomId, excludeId = null) {
                 rotation: player.rotation,
                 appearance: player.appearance,
                 puffle: player.puffle,
+                pufflePosition: player.pufflePosition, // Include puffle position
                 emote: player.emote
             });
         }
@@ -186,6 +187,8 @@ function handleMessage(playerId, message) {
             player.appearance = message.appearance || {};
             player.puffle = message.puffle || null;
             
+            console.log(`Join request from ${player.name}:`, message.puffle ? `has ${message.puffle.color} puffle` : 'no puffle');
+            
             const roomId = message.room || 'town';
             joinRoom(playerId, roomId);
             
@@ -194,6 +197,15 @@ function handleMessage(playerId, message) {
                 player.position = { x: 80, y: 0, z: 90 }; // Town center spawn
             } else if (roomId === 'dojo') {
                 player.position = { x: 0, y: 0, z: 14 }; // Dojo entrance
+            }
+            
+            // Initialize puffle position if player has a puffle
+            if (player.puffle) {
+                player.pufflePosition = {
+                    x: player.position.x + 1.5,
+                    y: 0,
+                    z: player.position.z + 1.5
+                };
             }
             
             // Send current players in room to the new player
@@ -213,32 +225,39 @@ function handleMessage(playerId, message) {
                     position: player.position,
                     rotation: player.rotation,
                     appearance: player.appearance,
-                    puffle: player.puffle
+                    puffle: player.puffle,
+                    pufflePosition: player.pufflePosition
                 }
             }, playerId);
             
-            console.log(`${player.name} joined ${roomId}`);
+            console.log(`${player.name} joined ${roomId} ${player.puffle ? '(with puffle)' : ''}`);
             break;
         }
         
         case 'move': {
-            // Player position update (sent frequently)
+            // Player position update - OPTIMIZED: only broadcast if actually changed
+            const posChanged = !player.position || 
+                Math.abs(player.position.x - message.position.x) > 0.01 ||
+                Math.abs(player.position.z - message.position.z) > 0.01;
+            const rotChanged = player.rotation === undefined ||
+                Math.abs(player.rotation - message.rotation) > 0.01;
+            
             player.position = message.position;
             player.rotation = message.rotation;
             
-            // Update puffle position if present
-            if (message.pufflePosition && player.puffle) {
-                player.puffle.position = message.pufflePosition;
+            // Store puffle position on player object (not inside puffle)
+            if (message.pufflePosition) {
+                player.pufflePosition = message.pufflePosition;
             }
             
-            // Broadcast to room
-            if (player.room) {
+            // Only broadcast if something actually changed
+            if ((posChanged || rotChanged) && player.room) {
                 broadcastToRoom(player.room, {
                     type: 'player_moved',
                     playerId: playerId,
                     position: player.position,
                     rotation: player.rotation,
-                    pufflePosition: message.pufflePosition
+                    pufflePosition: player.pufflePosition
                 }, playerId);
             }
             break;
@@ -350,11 +369,25 @@ function handleMessage(playerId, message) {
             // Player equipped/unequipped puffle
             player.puffle = message.puffle;
             
+            // Initialize puffle position if puffle equipped
+            if (player.puffle && player.position) {
+                player.pufflePosition = {
+                    x: player.position.x + 1.5,
+                    y: 0,
+                    z: player.position.z + 1.5
+                };
+            } else {
+                player.pufflePosition = null;
+            }
+            
+            console.log(`${player.name} ${player.puffle ? 'equipped ' + player.puffle.color + ' puffle' : 'unequipped puffle'}`);
+            
             if (player.room) {
                 broadcastToRoom(player.room, {
                     type: 'player_puffle',
                     playerId: playerId,
-                    puffle: player.puffle
+                    puffle: player.puffle,
+                    pufflePosition: player.pufflePosition
                 }, playerId);
             }
             break;

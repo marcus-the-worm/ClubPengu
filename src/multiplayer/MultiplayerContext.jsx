@@ -1,6 +1,6 @@
 /**
  * Multiplayer Context - WebSocket connection and state management
- * Provides real-time player sync across the game
+ * OPTIMIZED: Uses refs for real-time position data to avoid React re-renders
  */
 
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
@@ -9,18 +9,12 @@ const MultiplayerContext = createContext(null);
 
 // Server URL - change this when deploying
 const getServerUrl = () => {
-    // Check for environment variable first
     if (import.meta.env.VITE_WS_SERVER) {
         return import.meta.env.VITE_WS_SERVER;
     }
-    
-    // Development default
     if (import.meta.env.DEV) {
         return 'ws://localhost:3001';
     }
-    
-    // Production - you'll set this to your Render.com URL
-    // Example: 'wss://clubpenguin-server.onrender.com'
     return 'ws://localhost:3001';
 };
 
@@ -36,8 +30,16 @@ export function MultiplayerProvider({ children }) {
         return localStorage.getItem('penguin_name') || `Penguin${Math.floor(Math.random() * 1000)}`;
     });
     
-    // Other players in current room
-    const [otherPlayers, setOtherPlayers] = useState(new Map());
+    // OPTIMIZATION: Player LIST in state (for join/leave only)
+    // Player POSITIONS in ref (for real-time updates, no re-renders)
+    const [playerList, setPlayerList] = useState([]); // Array of player IDs
+    const playersDataRef = useRef(new Map()); // playerId -> full player data (positions, etc)
+    
+    // For backwards compatibility - return a getter function
+    const getPlayersData = useCallback(() => playersDataRef.current, []);
+    
+    // Player count for UI (updated less frequently)
+    const [playerCount, setPlayerCount] = useState(0);
     
     // Chat messages (recent)
     const [chatMessages, setChatMessages] = useState([]);
@@ -109,7 +111,7 @@ export function MultiplayerProvider({ children }) {
         }
     }, []);
     
-    // Handle incoming messages
+    // Handle incoming messages - OPTIMIZED: position updates go to ref, not state
     const handleMessage = useCallback((message) => {
         switch (message.type) {
             case 'connected':
@@ -122,95 +124,108 @@ export function MultiplayerProvider({ children }) {
                 console.log(`📍 Entered ${message.room} with ${message.players.length} other players`);
                 setServerRoom(message.room);
                 
-                const newPlayers = new Map();
+                // Clear and rebuild player data
+                playersDataRef.current.clear();
+                const ids = [];
                 message.players.forEach(p => {
-                    newPlayers.set(p.id, p);
+                    console.log(`  - ${p.name}`, p.puffle ? `with ${p.puffle.color} puffle` : '(no puffle)');
+                    const playerData = {
+                        id: p.id,
+                        name: p.name,
+                        position: p.position,
+                        rotation: p.rotation,
+                        appearance: p.appearance,
+                        puffle: p.puffle || null,
+                        pufflePosition: p.pufflePosition || null,
+                        emote: p.emote || null,
+                        needsMesh: true
+                    };
+                    playersDataRef.current.set(p.id, playerData);
+                    ids.push(p.id);
                 });
-                setOtherPlayers(newPlayers);
+                setPlayerList(ids);
+                setPlayerCount(ids.length);
                 break;
                 
             case 'player_joined':
-                console.log(`👋 ${message.player.name} joined`);
-                setOtherPlayers(prev => {
-                    const updated = new Map(prev);
-                    updated.set(message.player.id, message.player);
-                    return updated;
-                });
+                console.log(`👋 ${message.player.name} joined`, message.player.puffle ? `with ${message.player.puffle.color} puffle` : '(no puffle)');
+                // Add to ref immediately with all data including puffle
+                const joinedPlayerData = {
+                    id: message.player.id,
+                    name: message.player.name,
+                    position: message.player.position,
+                    rotation: message.player.rotation,
+                    appearance: message.player.appearance,
+                    puffle: message.player.puffle || null,
+                    pufflePosition: message.player.pufflePosition || null,
+                    emote: message.player.emote || null,
+                    needsMesh: true
+                };
+                playersDataRef.current.set(message.player.id, joinedPlayerData);
+                // Update state for list change (triggers mesh creation)
+                setPlayerList(prev => [...prev, message.player.id]);
+                setPlayerCount(prev => prev + 1);
                 callbacksRef.current.onPlayerJoined?.(message.player);
                 break;
                 
             case 'player_left':
                 console.log(`👋 Player ${message.playerId} left`);
-                setOtherPlayers(prev => {
-                    const updated = new Map(prev);
-                    updated.delete(message.playerId);
-                    return updated;
-                });
+                // Remove from ref
+                playersDataRef.current.delete(message.playerId);
+                // Update state for list change
+                setPlayerList(prev => prev.filter(id => id !== message.playerId));
+                setPlayerCount(prev => Math.max(0, prev - 1));
                 callbacksRef.current.onPlayerLeft?.(message.playerId);
                 break;
                 
             case 'player_moved':
-                setOtherPlayers(prev => {
-                    const updated = new Map(prev);
-                    const player = updated.get(message.playerId);
-                    if (player) {
-                        updated.set(message.playerId, {
-                            ...player,
-                            position: message.position,
-                            rotation: message.rotation,
-                            pufflePosition: message.pufflePosition
-                        });
-                    }
-                    return updated;
-                });
+                // OPTIMIZATION: Update ref directly, NO state update, NO re-render
+                const movingPlayer = playersDataRef.current.get(message.playerId);
+                if (movingPlayer) {
+                    movingPlayer.position = message.position;
+                    movingPlayer.rotation = message.rotation;
+                    movingPlayer.pufflePosition = message.pufflePosition;
+                }
+                // Callback for any direct handling needed
                 callbacksRef.current.onPlayerMoved?.(message.playerId, message.position, message.rotation);
                 break;
                 
             case 'player_emote':
-                setOtherPlayers(prev => {
-                    const updated = new Map(prev);
-                    const player = updated.get(message.playerId);
-                    if (player) {
-                        updated.set(message.playerId, {
-                            ...player,
-                            emote: message.emote,
-                            emoteStartTime: Date.now()
-                        });
-                    }
-                    return updated;
-                });
+                // Update ref directly
+                const emotingPlayer = playersDataRef.current.get(message.playerId);
+                if (emotingPlayer) {
+                    emotingPlayer.emote = message.emote;
+                    emotingPlayer.emoteStartTime = Date.now();
+                }
                 callbacksRef.current.onPlayerEmote?.(message.playerId, message.emote);
                 break;
                 
             case 'player_appearance':
-                setOtherPlayers(prev => {
-                    const updated = new Map(prev);
-                    const player = updated.get(message.playerId);
-                    if (player) {
-                        updated.set(message.playerId, {
-                            ...player,
-                            appearance: message.appearance
-                        });
-                    }
-                    return updated;
-                });
+                const appearancePlayer = playersDataRef.current.get(message.playerId);
+                if (appearancePlayer) {
+                    appearancePlayer.appearance = message.appearance;
+                    appearancePlayer.needsMeshRebuild = true; // Flag for mesh rebuild
+                }
                 break;
                 
             case 'player_puffle':
-                setOtherPlayers(prev => {
-                    const updated = new Map(prev);
-                    const player = updated.get(message.playerId);
-                    if (player) {
-                        updated.set(message.playerId, {
-                            ...player,
-                            puffle: message.puffle
-                        });
-                    }
-                    return updated;
-                });
+                const pufflePlayer = playersDataRef.current.get(message.playerId);
+                if (pufflePlayer) {
+                    console.log(`🐾 ${pufflePlayer.name} ${message.puffle ? 'equipped ' + message.puffle.color + ' puffle' : 'unequipped puffle'}`);
+                    pufflePlayer.puffle = message.puffle;
+                    pufflePlayer.pufflePosition = message.pufflePosition || null;
+                    pufflePlayer.needsPuffleUpdate = true;
+                }
                 break;
                 
             case 'chat':
+                // Add chat bubble to player data for rendering
+                const chattingPlayer = playersDataRef.current.get(message.playerId);
+                if (chattingPlayer) {
+                    chattingPlayer.chatMessage = message.text;
+                    chattingPlayer.chatTime = Date.now();
+                }
+                
                 const chatMsg = {
                     id: Date.now(),
                     playerId: message.playerId,
@@ -218,12 +233,11 @@ export function MultiplayerProvider({ children }) {
                     text: message.text,
                     timestamp: Date.now()
                 };
-                setChatMessages(prev => [...prev.slice(-50), chatMsg]); // Keep last 50 messages
+                setChatMessages(prev => [...prev.slice(-50), chatMsg]);
                 callbacksRef.current.onChatMessage?.(chatMsg);
                 break;
                 
             case 'pong':
-                // Keep-alive response, no action needed
                 break;
         }
     }, []);
@@ -332,7 +346,10 @@ export function MultiplayerProvider({ children }) {
         connected,
         playerId,
         playerName,
-        otherPlayers,
+        playerCount,
+        playerList,           // Array of player IDs (for triggering mesh creation)
+        getPlayersData,       // Function to get ref (for real-time position access)
+        playersDataRef,       // Direct ref access for game loop
         chatMessages,
         serverRoom,
         
