@@ -1,0 +1,8 @@
+# Ignore subdirectories with their own frameworks
+whitepaper/
+server/
+
+# Standard ignores
+node_modules/
+.git/
+
