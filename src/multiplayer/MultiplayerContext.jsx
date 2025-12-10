@@ -247,6 +247,13 @@ export function MultiplayerProvider({ children }) {
                 
             case 'pong':
                 break;
+            
+            case 'ball_update':
+                // Beach ball position update from server
+                if (callbacksRef.current.onBallUpdate) {
+                    callbacksRef.current.onBallUpdate(message.x, message.z, message.vx, message.vz);
+                }
+                break;
                 
             case 'error':
                 console.error(`❌ Server error: ${message.code} - ${message.message}`);
@@ -334,6 +341,19 @@ export function MultiplayerProvider({ children }) {
         });
     }, [send]);
     
+    // Send ball kick (when player kicks beach ball)
+    const sendBallKick = useCallback((x, z, vx, vz) => {
+        send({
+            type: 'ball_kick',
+            x, z, vx, vz
+        });
+    }, [send]);
+    
+    // Request ball sync (when entering igloo)
+    const requestBallSync = useCallback(() => {
+        send({ type: 'ball_sync' });
+    }, [send]);
+    
     // Set player name
     const setName = useCallback((name) => {
         setPlayerName(name);
@@ -381,6 +401,8 @@ export function MultiplayerProvider({ children }) {
         changeRoom,
         updateAppearance,
         updatePuffle,
+        sendBallKick,
+        requestBallSync,
         registerCallbacks
     };
     

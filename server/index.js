@@ -14,6 +14,13 @@ const players = new Map(); // playerId -> { id, name, room, position, rotation, 
 const rooms = new Map(); // roomId -> Set of playerIds
 const ipConnections = new Map(); // ip -> Set of playerIds (for tracking connections per IP)
 
+// Beach ball state per igloo room
+const beachBalls = new Map(); // roomId -> { x, z, vx, vz }
+
+// Initialize beach balls for igloo rooms
+beachBalls.set('igloo1', { x: 4.5, z: 3, vx: 0, vz: 0 });
+beachBalls.set('igloo2', { x: 4.5, z: 3, vx: 0, vz: 0 });
+
 // Create HTTP server to access request headers for IP
 const server = http.createServer();
 
@@ -481,6 +488,49 @@ function handleMessage(playerId, message) {
         case 'ping': {
             // Keep-alive ping
             sendToPlayer(playerId, { type: 'pong' });
+            break;
+        }
+        
+        case 'ball_kick': {
+            // Player kicked the beach ball - update server state and broadcast
+            const room = player.room;
+            if (room && (room === 'igloo1' || room === 'igloo2')) {
+                const ball = beachBalls.get(room);
+                if (ball) {
+                    // Apply the kick from client
+                    ball.x = message.x;
+                    ball.z = message.z;
+                    ball.vx = message.vx;
+                    ball.vz = message.vz;
+                    
+                    // Broadcast to all players in room (including kicker for confirmation)
+                    broadcastToRoomAll(room, {
+                        type: 'ball_update',
+                        x: ball.x,
+                        z: ball.z,
+                        vx: ball.vx,
+                        vz: ball.vz
+                    });
+                }
+            }
+            break;
+        }
+        
+        case 'ball_sync': {
+            // Client requesting current ball state (on room join)
+            const room = player.room;
+            if (room && (room === 'igloo1' || room === 'igloo2')) {
+                const ball = beachBalls.get(room);
+                if (ball) {
+                    sendToPlayer(playerId, {
+                        type: 'ball_update',
+                        x: ball.x,
+                        z: ball.z,
+                        vx: ball.vx,
+                        vz: ball.vz
+                    });
+                }
+            }
             break;
         }
     }

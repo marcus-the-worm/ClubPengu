@@ -32,6 +32,7 @@ const VoxelWorld = ({
     const clockRef = useRef(null);
     const roomRef = useRef(room); // Track current room
     const townCenterRef = useRef(null); // TownCenter room instance
+    const roomDataRef = useRef(null); // Store room data (including beach ball) for multiplayer sync
     
     // Multiplayer - OPTIMIZED: use refs for positions, state only for player list changes
     const {
@@ -47,7 +48,10 @@ const VoxelWorld = ({
         sendChat: mpSendChat,
         sendEmote: mpSendEmote,
         changeRoom: mpChangeRoom,
-        updatePuffle: mpUpdatePuffle
+        updatePuffle: mpUpdatePuffle,
+        sendBallKick: mpSendBallKick,
+        requestBallSync: mpRequestBallSync,
+        registerCallbacks
     } = useMultiplayer();
     
     // Refs for other player meshes and state
@@ -216,8 +220,8 @@ const VoxelWorld = ({
                 emoji: '🚪', 
                 description: 'Return to Town',
                 targetRoom: 'town',
-                position: { x: 0, z: 10 },
-                doorRadius: 2.5,
+                position: { x: 0, z: 13.5 }, // Updated for larger room
+                doorRadius: 3,
                 // Spawn at igloo 1 entrance in town when exiting
                 exitSpawnPos: { x: -35, z: 28 }
             }
@@ -229,8 +233,8 @@ const VoxelWorld = ({
                 emoji: '🚪', 
                 description: 'Return to Town',
                 targetRoom: 'town',
-                position: { x: 0, z: 10 },
-                doorRadius: 2.5,
+                position: { x: 0, z: 13.5 }, // Updated for larger room
+                doorRadius: 3,
                 // Spawn at igloo 2 entrance in town when exiting
                 exitSpawnPos: { x: -25, z: 38 }
             }
@@ -785,25 +789,25 @@ const VoxelWorld = ({
             };
         };
         
-        // Generate Igloo interior room (cozy hangout space)
+        // Generate Igloo interior room (cozy hangout space) - 50% LARGER
         const generateIglooRoom = () => {
-            const IGLOO_SIZE = 20;
-            scene.background = new THREE.Color(0x1a2a3a); // Cool blue-grey
+            const IGLOO_SIZE = 30; // 50% larger (was 20)
+            scene.background = new THREE.Color(0x0d1520); // Darker, moodier background
             
             // Simple collision map for igloo
             const map = [];
-            for(let x = 0; x < 10; x++) {
+            for(let x = 0; x < 15; x++) {
                 map[x] = [];
-                for(let z = 0; z < 10; z++) {
+                for(let z = 0; z < 15; z++) {
                     map[x][z] = 2; // All walkable
                 }
             }
             mapRef.current = map;
             
             // ==================== FLOOR ====================
-            // Cozy carpet in center
-            const carpetGeo = new THREE.CircleGeometry(7, 32);
-            const carpetMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 }); // Brown carpet
+            // Cozy carpet in center (scaled positions for larger room)
+            const carpetGeo = new THREE.CircleGeometry(10.5, 32); // Was 7
+            const carpetMat = new THREE.MeshStandardMaterial({ color: 0x6B3510, roughness: 0.9 }); // Darker brown
             const carpet = new THREE.Mesh(carpetGeo, carpetMat);
             carpet.rotation.x = -Math.PI / 2;
             carpet.position.y = 0.02;
@@ -812,8 +816,8 @@ const VoxelWorld = ({
             
             // Carpet pattern - inner circle
             const innerCarpet = new THREE.Mesh(
-                new THREE.CircleGeometry(5, 32),
-                new THREE.MeshStandardMaterial({ color: 0xA0522D, roughness: 0.9 })
+                new THREE.CircleGeometry(7.5, 32), // Was 5
+                new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 })
             );
             innerCarpet.rotation.x = -Math.PI / 2;
             innerCarpet.position.y = 0.03;
@@ -822,8 +826,8 @@ const VoxelWorld = ({
             // Ice floor around carpet
             const floorGeo = new THREE.CircleGeometry(IGLOO_SIZE / 2, 32);
             const floorMat = new THREE.MeshStandardMaterial({ 
-                color: 0xE8F4F8, 
-                roughness: 0.3,
+                color: 0xB8D4E8, // Slightly darker ice 
+                roughness: 0.4,
                 metalness: 0.1
             });
             const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -836,22 +840,22 @@ const VoxelWorld = ({
             // Ice dome interior (hemisphere from inside)
             const domeGeo = new THREE.SphereGeometry(IGLOO_SIZE / 2, 32, 24, 0, Math.PI * 2, 0, Math.PI / 2);
             const domeMat = new THREE.MeshStandardMaterial({ 
-                color: 0xD6EAF8,
-                roughness: 0.4,
-                side: THREE.BackSide // Render inside
+                color: 0x9CB8C8, // Darker, more atmospheric ice
+                roughness: 0.5,
+                side: THREE.BackSide
             });
             const dome = new THREE.Mesh(domeGeo, domeMat);
             dome.scale.y = 0.6; // Flatten dome
             scene.add(dome);
             
-            // Ice block lines on dome
-            for (let i = 1; i < 6; i++) {
-                const ringY = i * 1.0;
+            // Ice block lines on dome (adjusted for larger dome)
+            for (let i = 1; i < 8; i++) {
+                const ringY = i * 1.2;
                 const ringRadius = (IGLOO_SIZE / 2) * Math.cos(Math.asin(ringY / (IGLOO_SIZE / 2 * 0.6)));
                 if (ringRadius > 1) {
                     const ring = new THREE.Mesh(
-                        new THREE.TorusGeometry(ringRadius, 0.05, 4, 48),
-                        new THREE.MeshStandardMaterial({ color: 0xBDC3C7 })
+                        new THREE.TorusGeometry(ringRadius, 0.06, 4, 48),
+                        new THREE.MeshStandardMaterial({ color: 0x7A9AAA })
                     );
                     ring.position.y = ringY;
                     ring.rotation.x = Math.PI / 2;
@@ -859,9 +863,9 @@ const VoxelWorld = ({
                 }
             }
             
-            // ==================== COUCH ====================
+            // ==================== COUCH ==================== (position: 0, -9)
             const couchGroup = new THREE.Group();
-            const couchMat = new THREE.MeshStandardMaterial({ color: 0x2E4A62, roughness: 0.8 }); // Blue couch
+            const couchMat = new THREE.MeshStandardMaterial({ color: 0x2E4A62, roughness: 0.8 });
             const cushionMat = new THREE.MeshStandardMaterial({ color: 0x3D5A80, roughness: 0.9 });
             
             // Couch base
@@ -897,14 +901,14 @@ const VoxelWorld = ({
                 couchGroup.add(cushion);
             });
             
-            couchGroup.position.set(0, 0, -6);
+            couchGroup.position.set(0, 0, -9); // Was -6
             scene.add(couchGroup);
             
-            // ==================== CHAIRS ====================
+            // ==================== CHAIRS ==================== (positions adjusted)
             const createChair = (x, z, rotY) => {
                 const chairGroup = new THREE.Group();
                 const chairMat = new THREE.MeshStandardMaterial({ color: 0x5D4E37, roughness: 0.8 });
-                const seatMat = new THREE.MeshStandardMaterial({ color: 0xE74C3C, roughness: 0.9 }); // Red cushion
+                const seatMat = new THREE.MeshStandardMaterial({ color: 0xC0392B, roughness: 0.9 }); // Darker red
                 
                 // Seat
                 const seat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.2, 1.5), seatMat);
@@ -931,10 +935,10 @@ const VoxelWorld = ({
                 scene.add(chairGroup);
             };
             
-            createChair(-5, -2, Math.PI / 4);
-            createChair(5, -2, -Math.PI / 4);
+            createChair(-7.5, -3, Math.PI / 4);   // Was (-5, -2)
+            createChair(7.5, -3, -Math.PI / 4);   // Was (5, -2)
             
-            // ==================== TV / GAME CONSOLE ====================
+            // ==================== TV / GAME CONSOLE ==================== (position: 0, 9)
             const tvGroup = new THREE.Group();
             
             // TV Stand
@@ -953,12 +957,12 @@ const VoxelWorld = ({
             screen.castShadow = true;
             tvGroup.add(screen);
             
-            // Screen glow (playing game)
+            // Screen glow (playing game) - dimmer
             const glowGeo = new THREE.PlaneGeometry(2.3, 1.6);
             const glowMat = new THREE.MeshBasicMaterial({ 
-                color: 0x4488ff, 
+                color: 0x3366cc, 
                 transparent: true, 
-                opacity: 0.3 
+                opacity: 0.2 
             });
             const glow = new THREE.Mesh(glowGeo, glowMat);
             glow.position.set(0, 1.9, 0.08);
@@ -972,11 +976,11 @@ const VoxelWorld = ({
             consoleMesh.position.set(0, 1.1, 0.2);
             tvGroup.add(consoleMesh);
             
-            tvGroup.position.set(0, 0, 6);
+            tvGroup.position.set(0, 0, 9); // Was 6
             tvGroup.rotation.y = Math.PI;
             scene.add(tvGroup);
             
-            // ==================== COFFEE TABLE ====================
+            // ==================== COFFEE TABLE ==================== (position: 0, -3)
             const tableGroup = new THREE.Group();
             const tableMat = new THREE.MeshStandardMaterial({ color: 0x5D4037, roughness: 0.7 });
             
@@ -995,30 +999,56 @@ const VoxelWorld = ({
                 tableGroup.add(tLeg);
             });
             
-            tableGroup.position.set(0, 0, -2);
+            tableGroup.position.set(0, 0, -3); // Was -2
             scene.add(tableGroup);
             
-            // ==================== BEACH BALL ====================
+            // ==================== KICKABLE BEACH BALL ==================== 
+            const beachBallGroup = new THREE.Group();
+            beachBallGroup.name = 'beachBall';
+            
             const ballGeo = new THREE.SphereGeometry(0.5, 16, 16);
             const ballMat = new THREE.MeshStandardMaterial({ color: 0xFF6B6B, roughness: 0.6 });
             const ball = new THREE.Mesh(ballGeo, ballMat);
-            ball.position.set(3, 0.5, 2);
             ball.castShadow = true;
-            scene.add(ball);
+            beachBallGroup.add(ball);
             
-            // Ball stripes
+            // Ball stripes (attached to group so they move together)
             const stripeMat = new THREE.MeshStandardMaterial({ color: 0xFFE66D });
             for (let i = 0; i < 4; i++) {
                 const stripe = new THREE.Mesh(
                     new THREE.TorusGeometry(0.35, 0.08, 8, 16),
                     stripeMat
                 );
-                stripe.position.set(3, 0.5, 2);
                 stripe.rotation.y = (i / 4) * Math.PI;
-                scene.add(stripe);
+                beachBallGroup.add(stripe);
             }
             
-            // ==================== POTTED PLANT ====================
+            // Initial position
+            beachBallGroup.position.set(4.5, 0.5, 3);
+            scene.add(beachBallGroup);
+            
+            // Beach ball physics data (tuned for fun bouncy feel)
+            const beachBall = {
+                mesh: beachBallGroup,
+                velocity: { x: 0, z: 0 },
+                radius: 0.5,
+                friction: 0.985,    // Slight friction - rolls nicely
+                bounciness: 0.75    // Good bounce off walls
+            };
+            
+            // Furniture collision boxes (for player and ball collision)
+            // Note: Couch collider is the BACK only, so players can sit on the front
+            const furnitureColliders = [
+                // Couch BACK at (0, -9.5) - only the back rest, not the seating area
+                { x: 0, z: -9.8, hw: 2.8, hd: 0.6, name: 'couch_back' },
+                // Couch ARMS (left and right)
+                { x: -2.5, z: -9, hw: 0.4, hd: 1.2, name: 'couch_arm_l' },
+                { x: 2.5, z: -9, hw: 0.4, hd: 1.2, name: 'couch_arm_r' },
+                // Coffee table at (0, -3)
+                { x: 0, z: -3, hw: 1.5, hd: 1, name: 'table' }
+            ];
+            
+            // ==================== POTTED PLANT ==================== (position: -6, 6)
             const plantGroup = new THREE.Group();
             
             // Pot
@@ -1059,10 +1089,10 @@ const VoxelWorld = ({
             centerLeaf.position.y = 1.1;
             plantGroup.add(centerLeaf);
             
-            plantGroup.position.set(-4, 0, 4);
+            plantGroup.position.set(-6, 0, 6); // Was (-4, 0, 4)
             scene.add(plantGroup);
             
-            // ==================== BOOKSHELF ====================
+            // ==================== BOOKSHELF ==================== (position: 9, 0)
             const shelfGroup = new THREE.Group();
             const shelfMat = new THREE.MeshStandardMaterial({ color: 0x654321, roughness: 0.8 });
             
@@ -1095,95 +1125,118 @@ const VoxelWorld = ({
                 }
             });
             
-            shelfGroup.position.set(6, 0, 0);
+            shelfGroup.position.set(10, 0, 0); // Was (6, 0, 0)
             shelfGroup.rotation.y = -Math.PI / 2;
             scene.add(shelfGroup);
             
-            // ==================== LIGHTING ====================
-            // Warm ambient light
-            const ambientLight = new THREE.AmbientLight(0xfff5e6, 0.4);
+            // ==================== MOODY WARM LIGHTING ====================
+            // Very dim ambient - let the point lights do the work
+            const ambientLight = new THREE.AmbientLight(0x2a1a0a, 0.15); // Very dim warm brown
             scene.add(ambientLight);
             
-            // Ceiling light (warm glow)
-            const ceilingLight = new THREE.PointLight(0xFFE4B5, 1.2, 20);
-            ceilingLight.position.set(0, 5, 0);
+            // Main ceiling light (warm orange glow, reduced intensity)
+            const ceilingLight = new THREE.PointLight(0xFF9944, 0.8, 25);
+            ceilingLight.position.set(0, 7, 0);
             ceilingLight.castShadow = true;
             scene.add(ceilingLight);
             
-            // Light fixture
+            // Light fixture (warm glowing orb)
             const fixtureMesh = new THREE.Mesh(
-                new THREE.SphereGeometry(0.5, 16, 16),
-                new THREE.MeshBasicMaterial({ color: 0xFFFACD })
+                new THREE.SphereGeometry(0.6, 16, 16),
+                new THREE.MeshBasicMaterial({ color: 0xFFAA55 })
             );
-            fixtureMesh.position.set(0, 5.2, 0);
+            fixtureMesh.position.set(0, 7.5, 0);
             scene.add(fixtureMesh);
             
-            // TV glow light
-            const tvLight = new THREE.PointLight(0x4488ff, 0.5, 8);
-            tvLight.position.set(0, 2, 5);
+            // Subtle warm accent lights around the room
+            const accentLight1 = new THREE.PointLight(0xFF6633, 0.3, 12);
+            accentLight1.position.set(-8, 2, -8);
+            scene.add(accentLight1);
+            
+            const accentLight2 = new THREE.PointLight(0xFF6633, 0.3, 12);
+            accentLight2.position.set(8, 2, -8);
+            scene.add(accentLight2);
+            
+            // TV glow light (subtle blue, for contrast)
+            const tvLight = new THREE.PointLight(0x3366aa, 0.4, 10);
+            tvLight.position.set(0, 2, 7);
             scene.add(tvLight);
             
-            // ==================== EXIT GLOW ====================
+            // Cozy fireplace-style warm glow from below
+            const floorGlow = new THREE.PointLight(0xFF4400, 0.2, 15);
+            floorGlow.position.set(0, 0.5, 0);
+            scene.add(floorGlow);
+            
+            // ==================== EXIT GLOW ==================== (position: 0, 13.5)
             const exitGlow = new THREE.Mesh(
-                new THREE.CircleGeometry(2, 16),
-                new THREE.MeshBasicMaterial({ color: 0x44aaff, transparent: true, opacity: 0.2 })
+                new THREE.CircleGeometry(2.5, 16),
+                new THREE.MeshBasicMaterial({ color: 0x44aaff, transparent: true, opacity: 0.15 })
             );
             exitGlow.rotation.x = -Math.PI / 2;
-            exitGlow.position.set(0, 0.02, 9);
+            exitGlow.position.set(0, 0.02, 13.5); // Was 9
             scene.add(exitGlow);
             
             // Exit door frame
             const doorFrame = new THREE.Mesh(
-                new THREE.BoxGeometry(2.5, 3, 0.3),
+                new THREE.BoxGeometry(3, 3.5, 0.3),
                 new THREE.MeshStandardMaterial({ color: 0x4a3728 })
             );
-            doorFrame.position.set(0, 1.5, IGLOO_SIZE / 2 - 0.5);
+            doorFrame.position.set(0, 1.75, IGLOO_SIZE / 2 - 0.5);
             scene.add(doorFrame);
             
             // Door opening (dark)
             const doorOpening = new THREE.Mesh(
-                new THREE.PlaneGeometry(2, 2.5),
-                new THREE.MeshBasicMaterial({ color: 0x0a1520 })
+                new THREE.PlaneGeometry(2.5, 3),
+                new THREE.MeshBasicMaterial({ color: 0x050a10 })
             );
-            doorOpening.position.set(0, 1.25, IGLOO_SIZE / 2 - 0.3);
+            doorOpening.position.set(0, 1.5, IGLOO_SIZE / 2 - 0.3);
             scene.add(doorOpening);
             
-            // Furniture interaction data (for sitting)
+            // Furniture interaction data (for sitting) - UPDATED POSITIONS
             const furniture = [
                 {
                     type: 'couch',
-                    position: { x: 0, z: -6 },
-                    rotation: 0,
+                    position: { x: 0, z: -9 },
+                    rotation: 0, // Facing +Z (toward TV)
                     seatHeight: 0.95,
                     snapPoints: [
-                        { x: -1.5, z: 0.5 },  // Left cushion
-                        { x: 0, z: 0.5 },      // Middle cushion
-                        { x: 1.5, z: 0.5 }     // Right cushion
+                        // Snap points are LOCAL to couch - z: 0 = center of seat
+                        { x: -1.5, z: 0 },   // Left cushion
+                        { x: 0, z: 0 },       // Middle cushion  
+                        { x: 1.5, z: 0 }      // Right cushion
                     ],
-                    interactionRadius: 2.5
+                    interactionRadius: 3
                 },
                 {
                     type: 'chair',
-                    position: { x: -5, z: -2 },
-                    rotation: Math.PI / 4,
+                    position: { x: -7.5, z: -3 },
+                    rotation: Math.PI / 4, // Angled toward center
                     seatHeight: 0.8,
                     snapPoints: [{ x: 0, z: 0 }],
-                    interactionRadius: 1.5
+                    interactionRadius: 2
                 },
                 {
                     type: 'chair',
-                    position: { x: 5, z: -2 },
-                    rotation: -Math.PI / 4,
+                    position: { x: 7.5, z: -3 },
+                    rotation: -Math.PI / 4, // Angled toward center
                     seatHeight: 0.8,
                     snapPoints: [{ x: 0, z: 0 }],
-                    interactionRadius: 1.5
+                    interactionRadius: 2
                 }
             ];
             
             return {
-                bounds: { minX: -IGLOO_SIZE/2 + 1, maxX: IGLOO_SIZE/2 - 1, minZ: -IGLOO_SIZE/2 + 1, maxZ: IGLOO_SIZE/2 - 1 },
-                spawnPos: { x: 0, z: 7 },
-                furniture: furniture
+                // Use circular bounds for igloos (radius from center)
+                bounds: { 
+                    type: 'circular',
+                    radius: IGLOO_SIZE / 2 - 1.5, // Playable radius
+                    centerX: 0,
+                    centerZ: 0
+                },
+                spawnPos: { x: 0, z: 10 },
+                furniture: furniture,
+                beachBall: beachBall, // Kickable beach ball
+                colliders: furnitureColliders // Furniture collision boxes
             };
         };
         
@@ -1202,7 +1255,14 @@ const VoxelWorld = ({
             roomData = generateDojoRoom();
         } else if (room === 'igloo1' || room === 'igloo2') {
             roomData = generateIglooRoom();
+            // Request ball sync from server when entering igloo
+            if (mpRequestBallSync) {
+                setTimeout(() => mpRequestBallSync(), 100);
+            }
         }
+        
+        // Store roomData in ref for multiplayer access
+        roomDataRef.current = roomData;
         
         // Update roomRef for collision checks
         roomRef.current = room;
@@ -1885,15 +1945,212 @@ const VoxelWorld = ({
             let finalZ = nextZ;
             
             // Room-specific collision
-            if ((roomRef.current === 'dojo' || roomRef.current === 'igloo1' || roomRef.current === 'igloo2') && roomData && roomData.bounds) {
-                // Dojo and Igloo use simple bounds collision (no furniture collision)
+            if ((roomRef.current === 'dojo') && roomData && roomData.bounds) {
+                // Dojo uses square bounds
                 const b = roomData.bounds;
                 const playerRadius = 0.8;
-                // Clamp position to stay within bounds (prevents rotation escape)
                 finalX = Math.max(b.minX + playerRadius, Math.min(b.maxX - playerRadius, nextX));
                 finalZ = Math.max(b.minZ + playerRadius, Math.min(b.maxZ - playerRadius, nextZ));
                 if (finalX !== nextX || finalZ !== nextZ) {
                     collided = true;
+                }
+            } else if ((roomRef.current === 'igloo1' || roomRef.current === 'igloo2') && roomData && roomData.bounds) {
+                // Igloos use CIRCULAR bounds to match dome shape
+                const b = roomData.bounds;
+                const playerRadius = 0.8;
+                const maxRadius = b.radius - playerRadius;
+                
+                // Calculate distance from center
+                const distFromCenter = Math.sqrt(nextX * nextX + nextZ * nextZ);
+                
+                if (distFromCenter > maxRadius) {
+                    // Push player back inside circle
+                    const angle = Math.atan2(nextZ, nextX);
+                    finalX = Math.cos(angle) * maxRadius;
+                    finalZ = Math.sin(angle) * maxRadius;
+                    collided = true;
+                }
+                
+                // ==================== FURNITURE COLLISION (Player) ====================
+                if (roomData.colliders) {
+                    for (const col of roomData.colliders) {
+                        // AABB collision with player radius
+                        const minX = col.x - col.hw - playerRadius;
+                        const maxX = col.x + col.hw + playerRadius;
+                        const minZ = col.z - col.hd - playerRadius;
+                        const maxZ = col.z + col.hd + playerRadius;
+                        
+                        if (finalX > minX && finalX < maxX && finalZ > minZ && finalZ < maxZ) {
+                            // Player is inside furniture bounds - push out
+                            const overlapLeft = finalX - minX;
+                            const overlapRight = maxX - finalX;
+                            const overlapBack = finalZ - minZ;
+                            const overlapFront = maxZ - finalZ;
+                            
+                            // Find smallest overlap and push out that direction
+                            const minOverlap = Math.min(overlapLeft, overlapRight, overlapBack, overlapFront);
+                            
+                            if (minOverlap === overlapLeft) finalX = minX;
+                            else if (minOverlap === overlapRight) finalX = maxX;
+                            else if (minOverlap === overlapBack) finalZ = minZ;
+                            else finalZ = maxZ;
+                            
+                            collided = true;
+                        }
+                    }
+                }
+                
+                // ==================== BEACH BALL PHYSICS ====================
+                if (roomData.beachBall) {
+                    const ball = roomData.beachBall;
+                    const ballX = ball.mesh.position.x;
+                    const ballZ = ball.mesh.position.z;
+                    
+                    // Check player-ball collision
+                    const dx = ballX - finalX; // Direction from player TO ball
+                    const dz = ballZ - finalZ;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
+                    const minDist = playerRadius + ball.radius;
+                    
+                    if (dist < minDist && dist > 0.01) {
+                        // Normalize direction
+                        const nx = dx / dist;
+                        const nz = dz / dist;
+                        
+                        // Calculate kick strength based on player velocity toward ball
+                        const playerVelX = velRef.current.x;
+                        const playerVelZ = velRef.current.z;
+                        const approachSpeed = -(playerVelX * nx + playerVelZ * nz); // Dot product
+                        
+                        // Only kick if player is moving toward ball
+                        if (approachSpeed > 0.01) {
+                            // Transfer momentum: ball gets pushed in direction from player
+                            const kickPower = approachSpeed * 3 + 1.5; // Base kick + momentum
+                            ball.velocity.x += nx * kickPower;
+                            ball.velocity.z += nz * kickPower;
+                        } else {
+                            // Gentle push if just touching
+                            ball.velocity.x += nx * 0.8;
+                            ball.velocity.z += nz * 0.8;
+                        }
+                        
+                        // Separate ball from player (prevent overlap)
+                        const overlap = minDist - dist;
+                        ball.mesh.position.x += nx * overlap * 1.1;
+                        ball.mesh.position.z += nz * overlap * 1.1;
+                        
+                        // SYNC TO SERVER: Send ball kick to all clients
+                        if (mpSendBallKick) {
+                            mpSendBallKick(
+                                ball.mesh.position.x,
+                                ball.mesh.position.z,
+                                ball.velocity.x,
+                                ball.velocity.z
+                            );
+                        }
+                    }
+                    
+                    // Update ball position based on velocity (smooth movement)
+                    ball.mesh.position.x += ball.velocity.x * delta;
+                    ball.mesh.position.z += ball.velocity.z * delta;
+                    
+                    // Ball spin based on velocity (rolling effect)
+                    const speed = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.z ** 2);
+                    if (speed > 0.1) {
+                        ball.mesh.rotation.x += ball.velocity.z * delta * 3;
+                        ball.mesh.rotation.z -= ball.velocity.x * delta * 3;
+                    }
+                    
+                    // Ball-wall collision (circular bounds)
+                    const ballDistFromCenter = Math.sqrt(
+                        ball.mesh.position.x ** 2 + ball.mesh.position.z ** 2
+                    );
+                    const ballMaxRadius = b.radius - ball.radius - 0.3;
+                    
+                    if (ballDistFromCenter > ballMaxRadius) {
+                        // Calculate wall normal (points inward)
+                        const wallAngle = Math.atan2(ball.mesh.position.z, ball.mesh.position.x);
+                        const normalX = -Math.cos(wallAngle);
+                        const normalZ = -Math.sin(wallAngle);
+                        
+                        // Push ball back inside
+                        ball.mesh.position.x = Math.cos(wallAngle) * ballMaxRadius;
+                        ball.mesh.position.z = Math.sin(wallAngle) * ballMaxRadius;
+                        
+                        // Reflect velocity off wall
+                        const dot = ball.velocity.x * normalX + ball.velocity.z * normalZ;
+                        if (dot < 0) { // Only bounce if moving toward wall
+                            ball.velocity.x -= 2 * dot * normalX;
+                            ball.velocity.z -= 2 * dot * normalZ;
+                            // Energy loss on bounce
+                            ball.velocity.x *= ball.bounciness;
+                            ball.velocity.z *= ball.bounciness;
+                        }
+                    }
+                    
+                    // Ball-furniture collision
+                    if (roomData.colliders) {
+                        for (const col of roomData.colliders) {
+                            const bx = ball.mesh.position.x;
+                            const bz = ball.mesh.position.z;
+                            const br = ball.radius;
+                            
+                            // Find closest point on furniture box to ball center
+                            const closestX = Math.max(col.x - col.hw, Math.min(bx, col.x + col.hw));
+                            const closestZ = Math.max(col.z - col.hd, Math.min(bz, col.z + col.hd));
+                            
+                            // Distance from ball center to closest point
+                            const distX = bx - closestX;
+                            const distZ = bz - closestZ;
+                            const distSq = distX * distX + distZ * distZ;
+                            
+                            if (distSq < br * br && distSq > 0.001) {
+                                // Ball is colliding with furniture
+                                const dist = Math.sqrt(distSq);
+                                const nx = distX / dist; // Normal pointing away from furniture
+                                const nz = distZ / dist;
+                                
+                                // Push ball out of furniture
+                                const overlap = br - dist;
+                                ball.mesh.position.x += nx * overlap * 1.1;
+                                ball.mesh.position.z += nz * overlap * 1.1;
+                                
+                                // Reflect velocity
+                                const vDot = ball.velocity.x * nx + ball.velocity.z * nz;
+                                if (vDot < 0) { // Only bounce if moving toward furniture
+                                    ball.velocity.x -= 2 * vDot * nx;
+                                    ball.velocity.z -= 2 * vDot * nz;
+                                    ball.velocity.x *= ball.bounciness;
+                                    ball.velocity.z *= ball.bounciness;
+                                    
+                                    // Sync bounce to server
+                                    if (mpSendBallKick) {
+                                        mpSendBallKick(
+                                            ball.mesh.position.x,
+                                            ball.mesh.position.z,
+                                            ball.velocity.x,
+                                            ball.velocity.z
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Apply ground friction (gradual slowdown)
+                    const frictionPerFrame = Math.pow(ball.friction, delta * 60);
+                    ball.velocity.x *= frictionPerFrame;
+                    ball.velocity.z *= frictionPerFrame;
+                    
+                    // Clamp very small velocities to zero (stop rolling)
+                    if (Math.abs(ball.velocity.x) < 0.05 && Math.abs(ball.velocity.z) < 0.05) {
+                        ball.velocity.x = 0;
+                        ball.velocity.z = 0;
+                    }
+                    
+                    // Keep ball at correct height (bouncy bob effect when moving)
+                    const bobAmount = speed > 0.5 ? Math.sin(time * 15) * 0.05 : 0;
+                    ball.mesh.position.y = 0.5 + bobAmount;
                 }
             } else if (townCenterRef.current) {
                 // Town uses TownCenter collision system (props + buildings + water)
@@ -3081,6 +3338,26 @@ const VoxelWorld = ({
         
         return () => clearInterval(interval);
     }, [connected, sendPosition]);
+    
+    // Register ball update callback for igloo sync
+    useEffect(() => {
+        if (!registerCallbacks) return;
+        
+        registerCallbacks({
+            onBallUpdate: (x, z, vx, vz) => {
+                // Update local ball from server
+                const rd = roomDataRef.current;
+                if (rd && rd.beachBall) {
+                    const ball = rd.beachBall;
+                    // Smoothly interpolate to server position
+                    ball.mesh.position.x = x;
+                    ball.mesh.position.z = z;
+                    ball.velocity.x = vx;
+                    ball.velocity.z = vz;
+                }
+            }
+        });
+    }, [registerCallbacks]);
     
     // Handle player list changes - CREATE/REMOVE meshes only
     useEffect(() => {
