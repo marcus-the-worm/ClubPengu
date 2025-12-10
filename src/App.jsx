@@ -3,6 +3,7 @@ import VoxelPenguinDesigner from './VoxelPenguinDesigner';
 import VoxelWorld from './VoxelWorld';
 import CardJitsu from './minigames/CardJitsu';
 import GameManager from './engine/GameManager';
+import { MultiplayerProvider } from './multiplayer';
 
 // --- MAIN APP CONTROLLER ---
 
@@ -64,37 +65,29 @@ const App = () => {
         setActiveMinigame(null);
     };
 
-    // If in designer mode
+    // Determine content based on current state
+    let content;
+    
     if (currentRoom === null) {
-        return (
-            <div className="w-screen h-screen">
-                <Styles />
-                <VoxelPenguinDesigner 
-                    onEnterWorld={handleEnterWorld} 
-                    currentData={penguinData}
-                    updateData={setPenguinData}
-                />
-            </div>
+        // Designer mode
+        content = (
+            <VoxelPenguinDesigner 
+                onEnterWorld={handleEnterWorld} 
+                currentData={penguinData}
+                updateData={setPenguinData}
+            />
         );
-    }
-    
-    // If playing a minigame
-    if (activeMinigame === 'card-jitsu') {
-        return (
-            <div className="w-screen h-screen">
-                <Styles />
-                <CardJitsu 
-                    penguinData={penguinData}
-                    onExit={handleExitMinigame}
-                />
-            </div>
+    } else if (activeMinigame === 'card-jitsu') {
+        // Minigame mode
+        content = (
+            <CardJitsu 
+                penguinData={penguinData}
+                onExit={handleExitMinigame}
+            />
         );
-    }
-    
-    // Main game world (VoxelWorld handles ALL rooms via layer system)
-    return (
-        <div className="w-screen h-screen">
-            <Styles />
+    } else {
+        // Main game world
+        content = (
             <VoxelWorld 
                 penguinData={penguinData} 
                 room={currentRoom}
@@ -104,7 +97,16 @@ const App = () => {
                 playerPuffle={playerPuffle}
                 onPuffleChange={setPlayerPuffle}
             />
-        </div>
+        );
+    }
+    
+    return (
+        <MultiplayerProvider>
+            <div className="w-screen h-screen">
+                <Styles />
+                {content}
+            </div>
+        </MultiplayerProvider>
     );
 };
 
