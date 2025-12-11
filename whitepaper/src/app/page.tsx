@@ -312,12 +312,12 @@ function HeroSection() {
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </a>
           <a
-            href="https://club-pengu-client.vercel.app/"
+            href="https://clubpengu.fun"
             target="_blank"
             rel="noopener noreferrer"
             className="px-6 sm:px-8 py-3 sm:py-4 rounded-xl bg-white/10 border border-white/20 text-white font-semibold flex items-center gap-2 hover:bg-white/20 hover:border-white/30 transition-all text-sm sm:text-base"
           >
-            Play Demo
+            Play Now
             <ExternalLink className="w-4 h-4" />
           </a>
         </motion.div>
