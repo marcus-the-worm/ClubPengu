@@ -1,9 +1,6 @@
-# Ignore subdirectories with their own frameworks
-whitepaper/
+# Ignore server (not deployed to Vercel)
 server/
 
 # Standard ignores
 node_modules/
 .git/
-
-

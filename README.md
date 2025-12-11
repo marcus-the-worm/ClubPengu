@@ -12,7 +12,7 @@
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-In%20Development-yellow?style=for-the-badge)]()
 
-[Whitepaper](./whitepaper) • [Play Demo](#getting-started) • [Community](https://x.com/i/communities/1998537610592137381) • [Buy $CPw3](https://pump.fun/coin/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump)
+[Whitepaper](./whitepaper) • [Play Now](https://clubpengu.fun) • [Community](https://x.com/i/communities/1998537610592137381) • [Buy $CPw3](https://pump.fun/coin/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump)
 
 </div>
 
@@ -204,6 +204,7 @@ GTA V-style property system:
 
 | Resource | Link |
 |----------|------|
+| 🎮 **Play Now** | [clubpengu.fun](https://clubpengu.fun) |
 | 🌐 **Whitepaper** | [View Whitepaper](./whitepaper) |
 | 🐦 **X Community** | [Join Community](https://x.com/i/communities/1998537610592137381) |
 | 💰 **Buy $CPw3** | [PumpFun](https://pump.fun/coin/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump) |
