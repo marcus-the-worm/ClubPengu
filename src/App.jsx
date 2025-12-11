@@ -2,12 +2,21 @@ import React, { useState, useEffect } from 'react';
 import VoxelPenguinDesigner from './VoxelPenguinDesigner';
 import VoxelWorld from './VoxelWorld';
 import CardJitsu from './minigames/CardJitsu';
+import P2PCardJitsu from './minigames/P2PCardJitsu';
 import GameManager from './engine/GameManager';
 import { MultiplayerProvider } from './multiplayer';
+import { ChallengeProvider, useChallenge } from './challenge';
+import ProfileMenu from './components/ProfileMenu';
+import WagerModal from './components/WagerModal';
+import Inbox from './components/Inbox';
+import Notification from './components/Notification';
 
 // --- MAIN APP CONTROLLER ---
 
-const App = () => {
+/**
+ * Inner app content that uses challenge context
+ */
+const AppContent = () => {
     // Current room/layer: 'town', 'dojo', etc.
     const [currentRoom, setCurrentRoom] = useState(null); // null = designer
     const [penguinData, setPenguinData] = useState({
@@ -26,6 +35,9 @@ const App = () => {
     
     // Custom spawn position (when exiting dojo/igloo to town)
     const [spawnPosition, setSpawnPosition] = useState(null);
+    
+    // Challenge context for P2P matches
+    const { isInMatch, activeMatch, matchState, selectPlayer, activeMatches, spectatingMatch } = useChallenge();
     
     // Initialize GameManager on mount
     useEffect(() => {
@@ -68,49 +80,99 @@ const App = () => {
     const handleExitMinigame = () => {
         setActiveMinigame(null);
     };
-
-    // Determine content based on current state
-    let content;
     
-    if (currentRoom === null) {
-        // Designer mode
-        content = (
-            <VoxelPenguinDesigner 
-                onEnterWorld={handleEnterWorld} 
-                currentData={penguinData}
-                updateData={setPenguinData}
-            />
-        );
-    } else if (activeMinigame === 'card-jitsu') {
-        // Minigame mode
-        content = (
-            <CardJitsu 
-                penguinData={penguinData}
-                onExit={handleExitMinigame}
-            />
-        );
-    } else {
-        // Main game world
-        content = (
-            <VoxelWorld 
-                penguinData={penguinData} 
-                room={currentRoom}
-                onExitToDesigner={handleExitToDesigner}
-                onChangeRoom={handleChangeRoom}
-                onStartMinigame={handleStartMinigame}
-                playerPuffle={playerPuffle}
-                onPuffleChange={setPlayerPuffle}
-                customSpawnPos={spawnPosition}
-            />
-        );
-    }
+    // Handle player click from VoxelWorld
+    const handlePlayerClick = (playerData) => {
+        if (playerData && !isInMatch) {
+            selectPlayer(playerData);
+        }
+    };
+    
+    // Handle P2P match end
+    const handleP2PMatchEnd = () => {
+        // The match state will be cleared by ChallengeContext
+        // Just need to ensure we don't show the solo game
+        setActiveMinigame(null);
+    };
+
+    // Check if we're in the game world (not designer)
+    const inGameWorld = currentRoom !== null;
     
     return (
+        <div className="w-screen h-screen">
+            <Styles />
+            
+            {/* Designer Mode */}
+            {!inGameWorld && (
+                <VoxelPenguinDesigner 
+                    onEnterWorld={handleEnterWorld} 
+                    currentData={penguinData}
+                    updateData={setPenguinData}
+                />
+            )}
+            
+            {/* Game World - ALWAYS rendered when in a room (never unmounts during P2P match) */}
+            {inGameWorld && (
+                <div className={`absolute inset-0 ${isInMatch ? 'pointer-events-none' : ''}`}>
+                    <VoxelWorld 
+                        penguinData={penguinData} 
+                        room={currentRoom}
+                        onExitToDesigner={handleExitToDesigner}
+                        onChangeRoom={handleChangeRoom}
+                        onStartMinigame={handleStartMinigame}
+                        playerPuffle={playerPuffle}
+                        onPuffleChange={setPlayerPuffle}
+                        customSpawnPos={spawnPosition}
+                        onPlayerClick={handlePlayerClick}
+                        isInMatch={isInMatch}
+                        activeMatches={activeMatches}
+                        spectatingMatch={spectatingMatch}
+                    />
+                </div>
+            )}
+            
+            {/* Solo Card Jitsu (vs AI) - full screen overlay */}
+            {activeMinigame === 'card-jitsu' && !isInMatch && (
+                <div className="absolute inset-0 z-40">
+                    <CardJitsu 
+                        penguinData={penguinData}
+                        onExit={handleExitMinigame}
+                    />
+                </div>
+            )}
+            
+            {/* P2P Card Jitsu - overlay on top of game world (players stay visible) */}
+            {isInMatch && activeMatch && (
+                <div className="absolute inset-0 z-40">
+                    <P2PCardJitsu onMatchEnd={handleP2PMatchEnd} />
+                </div>
+            )}
+            
+            {/* Challenge UI Overlays - show when in game world */}
+            {inGameWorld && (
+                <>
+                    {!isInMatch && <ProfileMenu />}
+                    {!isInMatch && <WagerModal />}
+                    {!isInMatch && <Inbox />}
+                    {/* Match spectator banners are now rendered in 3D in VoxelWorld */}
+                </>
+            )}
+            
+            {/* Global Notification Toast */}
+            <Notification />
+        </div>
+    );
+};
+
+/**
+ * Main App - Wraps providers
+ */
+const App = () => {
+    return (
         <MultiplayerProvider>
-            <div className="w-screen h-screen">
-                <Styles />
-                {content}
-            </div>
+            <ChallengeProvider>
+                <AppContent />
+            </ChallengeProvider>
         </MultiplayerProvider>
     );
 };

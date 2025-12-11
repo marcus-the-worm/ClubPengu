@@ -6,10 +6,14 @@ import { IconSend } from './Icons';
 import GameHUD from './components/GameHUD';
 import Portal from './components/Portal';
 import PufflePanel from './components/PufflePanel';
+import VirtualJoystick from './components/VirtualJoystick';
+import TouchCameraControl from './components/TouchCameraControl';
+import SettingsMenu from './components/SettingsMenu';
 import GameManager from './engine/GameManager';
 import Puffle from './engine/Puffle';
 import TownCenter from './rooms/TownCenter';
 import { useMultiplayer } from './multiplayer';
+import { useChallenge } from './challenge';
 
 const VoxelWorld = ({ 
     penguinData, 
@@ -19,7 +23,11 @@ const VoxelWorld = ({
     onStartMinigame,
     playerPuffle, 
     onPuffleChange,
-    customSpawnPos  // Custom spawn position (when returning from dojo/igloo)
+    customSpawnPos,  // Custom spawn position (when returning from dojo/igloo)
+    onPlayerClick,   // Callback when clicking another player (for challenge system)
+    isInMatch = false, // True when player is in a P2P match (disable movement input)
+    activeMatches = [], // Active matches in the room (for spectator banners)
+    spectatingMatch = {} // Real-time match state data for spectating
 }) => {
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
@@ -33,6 +41,15 @@ const VoxelWorld = ({
     const roomRef = useRef(room); // Track current room
     const townCenterRef = useRef(null); // TownCenter room instance
     const roomDataRef = useRef(null); // Store room data (including beach ball) for multiplayer sync
+    const raycasterRef = useRef(null); // For player click detection
+    const mouseRef = useRef({ x: 0, y: 0 }); // Mouse position for raycasting
+    const isInMatchRef = useRef(isInMatch); // Track match state for game loop
+    const matchBannersRef = useRef(new Map()); // matchId -> { sprite, canvas, ctx }
+    
+    // Keep isInMatch ref up to date
+    useEffect(() => {
+        isInMatchRef.current = isInMatch;
+    }, [isInMatch]);
     
     // Multiplayer - OPTIMIZED: use refs for positions, state only for player list changes
     const {
@@ -54,6 +71,9 @@ const VoxelWorld = ({
         registerCallbacks
     } = useMultiplayer();
     
+    // Challenge context for position updates and dance trigger
+    const { updateLocalPosition, shouldDance, clearDance } = useChallenge();
+    
     // Refs for other player meshes and state
     const otherPlayerMeshesRef = useRef(new Map()); // playerId -> { mesh, bubble, puffle }
     const lastPositionSentRef = useRef({ x: 0, z: 0, rot: 0, time: 0 });
@@ -61,9 +81,11 @@ const VoxelWorld = ({
     
     // Player State
     const posRef = useRef({ x: 0, y: 0, z: 0 });
-    const velRef = useRef({ x: 0, z: 0 });
+    const velRef = useRef({ x: 0, y: 0, z: 0 }); // Added y for jump velocity
     const rotRef = useRef(0);
     const keysRef = useRef({});
+    const isGroundedRef = useRef(true);
+    const jumpRequestedRef = useRef(false);
     
     // Chat State
     const [chatInput, setChatInput] = useState("");
@@ -154,6 +176,37 @@ const VoxelWorld = ({
     const [isMobile, setIsMobile] = useState(false);
     const [isLandscape, setIsLandscape] = useState(true);
     const [showMobileChat, setShowMobileChat] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
+    
+    // Settings (persisted to localStorage)
+    const [gameSettings, setGameSettings] = useState(() => {
+        try {
+            const saved = localStorage.getItem('game_settings');
+            return saved ? JSON.parse(saved) : {
+                leftHanded: false,
+                cameraSensitivity: 0.3,
+                soundEnabled: true,
+                showFps: false
+            };
+        } catch {
+            return { leftHanded: false, cameraSensitivity: 0.3, soundEnabled: true, showFps: false };
+        }
+    });
+    
+    // Save settings when they change
+    useEffect(() => {
+        localStorage.setItem('game_settings', JSON.stringify(gameSettings));
+    }, [gameSettings]);
+    
+    // Joystick input ref (updated by VirtualJoystick component)
+    const joystickInputRef = useRef({ x: 0, y: 0 });
+    const cameraRotationRef = useRef({ deltaX: 0, deltaY: 0 });
+    const gameSettingsRef = useRef(gameSettings);
+    
+    // Keep gameSettingsRef updated
+    useEffect(() => {
+        gameSettingsRef.current = gameSettings;
+    }, [gameSettings]);
     const mobileControlsRef = useRef({ forward: false, back: false, left: false, right: false });
     const pinchRef = useRef({ startDist: 0, active: false });
     
@@ -416,6 +469,9 @@ const VoxelWorld = ({
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         mountRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
+        
+        // Initialize raycaster for player click detection
+        raycasterRef.current = new THREE.Raycaster();
         
         const clock = new THREE.Clock();
         clockRef.current = clock;
@@ -1038,14 +1094,15 @@ const VoxelWorld = ({
             
             // Furniture collision boxes (for player and ball collision)
             // Note: Couch collider is the BACK only, so players can sit on the front
+            // Added height property for proper 3D collision - allows jumping on top!
             const furnitureColliders = [
                 // Couch BACK at (0, -9.5) - only the back rest, not the seating area
-                { x: 0, z: -9.8, hw: 2.8, hd: 0.6, name: 'couch_back' },
+                { x: 0, z: -9.8, hw: 2.8, hd: 0.6, height: 1.8, y: 0, name: 'couch_back' },
                 // Couch ARMS (left and right)
-                { x: -2.5, z: -9, hw: 0.4, hd: 1.2, name: 'couch_arm_l' },
-                { x: 2.5, z: -9, hw: 0.4, hd: 1.2, name: 'couch_arm_r' },
-                // Coffee table at (0, -3)
-                { x: 0, z: -3, hw: 1.5, hd: 1, name: 'table' }
+                { x: -2.5, z: -9, hw: 0.4, hd: 1.2, height: 1.2, y: 0, name: 'couch_arm_l' },
+                { x: 2.5, z: -9, hw: 0.4, hd: 1.2, height: 1.2, y: 0, name: 'couch_arm_r' },
+                // Coffee table at (0, -3) - LOW height so player can jump on top!
+                { x: 0, z: -3, hw: 1.5, hd: 1, height: 0.8, y: 0, name: 'table' }
             ];
             
             // ==================== POTTED PLANT ==================== (position: -6, 6)
@@ -1856,24 +1913,63 @@ const VoxelWorld = ({
             const time = clock.getElapsedTime(); 
             
             const speed = 10 * delta; 
-            const rotSpeed = 2 * delta; 
+            // PC rotation is 50% faster than mobile for tighter turning
+            const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            const rotSpeed = isMobileDevice ? (2 * delta) : (3 * delta); // 50% faster on PC
             let moving = false;
             
-            // Check keyboard input
-            const keyForward = keysRef.current['KeyW'] || keysRef.current['ArrowUp'];
-            const keyBack = keysRef.current['KeyS'] || keysRef.current['ArrowDown'];
-            const keyLeft = keysRef.current['KeyA'] || keysRef.current['ArrowLeft'];
-            const keyRight = keysRef.current['KeyD'] || keysRef.current['ArrowRight'];
+            // Jump physics constants
+            const GRAVITY = 30;
+            const JUMP_VELOCITY = 12;
+            const GROUND_Y = 0;
             
-            // Check mobile button input
+            // Check keyboard input (disabled during P2P match)
+            const inMatch = isInMatchRef.current;
+            const keyForward = !inMatch && (keysRef.current['KeyW'] || keysRef.current['ArrowUp']);
+            const keyBack = !inMatch && (keysRef.current['KeyS'] || keysRef.current['ArrowDown']);
+            const keyLeft = !inMatch && (keysRef.current['KeyA'] || keysRef.current['ArrowLeft']);
+            const keyRight = !inMatch && (keysRef.current['KeyD'] || keysRef.current['ArrowRight']);
+            const keyJump = !inMatch && keysRef.current['Space'];
+            
+            // Check mobile button input (legacy D-pad)
             const mobile = mobileControlsRef.current;
             const mobileForward = mobile.forward;
             const mobileBack = mobile.back;
             const mobileLeft = mobile.left;
             const mobileRight = mobile.right;
+            const mobileJump = mobile.jump || jumpRequestedRef.current;
+            
+            // Check joystick input (new PUBG-style controls)
+            const joystick = joystickInputRef.current;
+            const joystickForward = !inMatch && joystick.y > 0.1;
+            const joystickBack = !inMatch && joystick.y < -0.1;
+            const joystickMagnitude = Math.sqrt(joystick.x * joystick.x + joystick.y * joystick.y);
+            
+            // Apply touch camera rotation with sensitivity
+            const camDelta = cameraRotationRef.current;
+            const camSensitivity = gameSettingsRef.current?.cameraSensitivity || 0.3;
+            if (camDelta.deltaX !== 0 && !inMatch) {
+                rotRef.current -= camDelta.deltaX * 0.015 * (camSensitivity * 2);
+                cameraRotationRef.current.deltaX = 0;
+            }
+            
+            // Handle jumping
+            if ((keyJump || mobileJump) && isGroundedRef.current && !inMatch) {
+                velRef.current.y = JUMP_VELOCITY;
+                isGroundedRef.current = false;
+                jumpRequestedRef.current = false;
+            }
+            
+            // ALWAYS apply gravity - this ensures player falls when walking off ledges
+            // Gravity will be counteracted by ground/surface collision detection
+            velRef.current.y -= GRAVITY * delta;
+            
+            // Clamp terminal velocity to prevent falling through floors
+            if (velRef.current.y < -50) velRef.current.y = -50;
             
             const anyMovementInput = keyForward || keyBack || keyLeft || keyRight || 
-                                      mobileForward || mobileBack || mobileLeft || mobileRight;
+                                      mobileForward || mobileBack || mobileLeft || mobileRight ||
+                                      joystickMagnitude > 0.1;
             
             // If seated on bench, check for movement to stand up
             if (seatedRef.current) {
@@ -1917,7 +2013,21 @@ const VoxelWorld = ({
                 velRef.current.z = 0;
             }
             else if (!emoteRef.current.type) {
-                if (keyForward || mobileForward) {
+                // Joystick movement (PUBG-style - analog control)
+                if (joystickMagnitude > 0.1 && !inMatch) {
+                    // Forward/back from joystick Y axis
+                    const moveSpeed = speed * Math.min(joystickMagnitude, 1.0);
+                    velRef.current.z = Math.cos(rotRef.current) * joystick.y * moveSpeed;
+                    velRef.current.x = Math.sin(rotRef.current) * joystick.y * moveSpeed;
+                    
+                    // Strafe from joystick X axis (rotate character towards movement)
+                    if (Math.abs(joystick.x) > 0.2) {
+                        rotRef.current -= joystick.x * rotSpeed * 1.5;
+                    }
+                    moving = true;
+                }
+                // Keyboard/D-pad movement (digital control)
+                else if (keyForward || mobileForward) {
                     velRef.current.z = Math.cos(rotRef.current) * speed;
                     velRef.current.x = Math.sin(rotRef.current) * speed;
                     moving = true;
@@ -1972,30 +2082,52 @@ const VoxelWorld = ({
                 }
                 
                 // ==================== FURNITURE COLLISION (Player) ====================
+                // Now with proper height checks - player can jump on top of objects
                 if (roomData.colliders) {
                     for (const col of roomData.colliders) {
+                        // Get collider height (default to 2 units if not specified)
+                        const colliderHeight = col.height || col.hh * 2 || 2;
+                        const colliderTop = col.y !== undefined ? col.y + colliderHeight : colliderHeight;
+                        const colliderBottom = col.y || 0;
+                        
                         // AABB collision with player radius
                         const minX = col.x - col.hw - playerRadius;
                         const maxX = col.x + col.hw + playerRadius;
                         const minZ = col.z - col.hd - playerRadius;
                         const maxZ = col.z + col.hd + playerRadius;
                         
+                        // Check if player is within XZ bounds
                         if (finalX > minX && finalX < maxX && finalZ > minZ && finalZ < maxZ) {
-                            // Player is inside furniture bounds - push out
-                            const overlapLeft = finalX - minX;
-                            const overlapRight = maxX - finalX;
-                            const overlapBack = finalZ - minZ;
-                            const overlapFront = maxZ - finalZ;
+                            const playerY = posRef.current.y;
+                            const playerFeetY = playerY; // Player's feet are at posRef.current.y
                             
-                            // Find smallest overlap and push out that direction
-                            const minOverlap = Math.min(overlapLeft, overlapRight, overlapBack, overlapFront);
-                            
-                            if (minOverlap === overlapLeft) finalX = minX;
-                            else if (minOverlap === overlapRight) finalX = maxX;
-                            else if (minOverlap === overlapBack) finalZ = minZ;
-                            else finalZ = maxZ;
-                            
-                            collided = true;
+                            // If player is ABOVE the collider top, they can stand on it
+                            if (playerFeetY >= colliderTop - 0.1) {
+                                // Player is on top - check if falling onto it
+                                if (velRef.current.y <= 0 && playerFeetY < colliderTop + 0.5) {
+                                    // Land on top of object
+                                    posRef.current.y = colliderTop;
+                                    velRef.current.y = 0;
+                                    isGroundedRef.current = true;
+                                }
+                                // Don't block horizontal movement when on top
+                            } else if (playerFeetY < colliderTop && playerY + 2 > colliderBottom) {
+                                // Player is at collider height level - block horizontal movement
+                                const overlapLeft = finalX - minX;
+                                const overlapRight = maxX - finalX;
+                                const overlapBack = finalZ - minZ;
+                                const overlapFront = maxZ - finalZ;
+                                
+                                // Find smallest overlap and push out that direction
+                                const minOverlap = Math.min(overlapLeft, overlapRight, overlapBack, overlapFront);
+                                
+                                if (minOverlap === overlapLeft) finalX = minX;
+                                else if (minOverlap === overlapRight) finalX = maxX;
+                                else if (minOverlap === overlapBack) finalZ = minZ;
+                                else finalZ = maxZ;
+                                
+                                collided = true;
+                            }
                         }
                     }
                 }
@@ -2154,16 +2286,20 @@ const VoxelWorld = ({
                 }
             } else if (townCenterRef.current) {
                 // Town uses TownCenter collision system (props + buildings + water)
+                // Pass Y position for height-based collision (so player can jump on objects)
                 const result = townCenterRef.current.checkPlayerMovement(
                     posRef.current.x, 
                     posRef.current.z, 
                     nextX, 
                     nextZ, 
-                    0.8 // Player radius
+                    0.8, // Player radius
+                    posRef.current.y // Y position for height check
                 );
                 finalX = result.x;
                 finalZ = result.z;
                 collided = result.collided;
+                
+                // Landing on objects is now handled in the unified ground collision section below
                 
                 // Also check triggers (benches, snowmen, etc.)
                 townCenterRef.current.checkTriggers(finalX, finalZ);
@@ -2255,6 +2391,65 @@ const VoxelWorld = ({
                 // Fallback: only move if no collision
                 posRef.current.x = nextX;
                 posRef.current.z = nextZ;
+            }
+            
+            // Apply Y velocity (jumping/falling)
+            posRef.current.y += velRef.current.y * delta;
+            
+            // Track if player found ground this frame
+            let foundGround = false;
+            let groundHeight = GROUND_Y;
+            
+            // Check for landing on furniture (in igloo rooms)
+            if (roomData?.colliders) {
+                for (const col of roomData.colliders) {
+                    const colliderHeight = col.height || col.hh * 2 || 2;
+                    const colliderTop = col.y !== undefined ? col.y + colliderHeight : colliderHeight;
+                    
+                    const minX = col.x - col.hw - 0.5;
+                    const maxX = col.x + col.hw + 0.5;
+                    const minZ = col.z - col.hd - 0.5;
+                    const maxZ = col.z + col.hd + 0.5;
+                    
+                    // Check if player is within XZ bounds
+                    if (posRef.current.x > minX && posRef.current.x < maxX && 
+                        posRef.current.z > minZ && posRef.current.z < maxZ) {
+                        // Player is above this surface and falling
+                        if (posRef.current.y <= colliderTop + 0.1 && posRef.current.y >= colliderTop - 0.5) {
+                            if (colliderTop >= groundHeight) {
+                                groundHeight = colliderTop;
+                                foundGround = true;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check for landing on town objects
+            if (room === 'town' && townCenterRef.current && velRef.current.y <= 0) {
+                const landing = townCenterRef.current.checkLanding(posRef.current.x, posRef.current.z, posRef.current.y, 0.8);
+                if (landing.canLand && posRef.current.y <= landing.landingY + 0.3) {
+                    if (landing.landingY >= groundHeight) {
+                        groundHeight = landing.landingY;
+                        foundGround = true;
+                    }
+                }
+            }
+            
+            // Ground plane collision (y = 0)
+            if (posRef.current.y <= GROUND_Y) {
+                groundHeight = GROUND_Y;
+                foundGround = true;
+            }
+            
+            // Apply ground collision
+            if (foundGround && velRef.current.y <= 0) {
+                posRef.current.y = groundHeight;
+                velRef.current.y = 0;
+                isGroundedRef.current = true;
+            } else if (posRef.current.y > GROUND_Y + 0.1) {
+                // Player is in the air - not grounded
+                isGroundedRef.current = false;
             }
             
             if (playerRef.current) {
@@ -2937,6 +3132,12 @@ const VoxelWorld = ({
                 townCenterRef.current.dispose();
                 townCenterRef.current = null;
             }
+            // Cleanup match banners
+            for (const [, bannerData] of matchBannersRef.current) {
+                bannerData.sprite.material.map?.dispose();
+                bannerData.sprite.material.dispose();
+            }
+            matchBannersRef.current.clear();
         };
     }, [penguinData, room]); // Rebuild scene when room changes
     
@@ -2946,6 +3147,332 @@ const VoxelWorld = ({
         // Send emote to other players (emote wheel = ground emotes, not furniture)
         mpSendEmote(type, false);
     };
+    
+    // ==================== VICTORY DANCE ====================
+    // Auto-trigger dance animation when player wins a match
+    useEffect(() => {
+        if (shouldDance) {
+            console.log('🎉 Victory dance triggered!');
+            triggerEmote('Dance');
+            // Clear the dance flag after triggering
+            if (clearDance) {
+                setTimeout(() => clearDance(), 100);
+            }
+        }
+    }, [shouldDance, clearDance]);
+    
+    // ==================== 3D MATCH BANNERS (SPECTATOR VIEW) ====================
+    // Create floating banners above players in active matches
+    useEffect(() => {
+        if (!sceneRef.current || !window.THREE) return;
+        
+        const THREE = window.THREE;
+        const scene = sceneRef.current;
+        const banners = matchBannersRef.current;
+        const playersData = playersDataRef.current;
+        
+        // Helper: Create canvas texture for match banner
+        const createBannerCanvas = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 200;
+            return canvas;
+        };
+        
+        // Helper: Render match info to canvas
+        const renderBannerToCanvas = (ctx, matchData) => {
+            const canvas = ctx.canvas;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Background - purple gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, 'rgba(88, 28, 135, 0.95)');
+            gradient.addColorStop(1, 'rgba(67, 56, 202, 0.95)');
+            
+            // Rounded rect background
+            const radius = 20;
+            ctx.beginPath();
+            ctx.moveTo(radius, 0);
+            ctx.lineTo(canvas.width - radius, 0);
+            ctx.quadraticCurveTo(canvas.width, 0, canvas.width, radius);
+            ctx.lineTo(canvas.width, canvas.height - radius - 20);
+            ctx.quadraticCurveTo(canvas.width, canvas.height - 20, canvas.width - radius, canvas.height - 20);
+            ctx.lineTo(canvas.width / 2 + 15, canvas.height - 20);
+            ctx.lineTo(canvas.width / 2, canvas.height); // Triangle point
+            ctx.lineTo(canvas.width / 2 - 15, canvas.height - 20);
+            ctx.lineTo(radius, canvas.height - 20);
+            ctx.quadraticCurveTo(0, canvas.height - 20, 0, canvas.height - radius - 20);
+            ctx.lineTo(0, radius);
+            ctx.quadraticCurveTo(0, 0, radius, 0);
+            ctx.closePath();
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Border
+            ctx.strokeStyle = 'rgba(168, 85, 247, 0.8)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            const players = matchData.players || [];
+            const state = matchData.state || {};
+            const wager = (matchData.wagerAmount || 0) * 2;
+            
+            // Header
+            ctx.fillStyle = '#FBBF24';
+            ctx.font = 'bold 22px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`⚔️ CARD JITSU • 💰 ${wager}`, canvas.width / 2, 35);
+            
+            // Player names
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 26px Arial';
+            const p1Name = (players[0]?.name || 'Player 1').substring(0, 10);
+            const p2Name = (players[1]?.name || 'Player 2').substring(0, 10);
+            ctx.textAlign = 'left';
+            ctx.fillText(p1Name, 30, 80);
+            ctx.textAlign = 'right';
+            ctx.fillText(p2Name, canvas.width - 30, 80);
+            
+            // VS
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('VS', canvas.width / 2, 80);
+            
+            // Win indicators
+            const p1Wins = state.player1Wins || { fire: 0, water: 0, snow: 0 };
+            const p2Wins = state.player2Wins || { fire: 0, water: 0, snow: 0 };
+            
+            const renderWins = (wins, x, align) => {
+                let icons = '';
+                if (wins.fire > 0) icons += '🔥'.repeat(Math.min(wins.fire, 3));
+                if (wins.water > 0) icons += '💧'.repeat(Math.min(wins.water, 3));
+                if (wins.snow > 0) icons += '❄️'.repeat(Math.min(wins.snow, 3));
+                ctx.font = '24px Arial';
+                ctx.textAlign = align;
+                ctx.fillText(icons || '—', x, 115);
+            };
+            
+            renderWins(p1Wins, 30, 'left');
+            renderWins(p2Wins, canvas.width - 30, 'right');
+            
+            // Round & Phase
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'center';
+            let statusText = `Round ${state.round || 1}`;
+            if (state.phase === 'select') statusText += ' • Selecting...';
+            else if (state.phase === 'reveal') statusText += ' • Revealing!';
+            else if (state.status === 'complete') statusText += ' • Complete!';
+            ctx.fillText(statusText, canvas.width / 2, 155);
+        };
+        
+        // Get current match IDs
+        const currentMatchIds = new Set(activeMatches.map(m => m.matchId));
+        
+        // Remove banners for ended matches
+        for (const [matchId, bannerData] of banners) {
+            if (!currentMatchIds.has(matchId)) {
+                scene.remove(bannerData.sprite);
+                bannerData.sprite.material.map?.dispose();
+                bannerData.sprite.material.dispose();
+                banners.delete(matchId);
+            }
+        }
+        
+        // Create or update banners for active matches
+        for (const match of activeMatches) {
+            const matchId = match.matchId;
+            const spectateData = spectatingMatch?.[matchId];
+            const matchData = {
+                ...match,
+                state: spectateData?.state || match.state || {},
+                wagerAmount: spectateData?.wagerAmount || match.wagerAmount
+            };
+            
+            // Find player positions
+            const p1Data = playersData.get(match.players?.[0]?.id);
+            const p2Data = playersData.get(match.players?.[1]?.id);
+            
+            if (!p1Data?.position && !p2Data?.position) continue;
+            
+            // Calculate midpoint between players
+            const p1Pos = p1Data?.position || p2Data?.position;
+            const p2Pos = p2Data?.position || p1Data?.position;
+            const midX = (p1Pos.x + p2Pos.x) / 2;
+            const midZ = (p1Pos.z + p2Pos.z) / 2;
+            
+            let bannerData = banners.get(matchId);
+            
+            if (!bannerData) {
+                // Create new banner
+                const canvas = createBannerCanvas();
+                const ctx = canvas.getContext('2d');
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.needsUpdate = true;
+                
+                const material = new THREE.SpriteMaterial({ 
+                    map: texture, 
+                    transparent: true,
+                    depthTest: false
+                });
+                const sprite = new THREE.Sprite(material);
+                sprite.scale.set(8, 3.2, 1); // Banner size in world units
+                sprite.renderOrder = 999; // Render on top
+                
+                scene.add(sprite);
+                bannerData = { sprite, canvas, ctx, texture };
+                banners.set(matchId, bannerData);
+            }
+            
+            // Update banner content
+            renderBannerToCanvas(bannerData.ctx, matchData);
+            bannerData.texture.needsUpdate = true;
+            
+            // Position above players
+            bannerData.sprite.position.set(midX, 8, midZ); // 8 units above ground
+        }
+        
+    }, [activeMatches, spectatingMatch]);
+    
+    // ==================== PLAYER CLICK DETECTION ====================
+    // Handle clicking/tapping on other players to open profile menu (works on both desktop and mobile)
+    useEffect(() => {
+        if (!rendererRef.current || !cameraRef.current || !raycasterRef.current || !onPlayerClick) return;
+        
+        const renderer = rendererRef.current;
+        const camera = cameraRef.current;
+        const raycaster = raycasterRef.current;
+        
+        // Unified handler for both mouse clicks and touch taps
+        const handleInteraction = (clientX, clientY, eventTarget) => {
+            // Don't process clicks that originated from UI elements
+            if (eventTarget !== renderer.domElement) {
+                return;
+            }
+            
+            // Don't process if any UI overlay is open (check by z-index elements)
+            const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
+            const hasUIOverlay = elementsAtPoint.some(el => {
+                const zIndex = window.getComputedStyle(el).zIndex;
+                return zIndex && parseInt(zIndex) >= 40 && el !== renderer.domElement.parentElement;
+            });
+            
+            if (hasUIOverlay) {
+                return;
+            }
+            
+            // Calculate position in normalized device coordinates (-1 to +1)
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouseRef.current.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            mouseRef.current.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+            
+            // Update raycaster
+            raycaster.setFromCamera(mouseRef.current, camera);
+            
+            // Collect all other player meshes
+            const playerMeshes = [];
+            const meshToPlayerMap = new Map();
+            
+            for (const [id, data] of otherPlayerMeshesRef.current) {
+                if (data.mesh) {
+                    playerMeshes.push(data.mesh);
+                    // Also add children for better hit detection
+                    data.mesh.traverse(child => {
+                        if (child.isMesh) {
+                            meshToPlayerMap.set(child, id);
+                        }
+                    });
+                    meshToPlayerMap.set(data.mesh, id);
+                }
+            }
+            
+            // Check for intersections
+            const allMeshes = [];
+            playerMeshes.forEach(m => m.traverse(child => { if (child.isMesh) allMeshes.push(child); }));
+            
+            const intersects = raycaster.intersectObjects(allMeshes, false);
+            
+            if (intersects.length > 0) {
+                // Find which player was clicked/tapped
+                let clickedPlayerId = null;
+                
+                for (const intersect of intersects) {
+                    // Traverse up to find the root mesh
+                    let obj = intersect.object;
+                    while (obj && !meshToPlayerMap.has(obj)) {
+                        obj = obj.parent;
+                    }
+                    
+                    if (obj && meshToPlayerMap.has(obj)) {
+                        clickedPlayerId = meshToPlayerMap.get(obj);
+                        break;
+                    }
+                }
+                
+                if (clickedPlayerId) {
+                    const playerData = playersDataRef.current.get(clickedPlayerId);
+                    if (playerData) {
+                        console.log('🖱️ Clicked/tapped on player:', playerData.name);
+                        onPlayerClick({
+                            id: clickedPlayerId,
+                            name: playerData.name,
+                            appearance: playerData.appearance,
+                            position: playerData.position
+                        });
+                    }
+                }
+            }
+        };
+        
+        // Mouse click handler
+        const handleClick = (event) => {
+            handleInteraction(event.clientX, event.clientY, event.target);
+        };
+        
+        // Touch handler - detect taps on players
+        let touchStartTime = 0;
+        let touchStartPos = { x: 0, y: 0 };
+        
+        const handleTouchStart = (event) => {
+            if (event.touches.length === 1) {
+                touchStartTime = Date.now();
+                touchStartPos = {
+                    x: event.touches[0].clientX,
+                    y: event.touches[0].clientY
+                };
+            }
+        };
+        
+        const handleTouchEnd = (event) => {
+            // Only process single-finger taps
+            if (event.changedTouches.length !== 1) return;
+            
+            const touch = event.changedTouches[0];
+            const touchDuration = Date.now() - touchStartTime;
+            const touchMoved = Math.abs(touch.clientX - touchStartPos.x) > 15 ||
+                              Math.abs(touch.clientY - touchStartPos.y) > 15;
+            
+            // Only treat as tap if touch was short (< 300ms) and didn't move much
+            if (touchDuration < 300 && !touchMoved) {
+                // Get the element under the touch point
+                const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+                handleInteraction(touch.clientX, touch.clientY, targetElement);
+            }
+        };
+        
+        renderer.domElement.addEventListener('click', handleClick);
+        renderer.domElement.addEventListener('touchstart', handleTouchStart, { passive: true });
+        renderer.domElement.addEventListener('touchend', handleTouchEnd, { passive: true });
+        
+        return () => {
+            if (renderer.domElement) {
+                renderer.domElement.removeEventListener('click', handleClick);
+                renderer.domElement.removeEventListener('touchstart', handleTouchStart);
+                renderer.domElement.removeEventListener('touchend', handleTouchEnd);
+            }
+        };
+    }, [onPlayerClick, playerId]);
     
     useEffect(() => {
         if (!activeBubble || !playerRef.current) return;
@@ -3334,6 +3861,11 @@ const VoxelWorld = ({
                 sendPosition(pos, rot, pufflePos);
                 lastPositionSentRef.current = { x: pos.x, z: pos.z, rot, time: Date.now() };
             }
+            
+            // Always update local position for proximity checking
+            if (updateLocalPosition) {
+                updateLocalPosition(pos);
+            }
         }, 100); // 10 updates per second (was 20)
         
         return () => clearInterval(interval);
@@ -3507,73 +4039,49 @@ const VoxelWorld = ({
                 </div>
              )}
              
-             {/* Mobile Directional Buttons (Minecraft-style D-pad) */}
+             {/* Mobile PUBG-style Joystick - LEFT side (or right if left-handed) */}
              {isMobile && isLandscape && (
-                <div className="absolute bottom-6 left-6 z-30 touch-none select-none">
-                    {/* D-pad container */}
-                    <div className="relative w-36 h-36">
-                        {/* Forward Button (Top) */}
-                        <button
-                            className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-12 bg-black/60 border-2 border-white/40 rounded-lg flex items-center justify-center active:bg-white/30 active:scale-95 transition-all"
-                            onTouchStart={(e) => { e.preventDefault(); handleMobileButtonDown('forward'); }}
-                            onTouchEnd={(e) => { e.preventDefault(); handleMobileButtonUp('forward'); }}
-                            onTouchCancel={(e) => { e.preventDefault(); handleMobileButtonUp('forward'); }}
-                        >
-                            <span className="text-white text-2xl">▲</span>
-                        </button>
-                        
-                        {/* Back Button (Bottom) */}
-                        <button
-                            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-12 bg-black/60 border-2 border-white/40 rounded-lg flex items-center justify-center active:bg-white/30 active:scale-95 transition-all"
-                            onTouchStart={(e) => { e.preventDefault(); handleMobileButtonDown('back'); }}
-                            onTouchEnd={(e) => { e.preventDefault(); handleMobileButtonUp('back'); }}
-                            onTouchCancel={(e) => { e.preventDefault(); handleMobileButtonUp('back'); }}
-                        >
-                            <span className="text-white text-2xl">▼</span>
-                        </button>
-                        
-                        {/* Left Button (Rotate Left) */}
-                        <button
-                            className="absolute left-0 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/60 border-2 border-white/40 rounded-lg flex items-center justify-center active:bg-white/30 active:scale-95 transition-all"
-                            onTouchStart={(e) => { e.preventDefault(); handleMobileButtonDown('left'); }}
-                            onTouchEnd={(e) => { e.preventDefault(); handleMobileButtonUp('left'); }}
-                            onTouchCancel={(e) => { e.preventDefault(); handleMobileButtonUp('left'); }}
-                        >
-                            <span className="text-white text-2xl">◀</span>
-                        </button>
-                        
-                        {/* Right Button (Rotate Right) */}
-                        <button
-                            className="absolute right-0 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/60 border-2 border-white/40 rounded-lg flex items-center justify-center active:bg-white/30 active:scale-95 transition-all"
-                            onTouchStart={(e) => { e.preventDefault(); handleMobileButtonDown('right'); }}
-                            onTouchEnd={(e) => { e.preventDefault(); handleMobileButtonUp('right'); }}
-                            onTouchCancel={(e) => { e.preventDefault(); handleMobileButtonUp('right'); }}
-                        >
-                            <span className="text-white text-2xl">▶</span>
-                        </button>
-                        
-                        {/* Center indicator */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/40 border border-white/20 flex items-center justify-center pointer-events-none">
-                            <span className="text-white/40 text-[8px] retro-text">MOVE</span>
-                        </div>
-                    </div>
-                </div>
+                <VirtualJoystick
+                    onMove={(input) => { joystickInputRef.current = input; }}
+                    size={120}
+                    position={gameSettings.leftHanded ? 'right' : 'left'}
+                    deadzone={0.1}
+                />
              )}
              
-             {/* Mobile Action Buttons */}
+             {/* Mobile Touch Camera Control - covers entire screen, joystick handles its own touches */}
              {isMobile && isLandscape && (
-                <div className="absolute bottom-8 right-8 flex flex-col gap-3 z-30">
+                <TouchCameraControl
+                    onRotate={(delta) => { cameraRotationRef.current = delta; }}
+                    sensitivity={gameSettings.cameraSensitivity || 0.3}
+                />
+             )}
+             
+             {/* Mobile Jump Button - positioned above action buttons on opposite side of joystick */}
+             {isMobile && isLandscape && (
+                <button 
+                    className={`absolute bottom-[200px] ${gameSettings.leftHanded ? 'left-6' : 'right-6'} w-16 h-16 rounded-full bg-green-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 active:bg-green-500 transition-all z-30 touch-none`}
+                    onTouchStart={(e) => { e.preventDefault(); jumpRequestedRef.current = true; }}
+                    onTouchEnd={(e) => { e.preventDefault(); jumpRequestedRef.current = false; }}
+                >
+                    <span className="text-2xl">⬆️</span>
+                </button>
+             )}
+             
+             {/* Mobile Action Buttons - positioned on opposite side of joystick */}
+             {isMobile && isLandscape && (
+                <div className={`absolute bottom-[70px] ${gameSettings.leftHanded ? 'left-6' : 'right-6'} flex flex-col gap-2 z-30`}>
                     {/* Emote Button */}
                     <button 
-                        className="w-14 h-14 rounded-full bg-purple-600/80 border-2 border-white/40 flex items-center justify-center active:scale-95 transition-transform"
+                        className="w-12 h-12 rounded-full bg-purple-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none"
                         onClick={() => setShowEmoteWheel(true)}
                     >
-                        <span className="text-2xl">😄</span>
+                        <span className="text-xl">😄</span>
                     </button>
                     
                     {/* Chat Button */}
                     <button 
-                        className="w-14 h-14 rounded-full bg-blue-600/80 border-2 border-white/40 flex items-center justify-center active:scale-95 transition-transform"
+                        className="w-12 h-12 rounded-full bg-blue-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none"
                         onClick={() => setShowMobileChat(true)}
                     >
                         <span className="text-2xl">💬</span>
@@ -3582,7 +4090,7 @@ const VoxelWorld = ({
                     {/* Interact Button (E key) */}
                     {(nearbyPortal || nearbyInteraction) && (
                         <button 
-                            className="w-14 h-14 rounded-full bg-green-600/80 border-2 border-white/40 flex items-center justify-center active:scale-95 transition-transform animate-pulse"
+                            className="w-12 h-12 rounded-full bg-yellow-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform animate-pulse touch-none"
                             onClick={() => {
                                 if (nearbyPortal) {
                                     handlePortalEnter();
@@ -3698,7 +4206,11 @@ const VoxelWorld = ({
              )}
              
              {/* HUD - Top Right */}
-             <GameHUD onOpenPuffles={() => setShowPufflePanel(true)} />
+             <GameHUD 
+                onOpenPuffles={() => setShowPufflePanel(true)}
+                onOpenSettings={() => setShowSettings(true)}
+                isMobile={isMobile}
+             />
              
              {/* Door/Portal Prompt */}
              <Portal 
@@ -3713,7 +4225,7 @@ const VoxelWorld = ({
              
              {/* Town Interaction Prompt */}
              {nearbyInteraction && !nearbyPortal && (
-                <div className={`absolute ${isMobile ? 'bottom-32 right-28' : 'bottom-24 left-1/2 -translate-x-1/2'} bg-black/70 backdrop-blur-sm px-4 py-2 rounded-xl border border-white/20 text-center animate-bounce-subtle z-20`}>
+                <div className={`absolute ${isMobile ? 'bottom-[180px] right-28' : 'bottom-24 left-1/2 -translate-x-1/2'} bg-black/70 backdrop-blur-sm px-4 py-2 rounded-xl border border-white/20 text-center animate-bounce-subtle z-20`}>
                     <p className="text-white retro-text text-sm">{nearbyInteraction.message}</p>
                     <p className="text-yellow-400 text-xs mt-1 retro-text">{isMobile ? 'Tap E' : 'Press E'}</p>
                 </div>
@@ -3786,6 +4298,14 @@ const VoxelWorld = ({
                      </div>
                  </div>
              )}
+             
+             {/* Settings Menu Modal */}
+             <SettingsMenu
+                isOpen={showSettings}
+                onClose={() => setShowSettings(false)}
+                settings={gameSettings}
+                onSettingsChange={setGameSettings}
+             />
         </div>
     );
 };

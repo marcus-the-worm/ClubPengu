@@ -232,9 +232,10 @@ class CollisionSystem {
      * @param {number} x - Test X position
      * @param {number} z - Test Z position
      * @param {number} radius - Player/object radius
+     * @param {number} y - Optional Y position for height-based collision (default 0)
      * @returns {Object|null} First collider hit, or null
      */
-    checkCollision(x, z, radius = 0.5) {
+    checkCollision(x, z, radius = 0.5, y = 0) {
         // Get nearby colliders from spatial hash
         const cellKey = this._getCellKey(x, z);
         const nearbyIds = new Set();
@@ -257,6 +258,16 @@ class CollisionSystem {
             const collider = this.colliders.get(id);
             if (!collider || collider.type === CollisionSystem.TYPES.NONE) continue;
             
+            // Height-based collision check
+            // Get height from either .height (cylinder) or .size.y (box)
+            const colliderHeight = collider.shape.height || collider.shape.size?.y || 100; // Default to tall if not specified
+            const colliderTop = colliderHeight;
+            
+            // If player Y is above the collider, skip collision (player is on top)
+            if (y >= colliderTop - 0.1) {
+                continue; // Player is above this collider
+            }
+            
             if (this._testCollision(x, z, radius, collider)) {
                 return collider;
             }
@@ -264,23 +275,70 @@ class CollisionSystem {
         
         return null;
     }
+    
+    /**
+     * Check if player can land on any collider at position
+     * @returns {{ canLand: boolean, landingY: number, collider: Object|null }}
+     */
+    checkLanding(x, z, y, radius = 0.5) {
+        const nearbyIds = new Set();
+        
+        // Check current cell and adjacent cells
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                const cx = Math.floor(x / this.cellSize) + dx;
+                const cz = Math.floor(z / this.cellSize) + dz;
+                const key = `${cx},${cz}`;
+                const cell = this.grid.get(key);
+                if (cell) {
+                    cell.forEach(id => nearbyIds.add(id));
+                }
+            }
+        }
+        
+        let highestLanding = { canLand: false, landingY: 0, collider: null };
+        
+        for (const id of nearbyIds) {
+            const collider = this.colliders.get(id);
+            if (!collider || collider.type === CollisionSystem.TYPES.NONE) continue;
+            if (collider.type === CollisionSystem.TYPES.WATER) continue; // Can't land on water
+            
+            // Check if player is within XZ bounds of this collider
+            if (this._testCollision(x, z, radius, collider)) {
+                // Get height from either .height (cylinder) or .size.y (box)
+                const colliderHeight = collider.shape.height || collider.shape.size?.y || 0;
+                
+                // Player can land if they're above the collider top
+                if (y >= colliderHeight - 0.5 && colliderHeight > highestLanding.landingY) {
+                    highestLanding = {
+                        canLand: true,
+                        landingY: colliderHeight,
+                        collider: collider
+                    };
+                }
+            }
+        }
+        
+        return highestLanding;
+    }
 
     /**
      * Check if movement from (x, z) to (newX, newZ) would cause collision
      * Returns the position we can safely move to
+     * @param {number} y - Player Y position for height-based collision
      * @returns {{ x: number, z: number, collided: boolean, collider: Object|null }}
      */
-    checkMovement(x, z, newX, newZ, radius = 0.5) {
+    checkMovement(x, z, newX, newZ, radius = 0.5, y = 0) {
         // First check if destination is clear
-        const collision = this.checkCollision(newX, newZ, radius);
+        const collision = this.checkCollision(newX, newZ, radius, y);
         
         if (!collision) {
             return { x: newX, z: newZ, collided: false, collider: null };
         }
         
         // Try sliding along walls (separate X and Z movement)
-        const slideX = this.checkCollision(newX, z, radius);
-        const slideZ = this.checkCollision(x, newZ, radius);
+        const slideX = this.checkCollision(newX, z, radius, y);
+        const slideZ = this.checkCollision(x, newZ, radius, y);
         
         // Prefer movement direction that works
         if (!slideX) {
@@ -544,6 +602,7 @@ class CollisionSystem {
 }
 
 export default CollisionSystem;
+
 
 
 

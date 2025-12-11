@@ -74,6 +74,9 @@ export function MultiplayerProvider({ children }) {
                 console.log('✅ Connected to multiplayer server');
                 setConnected(true);
                 
+                // Expose WebSocket globally for ChallengeContext
+                window.__multiplayerWs = ws;
+                
                 // Start ping interval to keep connection alive
                 pingIntervalRef.current = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {

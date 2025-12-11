@@ -268,78 +268,368 @@ export const ASSETS = {
     },
     BODY: {
         none: [],
+        // Scarf - cozy knitted scarf wrapping fully around neck with tail
         scarf: (() => {
-            let v = [];
-            for(let x=-4; x<=4; x++) for(let z=-4; z<=4; z++) if(x*x+z*z>9 && x*x+z*z<25) v.push({x, y:4, z, c:'#AA22AA'});
-            v.push({x:3, y:3, z:4, c:'#AA22AA'}, {x:3, y:2, z:4, c:'#AA22AA'});
-            return v;
+            const voxelMap = new Map();
+            const addVoxel = (x, y, z, c) => {
+                const key = `${x},${y},${z}`;
+                if (!voxelMap.has(key)) voxelMap.set(key, {x, y, z, c});
+            };
+            
+            const scarfColor = '#8B2252';
+            const scarfStripe = '#D4A574';
+            
+            // Full wrap around neck at y=4 - complete circle
+            for(let x=-6; x<=6; x++) for(let z=-6; z<=6; z++) {
+                const d = Math.sqrt(x*x+z*z);
+                // Ring around neck - full 360 degrees
+                if(d > 5.5 && d < 6.8) {
+                    const stripe = (x + z) % 5 === 0;
+                    addVoxel(x, 4, z, stripe ? scarfStripe : scarfColor);
+                }
+            }
+            
+            // Tail hanging down front
+            addVoxel(2, 3, 6, scarfColor);
+            addVoxel(2, 2, 6.5, scarfStripe);
+            addVoxel(2, 1, 7, scarfColor);
+            addVoxel(2, 0, 7, scarfColor);
+            addVoxel(2, -1, 7.5, scarfStripe);
+            addVoxel(2, -2, 7.5, scarfColor);
+            
+            return Array.from(voxelMap.values());
         })(),
+        // Bowtie - sits on front of body at white belly area
         bowtie: [
-            {x:0, y:4, z:4, c:'red'}, {x:-1, y:4.2, z:4, c:'red'}, {x:1, y:4.2, z:4, c:'red'},
-            {x:-2, y:4.5, z:3.8, c:'red'}, {x:2, y:4.5, z:3.8, c:'red'}
+            {x:0, y:4, z:5.5, c:'red'}, 
+            {x:-1, y:4.2, z:5.3, c:'red'}, {x:1, y:4.2, z:5.3, c:'red'},
+            {x:-2, y:4.5, z:5, c:'red'}, {x:2, y:4.5, z:5, c:'red'}
         ],
+        // Gold Chain - thick Cuban link chain with detailed pendant
         goldChain: (() => {
-            let v = [];
-             for(let x=-4; x<=4; x++) for(let z=-4; z<=4; z++) if(x*x+z*z>12 && x*x+z*z<18) v.push({x, y:3.5, z, c:PALETTE.gold});
-             v.push({x:0, y:2, z:4.5, c:PALETTE.gold});
-             v.push({x:-1, y:2, z:4.5, c:PALETTE.gold});
-             v.push({x:1, y:2, z:4.5, c:PALETTE.gold});
-             return v;
+            const voxelMap = new Map();
+            const addVoxel = (x, y, z, c, glow) => {
+                const key = `${x},${y},${z}`;
+                if (!voxelMap.has(key)) {
+                    const v = {x, y, z, c};
+                    if (glow) v.glow = true;
+                    voxelMap.set(key, v);
+                }
+            };
+            
+            const gold = '#FFD700';       // Bright gold
+            const goldDark = '#B8860B';   // Darker gold for depth
+            const goldLight = '#FFEC8B';  // Shine highlights
+            const diamond = '#E0FFFF';    // Diamond sparkle
+            
+            // Main chain ring around neck at y=4 - thick with two-tone
+            for(let x=-6; x<=6; x++) for(let z=-6; z<=6; z++) {
+                const d = Math.sqrt(x*x+z*z);
+                if(d > 5.6 && d < 6.8) {
+                    // Outer edge darker, inner brighter for 3D effect
+                    const isOuter = d > 6.2;
+                    addVoxel(x, 4, z, isOuter ? goldDark : gold);
+                }
+            }
+            
+            // Second layer for thickness at y=3 (partial, front only)
+            for(let x=-5; x<=5; x++) for(let z=3; z<=6; z++) {
+                const d = Math.sqrt(x*x+z*z);
+                if(d > 5.6 && d < 6.5) {
+                    addVoxel(x, 3, z, goldDark);
+                }
+            }
+            
+            // Highlight shimmer on top at y=5 (partial)
+            for(let x=-4; x<=4; x++) for(let z=4; z<=6; z++) {
+                const d = Math.sqrt(x*x+z*z);
+                if(d > 5.8 && d < 6.3 && (x + z) % 3 === 0) {
+                    addVoxel(x, 5, z, goldLight);
+                }
+            }
+            
+            // V-chain going down to pendant
+            addVoxel(-2, 3, 7, gold);
+            addVoxel(2, 3, 7, gold);
+            addVoxel(-2, 2, 7, goldDark);
+            addVoxel(2, 2, 7, goldDark);
+            addVoxel(-1, 1, 7, gold);
+            addVoxel(1, 1, 7, gold);
+            addVoxel(0, 0, 7, goldDark);
+            addVoxel(0, -1, 7, gold);
+            
+            // Large medallion pendant
+            const py = -3; // pendant center y
+            const pz = 8;  // pendant z
+            
+            // Outer ring of medallion
+            for(let mx=-2; mx<=2; mx++) for(let my=-2; my<=2; my++) {
+                const d = Math.sqrt(mx*mx + my*my);
+                if(d >= 1.5 && d <= 2.5) {
+                    addVoxel(mx, py + my, pz, gold);
+                }
+            }
+            
+            // Inner medallion disc
+            addVoxel(-1, py, pz, goldDark);
+            addVoxel(1, py, pz, goldDark);
+            addVoxel(0, py - 1, pz, goldDark);
+            addVoxel(0, py + 1, pz, goldDark);
+            
+            // Center diamond
+            addVoxel(0, py, pz + 1, diamond, true);
+            
+            // Diamond facet sparkles
+            addVoxel(0, py + 1, pz + 1, goldLight);
+            addVoxel(0, py - 1, pz + 1, goldLight);
+            
+            // Medallion back plate for depth
+            for(let mx=-1; mx<=1; mx++) for(let my=-1; my<=1; my++) {
+                addVoxel(mx, py + my, pz - 1, goldDark);
+            }
+            
+            return Array.from(voxelMap.values());
         })(),
+        // Tie - hangs from neck down front of body
         tie: [
-             {x:0, y:4, z:4.2, c:'red'}, {x:0, y:3, z:4.2, c:'red'}, {x:0, y:2, z:4.3, c:'red'}, {x:0, y:1, z:4.4, c:'red'}
+             {x:0, y:4, z:5.5, c:'red'}, {x:0, y:3, z:5.8, c:'red'}, 
+             {x:0, y:2, z:6, c:'red'}, {x:0, y:1, z:6, c:'red'},
+             {x:0, y:0, z:6, c:'red'}, {x:-0.5, y:-0.5, z:5.8, c:'red'}, {x:0.5, y:-0.5, z:5.8, c:'red'}
         ],
+        // White Shirt - wraps around body as outer layer (radius 6-7)
         shirtWhite: (() => {
              let v = [];
-             for(let x=-4; x<=4; x++) for(let y=-3; y<4; y++) for(let z=-4; z<=4; z++) if(x*x+z*z < 25 && x*x+z*z > 16) v.push({x,y,z,c:'white'});
+             for(let y=-4; y<4; y++) {
+                 // Body radius varies with y: larger at middle, smaller at top/bottom
+                 const bodyRadius = Math.sqrt(Math.max(0, 36 - y*y*0.8));
+                 const innerR = bodyRadius;
+                 const outerR = bodyRadius + 1.2;
+                 for(let x=-7; x<=7; x++) for(let z=-7; z<=7; z++) {
+                     const d = Math.sqrt(x*x+z*z);
+                     // Wrap around body, but not on belly (front where z > 2)
+                     if(d >= innerR && d <= outerR && !(z > 3 && x > -3 && x < 3)) {
+                         v.push({x,y,z,c:'white'});
+                     }
+                 }
+             }
              return v;
         })(),
+        // Black Shirt - same as white but black color
         shirtBlack: (() => {
              let v = [];
-             for(let x=-4; x<=4; x++) for(let y=-3; y<4; y++) for(let z=-4; z<=4; z++) if(x*x+z*z < 25 && x*x+z*z > 16) v.push({x,y,z,c:'#222'});
+             for(let y=-4; y<4; y++) {
+                 const bodyRadius = Math.sqrt(Math.max(0, 36 - y*y*0.8));
+                 const innerR = bodyRadius;
+                 const outerR = bodyRadius + 1.2;
+                 for(let x=-7; x<=7; x++) for(let z=-7; z<=7; z++) {
+                     const d = Math.sqrt(x*x+z*z);
+                     if(d >= innerR && d <= outerR && !(z > 3 && x > -3 && x < 3)) {
+                         v.push({x,y,z,c:'#222'});
+                     }
+                 }
+             }
              return v;
         })(),
+        // Overalls - wraps around lower body
         overalls: (() => {
              let v = [];
-             for(let x=-4; x<=4; x++) for(let y=-5; y<0; y++) for(let z=-4; z<=4; z++) if(x*x+z*z < 25 && x*x+z*z > 16) v.push({x,y,z,c:'blue'});
-             v.push({x:-2, y:1, z:4, c:'blue'}, {x:2, y:1, z:4, c:'blue'});
+             for(let y=-6; y<1; y++) {
+                 const bodyRadius = Math.sqrt(Math.max(0, 36 - y*y*0.9));
+                 const innerR = bodyRadius;
+                 const outerR = bodyRadius + 1.2;
+                 for(let x=-7; x<=7; x++) for(let z=-7; z<=7; z++) {
+                     const d = Math.sqrt(x*x+z*z);
+                     if(d >= innerR && d <= outerR) {
+                         v.push({x,y,z,c:'blue'});
+                     }
+                 }
+             }
+             // Straps going up the front
+             v.push({x:-2, y:1, z:5.5, c:'blue'}, {x:2, y:1, z:5.5, c:'blue'});
+             v.push({x:-2, y:2, z:5.2, c:'blue'}, {x:2, y:2, z:5.2, c:'blue'});
+             v.push({x:-2, y:3, z:5, c:'blue'}, {x:2, y:3, z:5, c:'blue'});
+             // Buckles
+             v.push({x:-2, y:3, z:5.3, c:'gold'}, {x:2, y:3, z:5.3, c:'gold'});
              return v;
         })(),
+        // Bikini - small accent pieces on body surface
         bikini: [
-             {x:-2, y:1, z:4.2, c:'pink'}, {x:2, y:1, z:4.2, c:'pink'},
-             {x:0, y:-5, z:4.2, c:'pink'}
+             {x:-2, y:1, z:5.8, c:'pink'}, {x:2, y:1, z:5.8, c:'pink'},
+             {x:0, y:-5, z:5.5, c:'pink'}, {x:-1, y:-5, z:5.3, c:'pink'}, {x:1, y:-5, z:5.3, c:'pink'}
         ],
+        // Backpack - sits on back of body (negative z)
         backpack: (() => {
              let v = [];
-             for(let x=-3; x<=3; x++) for(let y=-2; y<4; y++) v.push({x, y, z:-5, c:'brown'});
+             for(let x=-3; x<=3; x++) for(let y=-2; y<4; y++) {
+                 v.push({x, y, z:-6, c:'brown'});
+                 v.push({x, y, z:-7, c:'brown'});
+             }
+             // Straps
+             v.push({x:-2, y:4, z:-5, c:'brown'}, {x:2, y:4, z:-5, c:'brown'});
              return v;
         })(),
+        // Cape - flows from shoulders down back
         cape: (() => {
              let v = [];
-             for(let x=-4; x<=4; x++) for(let y=-6; y<4; y++) v.push({x, y, z:-5, c:'red'});
+             for(let x=-5; x<=5; x++) for(let y=-7; y<4; y++) {
+                 // Cape is attached at shoulders and flows down
+                 const depth = y < 0 ? -6 - Math.abs(y)*0.1 : -6;
+                 v.push({x, y, z:depth, c:'red'});
+             }
              return v;
         })(),
+        // Life Vest - wraps around torso as outer layer
         lifevest: (() => {
              let v = [];
-             for(let x=-4; x<=4; x++) for(let y=-3; y<3; y++) for(let z=-4; z<=4; z++) if(x*x+z*z > 16 && x*x+z*z<26) v.push({x,y,z,c:'orange'});
+             for(let y=-3; y<4; y++) {
+                 const bodyRadius = Math.sqrt(Math.max(0, 36 - y*y*0.8));
+                 const innerR = bodyRadius;
+                 const outerR = bodyRadius + 1.5;
+                 for(let x=-7; x<=7; x++) for(let z=-7; z<=7; z++) {
+                     const d = Math.sqrt(x*x+z*z);
+                     if(d >= innerR && d <= outerR) {
+                         v.push({x,y,z,c:'orange'});
+                     }
+                 }
+             }
              return v;
         })(),
-        guitar: [
-             {x:3, y:0, z:5, c:'brown'}, {x:4, y:-1, z:5, c:'brown'}, {x:5, y:-2, z:5, c:'brown'},
-             {x:2, y:1, z:5.2, c:'black'}
-        ],
-        sword: [
-             {x:5, y:-2, z:0, c:'silver'}, {x:5, y:-1, z:0, c:'silver'}, {x:5, y:0, z:0, c:'silver'}, {x:5, y:1, z:0, c:'silver'},
-             {x:5, y:-3, z:0, c:'brown'}, {x:4, y:-2, z:0, c:'gold'}, {x:6, y:-2, z:0, c:'gold'}
-        ],
+        // Guitar - acoustic guitar with detailed body, neck, and strings
+        guitar: (() => {
+            const voxelMap = new Map(); // Prevent duplicates
+            const addVoxel = (x, y, z, c) => {
+                const key = `${Math.round(x*2)/2},${Math.round(y*2)/2},${Math.round(z*2)/2}`;
+                if (!voxelMap.has(key)) voxelMap.set(key, {x, y, z, c});
+            };
+            
+            const bodyWood = '#8B4513';
+            const bodyDark = '#5D3A1A';
+            const neck = '#DEB887';
+            const soundHole = '#1A1A1A';
+            const headstock = '#2F1810';
+            const tuners = '#FFD700';
+            const strap = '#2F1810';
+            
+            // Guitar body - figure-8 shape (front face only, no depth layer)
+            for(let lx=-2; lx<=2; lx++) for(let ly=-3; ly<=0; ly++) {
+                const d = lx*lx + ly*ly;
+                if(d <= 5) addVoxel(4+lx, ly-1, 6, bodyWood);
+            }
+            for(let lx=-2; lx<=2; lx++) for(let ly=0; ly<=2; ly++) {
+                const d = lx*lx + ly*ly;
+                if(d <= 4) addVoxel(4+lx, ly+1, 6, bodyWood);
+            }
+            
+            // Sound hole
+            addVoxel(4, 0, 6.5, soundHole);
+            
+            // Rosette
+            addVoxel(3, 0, 6.3, '#FFD700');
+            addVoxel(5, 0, 6.3, '#FFD700');
+            
+            // Bridge
+            addVoxel(4, -2, 6.3, headstock);
+            
+            // Neck
+            for(let ny=3; ny<9; ny++) {
+                addVoxel(4, ny, 6, neck);
+            }
+            
+            // Headstock
+            addVoxel(4, 9, 6, headstock);
+            addVoxel(4, 10, 6, headstock);
+            
+            // Tuning pegs
+            addVoxel(3, 9, 6, tuners);
+            addVoxel(3, 10, 6, tuners);
+            addVoxel(5, 9, 6, tuners);
+            addVoxel(5, 10, 6, tuners);
+            
+            // Guitar strap
+            addVoxel(2, 3, 5, strap);
+            addVoxel(1, 4, 4, strap);
+            addVoxel(0, 5, 3, strap);
+            addVoxel(-1, 5, 2, strap);
+            addVoxel(-2, 4, -2, strap);
+            addVoxel(-3, 3, -4, strap);
+            
+            return Array.from(voxelMap.values());
+        })(),
+        // Sword - elegant knight's sword with detailed hilt and scabbard
+        sword: (() => {
+            const voxelMap = new Map();
+            const addVoxel = (x, y, z, c, glow) => {
+                // Use integer keys to prevent floating point duplicates
+                const key = `${Math.round(x)},${Math.round(y)},${Math.round(z)}`;
+                if (!voxelMap.has(key)) {
+                    const v = {x: Math.round(x), y: Math.round(y), z: Math.round(z), c};
+                    if (glow) v.glow = true;
+                    voxelMap.set(key, v);
+                }
+            };
+            
+            const blade = '#C0C0C0';
+            const hiltGold = '#FFD700';
+            const leather = '#4A3728';
+            const gem = '#DC143C';
+            const scabbard = '#2F1810';
+            
+            // Scabbard at hip
+            for(let y=-5; y<2; y++) {
+                addVoxel(8, y, -1, scabbard);
+            }
+            addVoxel(9, -4, -1, hiltGold); // Metal band
+            addVoxel(9, 0, -1, hiltGold);  // Metal band
+            
+            // Blade
+            for(let y=2; y<=10; y++) {
+                addVoxel(8, y, 0, blade);
+            }
+            
+            // Crossguard
+            addVoxel(8, 2, -2, hiltGold);
+            addVoxel(8, 2, -1, hiltGold);
+            addVoxel(8, 2, 1, hiltGold);
+            addVoxel(8, 2, 2, hiltGold);
+            
+            // Handle
+            addVoxel(8, 1, 0, leather);
+            addVoxel(8, 0, 0, leather);
+            addVoxel(8, -1, 0, leather);
+            
+            // Pommel with gem
+            addVoxel(8, -2, 0, hiltGold);
+            addVoxel(8, -3, 0, gem, true);
+            
+            // Belt
+            addVoxel(7, -4, 0, leather);
+            addVoxel(6, -4, 0, hiltGold);
+            
+            return Array.from(voxelMap.values());
+        })(),
+        // Shield - on left side
         shield: (() => {
              let v = [];
-             for(let y=-2; y<2; y++) for(let z=-2; z<2; z++) v.push({x:-6, y, z, c:'silver'});
+             for(let y=-2; y<3; y++) for(let z=-2; z<3; z++) {
+                 v.push({x:-8, y, z, c:'silver'});
+             }
+             // Shield emblem
+             v.push({x:-8.5, y:0, z:0, c:'gold'});
              return v;
         })(),
+        // Tutu - skirt around waist at outer body surface
         tutu: (() => {
              let v = [];
-             for(let x=-5; x<=5; x++) for(let z=-5; z<=5; z++) if(x*x+z*z > 20 && x*x+z*z < 36) v.push({x, y:-5, z, c:'pink'});
+             const y = -5;
+             const bodyRadius = Math.sqrt(Math.max(0, 36 - y*y*0.9));
+             for(let x=-7; x<=7; x++) for(let z=-7; z<=7; z++) {
+                 const d = Math.sqrt(x*x+z*z);
+                 if(d > bodyRadius && d < bodyRadius + 3) {
+                     v.push({x, y, z, c:'pink'});
+                     // Add ruffles in a pattern
+                     if((x+z) % 2 === 0) v.push({x, y:-4.5, z, c:'pink'});
+                 }
+             }
              return v;
         })()
     }

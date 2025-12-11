@@ -515,10 +515,12 @@ class PropsFactory {
             });
         }
         
-        // Collision
+        // Collision - height is the seat height (so players can stand on top)
+        // The collision blocks at seat level, allowing jumping onto the bench
         group.userData.collision = {
             type: 'box',
-            size: { x: benchWidth + 0.2, y: seatHeight + 0.6, z: benchDepth + 0.3 },
+            size: { x: benchWidth + 0.2, y: seatHeight, z: benchDepth + 0.3 },
+            height: seatHeight, // Explicit height for landing detection
         };
         
         // Interaction zone (for sitting) with two snap points
@@ -960,6 +962,145 @@ class PropsFactory {
             type: 'box',
             size: { x: length, y: postHeight, z: 0.3 },
         };
+        
+        return group;
+    }
+
+    // ==================== IPAD/TABLET PROP ====================
+    
+    /**
+     * Create an iPad/tablet prop for penguins playing games
+     * This shows when players are in an active match
+     * @param {string} screenColor - Color of the screen glow
+     * @returns {THREE.Group}
+     */
+    createTablet(screenColor = '#00FFFF') {
+        const THREE = this.THREE;
+        const group = new THREE.Group();
+        group.name = 'tablet';
+        
+        // Tablet dimensions (held horizontally)
+        const width = 0.8;
+        const height = 0.5;
+        const depth = 0.04;
+        
+        // Tablet body (dark gray)
+        const bodyMat = this.getMaterial('#1A1A2E', { roughness: 0.3, metalness: 0.5 });
+        const bodyGeo = new THREE.BoxGeometry(width, height, depth);
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.castShadow = true;
+        group.add(body);
+        
+        // Screen bezel
+        const bezelMat = this.getMaterial('#0A0A14', { roughness: 0.2 });
+        const bezelGeo = new THREE.BoxGeometry(width * 0.92, height * 0.88, depth * 0.5);
+        const bezel = new THREE.Mesh(bezelGeo, bezelMat);
+        bezel.position.z = depth * 0.3;
+        group.add(bezel);
+        
+        // Glowing screen
+        const screenMat = this.getMaterial(screenColor, { 
+            roughness: 0.1, 
+            emissive: screenColor,
+            emissiveIntensity: 0.6
+        });
+        const screenGeo = new THREE.PlaneGeometry(width * 0.86, height * 0.82);
+        const screen = new THREE.Mesh(screenGeo, screenMat);
+        screen.position.z = depth * 0.52;
+        group.add(screen);
+        
+        // Screen reflection highlight
+        const highlightMat = this.getMaterial('#FFFFFF', { 
+            transparent: true, 
+            opacity: 0.1,
+            roughness: 0
+        });
+        const highlightGeo = new THREE.PlaneGeometry(width * 0.4, height * 0.3);
+        const highlight = new THREE.Mesh(highlightGeo, highlightMat);
+        highlight.position.set(-width * 0.15, height * 0.2, depth * 0.53);
+        highlight.rotation.z = -0.2;
+        group.add(highlight);
+        
+        // Game icon on screen (simple card symbol)
+        const iconGeo = new THREE.PlaneGeometry(0.15, 0.2);
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '48px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚔️', 32, 32);
+        const texture = new THREE.CanvasTexture(canvas);
+        const iconMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+        const icon = new THREE.Mesh(iconGeo, iconMat);
+        icon.position.z = depth * 0.54;
+        group.add(icon);
+        
+        // Small point light for glow effect (very subtle)
+        const glow = new THREE.PointLight(screenColor, 0.3, 2, 2);
+        glow.position.z = depth * 0.6;
+        glow.castShadow = false;
+        group.add(glow);
+        
+        // Position for holding in front of penguin
+        // The tablet should be held at chest height, tilted slightly
+        group.position.set(0, 0.8, 0.6);
+        group.rotation.x = -0.3; // Tilt back slightly
+        
+        return group;
+    }
+    
+    /**
+     * Create a match indicator effect (floating cards/emojis)
+     * Shown around players who are in an active match
+     * @returns {THREE.Group}
+     */
+    createMatchIndicator() {
+        const THREE = this.THREE;
+        const group = new THREE.Group();
+        group.name = 'match_indicator';
+        
+        // Floating card symbols around the player
+        const symbols = ['🔥', '💧', '❄️'];
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        
+        symbols.forEach((symbol, i) => {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, 64, 64);
+            ctx.font = '48px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(symbol, 32, 32);
+            
+            const texture = new THREE.CanvasTexture(canvas.cloneNode(true).getContext('2d').canvas);
+            // Clone context and redraw
+            const cloneCanvas = document.createElement('canvas');
+            cloneCanvas.width = 64;
+            cloneCanvas.height = 64;
+            const cloneCtx = cloneCanvas.getContext('2d');
+            cloneCtx.font = '48px Arial';
+            cloneCtx.textAlign = 'center';
+            cloneCtx.textBaseline = 'middle';
+            cloneCtx.fillText(symbol, 32, 32);
+            const tex = new THREE.CanvasTexture(cloneCanvas);
+            
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+            const sprite = new THREE.Sprite(mat);
+            
+            const angle = (i / symbols.length) * Math.PI * 2;
+            sprite.position.set(
+                Math.cos(angle) * 1.2,
+                2.5 + Math.sin(Date.now() * 0.001 + i) * 0.2,
+                Math.sin(angle) * 1.2
+            );
+            sprite.scale.set(0.4, 0.4, 1);
+            
+            group.add(sprite);
+        });
         
         return group;
     }

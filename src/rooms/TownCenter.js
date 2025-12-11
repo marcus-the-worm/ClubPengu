@@ -445,10 +445,19 @@ class TownCenter {
      * @param {number} newX - Target X position
      * @param {number} newZ - Target Z position
      * @param {number} radius - Player collision radius
+     * @param {number} y - Player Y position for height-based collision
      * @returns {Object} { x, z, collided, collider }
      */
-    checkPlayerMovement(x, z, newX, newZ, radius = 0.8) {
-        return this.collisionSystem.checkMovement(x, z, newX, newZ, radius);
+    checkPlayerMovement(x, z, newX, newZ, radius = 0.8, y = 0) {
+        return this.collisionSystem.checkMovement(x, z, newX, newZ, radius, y);
+    }
+    
+    /**
+     * Check if player can land on any object at position
+     * @returns {{ canLand: boolean, landingY: number, collider: Object|null }}
+     */
+    checkLanding(x, z, y, radius = 0.8) {
+        return this.collisionSystem.checkLanding(x, z, y, radius);
     }
 
     /**

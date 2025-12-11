@@ -1,16 +1,18 @@
 /**
  * Club Penguin Multiplayer WebSocket Server
- * Simple agar.io-style server for real-time player sync
+ * Handles real-time player sync, P2P challenges, and match coordination
  */
 
 import { WebSocketServer } from 'ws';
 import http from 'http';
+import { StatsService, InboxService, ChallengeService, MatchService } from './services/index.js';
 
 const PORT = process.env.PORT || 3001;
 const MAX_CONNECTIONS_PER_IP = 2; // Maximum allowed connections per IP address
+const IS_DEV = process.env.NODE_ENV !== 'production'; // Development mode flag
 
 // Game state
-const players = new Map(); // playerId -> { id, name, room, position, rotation, appearance, puffle, ip }
+const players = new Map(); // playerId -> { id, name, room, position, rotation, appearance, puffle, ip, coins }
 const rooms = new Map(); // roomId -> Set of playerIds
 const ipConnections = new Map(); // ip -> Set of playerIds (for tracking connections per IP)
 
@@ -21,13 +23,17 @@ const beachBalls = new Map(); // roomId -> { x, z, vx, vz }
 beachBalls.set('igloo1', { x: 4.5, z: 3, vx: 0, vz: 0 });
 beachBalls.set('igloo2', { x: 4.5, z: 3, vx: 0, vz: 0 });
 
+// Player coins storage (playerId -> coins)
+// In production, this would be in a database
+const playerCoins = new Map();
+
 // Create HTTP server to access request headers for IP
 const server = http.createServer();
 
 // Create WebSocket server attached to HTTP server
 const wss = new WebSocketServer({ server });
 
-console.log(`🐧 Club Penguin Server running on port ${PORT}`);
+console.log(`🐧 Club Penguin Server running on port ${PORT}${IS_DEV ? ' (DEV MODE - IP limits disabled)' : ''}`);
 
 // Helper to get client IP from request
 function getClientIP(req) {
@@ -47,6 +53,9 @@ function getClientIP(req) {
 
 // Check if IP can connect (returns true if allowed)
 function canIPConnect(ip) {
+    // Bypass IP limits in development mode for easier testing
+    if (IS_DEV) return true;
+    
     const connections = ipConnections.get(ip);
     if (!connections) return true;
     return connections.size < MAX_CONNECTIONS_PER_IP;
@@ -76,15 +85,16 @@ function generateId() {
     return Math.random().toString(36).substring(2, 9);
 }
 
-// Broadcast to all players in a room except sender
-function broadcastToRoom(roomId, message, excludeId = null) {
+// Broadcast to all players in a room except specified players
+function broadcastToRoom(roomId, message, ...excludeIds) {
     const roomPlayers = rooms.get(roomId);
     if (!roomPlayers) return;
     
     const data = JSON.stringify(message);
+    const excludeSet = new Set(excludeIds.filter(Boolean));
     
     for (const playerId of roomPlayers) {
-        if (playerId === excludeId) continue;
+        if (excludeSet.has(playerId)) continue;
         
         const player = players.get(playerId);
         if (player && player.ws && player.ws.readyState === 1) {
@@ -114,6 +124,47 @@ function sendToPlayer(playerId, message) {
     if (player && player.ws && player.ws.readyState === 1) {
         player.ws.send(JSON.stringify(message));
     }
+}
+
+// ==================== P2P CHALLENGE SERVICES ====================
+
+// Initialize services
+const statsService = new StatsService();
+const inboxService = new InboxService();
+const challengeService = new ChallengeService(inboxService, statsService);
+const matchService = new MatchService(statsService, broadcastToRoom, sendToPlayer);
+
+// Get player coins (with default)
+function getPlayerCoins(playerId) {
+    if (!playerCoins.has(playerId)) {
+        playerCoins.set(playerId, 500); // Default starting coins
+    }
+    return playerCoins.get(playerId);
+}
+
+// Set player coins
+function setPlayerCoins(playerId, amount) {
+    playerCoins.set(playerId, Math.max(0, amount));
+    return playerCoins.get(playerId);
+}
+
+// Transfer coins between players
+function transferCoins(fromPlayerId, toPlayerId, amount) {
+    const fromCoins = getPlayerCoins(fromPlayerId);
+    const toCoins = getPlayerCoins(toPlayerId);
+    
+    if (fromCoins < amount) {
+        return { error: 'INSUFFICIENT_FUNDS' };
+    }
+    
+    setPlayerCoins(fromPlayerId, fromCoins - amount);
+    setPlayerCoins(toPlayerId, toCoins + amount);
+    
+    return {
+        success: true,
+        fromBalance: getPlayerCoins(fromPlayerId),
+        toBalance: getPlayerCoins(toPlayerId)
+    };
 }
 
 // Add player to room
@@ -228,6 +279,41 @@ wss.on('connection', (ws, req) => {
         
         const player = players.get(playerId);
         if (player) {
+            // Handle match disconnect - void match and refund
+            const voidResult = matchService.handleDisconnect(playerId);
+            if (voidResult) {
+                // Refund both players
+                setPlayerCoins(voidResult.player1Id, getPlayerCoins(voidResult.player1Id) + voidResult.wagerAmount);
+                setPlayerCoins(voidResult.player2Id, getPlayerCoins(voidResult.player2Id) + voidResult.wagerAmount);
+                
+                // Notify the other player
+                const otherId = playerId === voidResult.player1Id ? voidResult.player2Id : voidResult.player1Id;
+                sendToPlayer(otherId, {
+                    type: 'match_end',
+                    matchId: voidResult.matchId,
+                    result: {
+                        winner: 'void',
+                        winnerPlayerId: null,
+                        coinsWon: 0,
+                        yourCoins: getPlayerCoins(otherId),
+                        reason: 'disconnect',
+                        refunded: voidResult.wagerAmount
+                    }
+                });
+                
+                // Notify spectators
+                if (player.room) {
+                    broadcastToRoom(player.room, {
+                        type: 'match_spectate_end',
+                        matchId: voidResult.matchId,
+                        winnerId: null,
+                        reason: 'disconnect'
+                    }, playerId, otherId);
+                }
+                
+                console.log(`💔 Match voided due to disconnect. Refunded ${voidResult.wagerAmount} coins to each player.`);
+            }
+            
             // Remove IP connection tracking
             if (player.ip) {
                 removeIPConnection(player.ip, playerId);
@@ -533,6 +619,458 @@ function handleMessage(playerId, message) {
             }
             break;
         }
+        
+        // ==================== P2P CHALLENGE HANDLERS ====================
+        
+        case 'coins_sync': {
+            // Client requesting their coin balance
+            const coins = getPlayerCoins(playerId);
+            sendToPlayer(playerId, {
+                type: 'coins_update',
+                coins
+            });
+            break;
+        }
+        
+        case 'coins_update': {
+            // Client reporting local coin change (from GameManager)
+            if (typeof message.coins === 'number' && message.coins >= 0) {
+                setPlayerCoins(playerId, message.coins);
+            }
+            break;
+        }
+        
+        case 'inbox_sync': {
+            // Client requesting inbox sync
+            const messages = inboxService.getMessages(playerId);
+            sendToPlayer(playerId, {
+                type: 'inbox_update',
+                messages,
+                unreadCount: inboxService.getUnreadCount(playerId)
+            });
+            break;
+        }
+        
+        case 'inbox_read': {
+            // Mark message as read
+            inboxService.markRead(playerId, message.messageId);
+            break;
+        }
+        
+        case 'inbox_delete': {
+            // Delete message from inbox
+            inboxService.deleteMessage(playerId, message.messageId);
+            sendToPlayer(playerId, {
+                type: 'inbox_update',
+                messages: inboxService.getMessages(playerId),
+                unreadCount: inboxService.getUnreadCount(playerId)
+            });
+            break;
+        }
+        
+        case 'player_stats_request': {
+            // Request stats for another player
+            const stats = statsService.getPublicStats(message.targetPlayerId);
+            sendToPlayer(playerId, {
+                type: 'player_stats',
+                playerId: message.targetPlayerId,
+                stats
+            });
+            break;
+        }
+        
+        case 'challenge_send': {
+            // Send a challenge to another player
+            const targetPlayer = players.get(message.targetPlayerId);
+            if (!targetPlayer) {
+                sendToPlayer(playerId, {
+                    type: 'challenge_error',
+                    error: 'PLAYER_NOT_FOUND',
+                    message: 'Player not found or offline'
+                });
+                break;
+            }
+            
+            // Check if challenger has enough coins
+            const challengerCoins = getPlayerCoins(playerId);
+            if (challengerCoins < message.wagerAmount) {
+                sendToPlayer(playerId, {
+                    type: 'challenge_error',
+                    error: 'INSUFFICIENT_FUNDS',
+                    message: 'You don\'t have enough coins for this wager'
+                });
+                break;
+            }
+            
+            // Check if player is already in a match
+            if (matchService.isPlayerInMatch(playerId)) {
+                sendToPlayer(playerId, {
+                    type: 'challenge_error',
+                    error: 'IN_MATCH',
+                    message: 'You are already in a match'
+                });
+                break;
+            }
+            
+            const result = challengeService.createChallenge(
+                player,
+                targetPlayer,
+                message.gameType,
+                message.wagerAmount
+            );
+            
+            if (result.error) {
+                sendToPlayer(playerId, {
+                    type: 'challenge_error',
+                    error: result.error,
+                    message: result.message
+                });
+            } else {
+                // Notify challenger of success
+                sendToPlayer(playerId, {
+                    type: 'challenge_sent',
+                    challengeId: result.challenge.id,
+                    targetName: targetPlayer.name
+                });
+                
+                // Notify target of new challenge
+                sendToPlayer(message.targetPlayerId, {
+                    type: 'challenge_received',
+                    challenge: {
+                        id: result.challenge.id,
+                        challengerId: player.id,
+                        challengerName: player.name,
+                        challengerAppearance: player.appearance,
+                        gameType: result.challenge.gameType,
+                        wagerAmount: result.challenge.wagerAmount,
+                        expiresAt: result.challenge.expiresAt,
+                        createdAt: result.challenge.createdAt
+                    }
+                });
+                
+                // Also send updated inbox
+                sendToPlayer(message.targetPlayerId, {
+                    type: 'inbox_update',
+                    messages: inboxService.getMessages(message.targetPlayerId),
+                    unreadCount: inboxService.getUnreadCount(message.targetPlayerId)
+                });
+            }
+            break;
+        }
+        
+        case 'challenge_respond': {
+            const challenge = challengeService.getChallenge(message.challengeId);
+            if (!challenge) {
+                sendToPlayer(playerId, {
+                    type: 'challenge_error',
+                    error: 'NOT_FOUND',
+                    message: 'Challenge not found'
+                });
+                break;
+            }
+            
+            if (message.response === 'accept') {
+                // Check if target has enough coins
+                const targetCoins = getPlayerCoins(playerId);
+                if (targetCoins < challenge.wagerAmount) {
+                    sendToPlayer(playerId, {
+                        type: 'challenge_error',
+                        error: 'INSUFFICIENT_FUNDS',
+                        message: 'You don\'t have enough coins for this wager'
+                    });
+                    break;
+                }
+                
+                // Check if either player is already in a match
+                if (matchService.isPlayerInMatch(playerId) || matchService.isPlayerInMatch(challenge.challengerId)) {
+                    sendToPlayer(playerId, {
+                        type: 'challenge_error',
+                        error: 'PLAYER_IN_MATCH',
+                        message: 'One of the players is already in a match'
+                    });
+                    break;
+                }
+                
+                const result = challengeService.acceptChallenge(message.challengeId, playerId);
+                
+                if (result.error) {
+                    sendToPlayer(playerId, {
+                        type: 'challenge_error',
+                        error: result.error,
+                        message: result.message
+                    });
+                } else {
+                    // Deduct coins from both players
+                    const challenger = players.get(challenge.challengerId);
+                    const target = players.get(challenge.targetId);
+                    
+                    setPlayerCoins(challenge.challengerId, getPlayerCoins(challenge.challengerId) - challenge.wagerAmount);
+                    setPlayerCoins(challenge.targetId, getPlayerCoins(challenge.targetId) - challenge.wagerAmount);
+                    
+                    // Create match
+                    const match = matchService.createMatch(challenge, challenger, target);
+                    
+                    // Notify both players
+                    const matchStartMsg1 = {
+                        type: 'match_start',
+                        match: {
+                            id: match.id,
+                            gameType: match.gameType,
+                            player1: { id: match.player1.id, name: match.player1.name, appearance: match.player1.appearance },
+                            player2: { id: match.player2.id, name: match.player2.name, appearance: match.player2.appearance },
+                            wagerAmount: match.wagerAmount,
+                            yourRole: 'player1'
+                        },
+                        initialState: matchService.getMatchState(match.id, challenge.challengerId),
+                        coins: getPlayerCoins(challenge.challengerId)
+                    };
+                    
+                    const matchStartMsg2 = {
+                        type: 'match_start',
+                        match: {
+                            id: match.id,
+                            gameType: match.gameType,
+                            player1: { id: match.player1.id, name: match.player1.name, appearance: match.player1.appearance },
+                            player2: { id: match.player2.id, name: match.player2.name, appearance: match.player2.appearance },
+                            wagerAmount: match.wagerAmount,
+                            yourRole: 'player2'
+                        },
+                        initialState: matchService.getMatchState(match.id, challenge.targetId),
+                        coins: getPlayerCoins(challenge.targetId)
+                    };
+                    
+                    sendToPlayer(challenge.challengerId, matchStartMsg1);
+                    sendToPlayer(challenge.targetId, matchStartMsg2);
+                    
+                    // Broadcast to room that a match has started (for spectators)
+                    broadcastToRoom(match.room, {
+                        type: 'match_spectate_start',
+                        matchId: match.id,
+                        players: [
+                            { id: match.player1.id, name: match.player1.name, position: match.player1.position },
+                            { id: match.player2.id, name: match.player2.name, position: match.player2.position }
+                        ],
+                        gameType: match.gameType,
+                        wagerAmount: match.wagerAmount
+                    }, challenge.challengerId, challenge.targetId);
+                }
+            } else if (message.response === 'deny') {
+                const result = challengeService.denyChallenge(message.challengeId, playerId);
+                if (!result.error) {
+                    // Send updated inbox to challenger
+                    sendToPlayer(challenge.challengerId, {
+                        type: 'inbox_update',
+                        messages: inboxService.getMessages(challenge.challengerId),
+                        unreadCount: inboxService.getUnreadCount(challenge.challengerId)
+                    });
+                }
+            } else if (message.response === 'delete') {
+                const result = challengeService.deleteChallenge(message.challengeId, playerId);
+                if (!result.error) {
+                    // Send updated inbox to challenger
+                    sendToPlayer(challenge.challengerId, {
+                        type: 'inbox_update',
+                        messages: inboxService.getMessages(challenge.challengerId),
+                        unreadCount: inboxService.getUnreadCount(challenge.challengerId)
+                    });
+                }
+            }
+            
+            // Send updated inbox to responder
+            sendToPlayer(playerId, {
+                type: 'inbox_update',
+                messages: inboxService.getMessages(playerId),
+                unreadCount: inboxService.getUnreadCount(playerId)
+            });
+            break;
+        }
+        
+        case 'match_play_card': {
+            const result = matchService.playCard(message.matchId, playerId, message.cardIndex);
+            
+            if (result.error) {
+                sendToPlayer(playerId, {
+                    type: 'match_error',
+                    error: result.error
+                });
+                break;
+            }
+            
+            // Get updated state for both players
+            const match = matchService.getMatch(message.matchId);
+            if (!match) break;
+            
+            const state1 = matchService.getMatchState(match.id, match.player1.id);
+            const state2 = matchService.getMatchState(match.id, match.player2.id);
+            
+            sendToPlayer(match.player1.id, {
+                type: 'match_state',
+                matchId: match.id,
+                state: state1
+            });
+            
+            sendToPlayer(match.player2.id, {
+                type: 'match_state',
+                matchId: match.id,
+                state: state2
+            });
+            
+            // Broadcast spectate update to other players in room
+            if (match.room) {
+                broadcastToRoom(match.room, {
+                    type: 'match_spectate',
+                    matchId: match.id,
+                    players: [
+                        { id: match.player1.id, name: match.player1.name },
+                        { id: match.player2.id, name: match.player2.name }
+                    ],
+                    state: {
+                        round: match.state.round,
+                        phase: match.state.phase,
+                        player1Wins: match.state.player1Wins,
+                        player2Wins: match.state.player2Wins,
+                        lastRoundResult: match.state.lastRoundResult ? {
+                            player1Card: { element: match.state.lastRoundResult.player1Card?.element, emoji: match.state.lastRoundResult.player1Card?.emoji },
+                            player2Card: { element: match.state.lastRoundResult.player2Card?.element, emoji: match.state.lastRoundResult.player2Card?.emoji },
+                            winner: match.state.lastRoundResult.winner
+                        } : null,
+                        status: match.status
+                    },
+                    wagerAmount: match.wagerAmount
+                }, match.player1.id, match.player2.id);
+            }
+            
+            // If match is complete, handle win/loss
+            if (match.status === 'complete') {
+                const winnerId = match.winnerId;
+                const loserId = winnerId === match.player1.id ? match.player2.id : match.player1.id;
+                const totalPot = match.wagerAmount * 2;
+                
+                // Transfer coins to winner
+                setPlayerCoins(winnerId, getPlayerCoins(winnerId) + totalPot);
+                
+                // Record stats
+                statsService.recordResult(winnerId, 'cardJitsu', true, totalPot);
+                statsService.recordResult(loserId, 'cardJitsu', false, match.wagerAmount);
+                
+                // Notify both players of match end
+                sendToPlayer(match.player1.id, {
+                    type: 'match_end',
+                    matchId: match.id,
+                    result: {
+                        winner: winnerId === match.player1.id ? 'player1' : 'player2',
+                        winnerPlayerId: winnerId,
+                        coinsWon: winnerId === match.player1.id ? totalPot : 0,
+                        yourCoins: getPlayerCoins(match.player1.id),
+                        reason: 'win'
+                    }
+                });
+                
+                sendToPlayer(match.player2.id, {
+                    type: 'match_end',
+                    matchId: match.id,
+                    result: {
+                        winner: winnerId === match.player2.id ? 'player2' : 'player1',
+                        winnerPlayerId: winnerId,
+                        coinsWon: winnerId === match.player2.id ? totalPot : 0,
+                        yourCoins: getPlayerCoins(match.player2.id),
+                        reason: 'win'
+                    }
+                });
+                
+                // Broadcast match end to spectators
+                broadcastToRoom(match.room, {
+                    type: 'match_spectate_end',
+                    matchId: match.id,
+                    winnerId,
+                    winnerName: winnerId === match.player1.id ? match.player1.name : match.player2.name
+                }, match.player1.id, match.player2.id);
+                
+                // Send updated stats to both players
+                sendToPlayer(match.player1.id, {
+                    type: 'stats_update',
+                    stats: statsService.getPublicStats(match.player1.id)
+                });
+                sendToPlayer(match.player2.id, {
+                    type: 'stats_update',
+                    stats: statsService.getPublicStats(match.player2.id)
+                });
+                
+                // Clean up match
+                matchService.endMatch(match.id);
+            }
+            break;
+        }
+        
+        case 'match_forfeit': {
+            const match = matchService.getMatch(message.matchId);
+            if (!match) break;
+            
+            // Forfeiting player loses their wager to opponent
+            const forfeiterId = playerId;
+            const winnerId = forfeiterId === match.player1.id ? match.player2.id : match.player1.id;
+            const totalPot = match.wagerAmount * 2;
+            
+            // Transfer coins to winner
+            setPlayerCoins(winnerId, getPlayerCoins(winnerId) + totalPot);
+            
+            // Record stats
+            statsService.recordResult(winnerId, 'cardJitsu', true, totalPot);
+            statsService.recordResult(forfeiterId, 'cardJitsu', false, match.wagerAmount);
+            
+            // Notify both players
+            sendToPlayer(match.player1.id, {
+                type: 'match_end',
+                matchId: match.id,
+                result: {
+                    winner: winnerId === match.player1.id ? 'player1' : 'player2',
+                    winnerPlayerId: winnerId,
+                    coinsWon: winnerId === match.player1.id ? totalPot : 0,
+                    yourCoins: getPlayerCoins(match.player1.id),
+                    reason: 'forfeit'
+                }
+            });
+            
+            sendToPlayer(match.player2.id, {
+                type: 'match_end',
+                matchId: match.id,
+                result: {
+                    winner: winnerId === match.player2.id ? 'player2' : 'player1',
+                    winnerPlayerId: winnerId,
+                    coinsWon: winnerId === match.player2.id ? totalPot : 0,
+                    yourCoins: getPlayerCoins(match.player2.id),
+                    reason: 'forfeit'
+                }
+            });
+            
+            // Send updated stats to both players
+            sendToPlayer(match.player1.id, {
+                type: 'stats_update',
+                stats: statsService.getPublicStats(match.player1.id)
+            });
+            sendToPlayer(match.player2.id, {
+                type: 'stats_update',
+                stats: statsService.getPublicStats(match.player2.id)
+            });
+            
+            // Void and clean up match
+            matchService.voidMatch(match.id, 'forfeit');
+            
+            console.log(`🏳️ ${players.get(forfeiterId)?.name} forfeited match to ${players.get(winnerId)?.name}`);
+            break;
+        }
+        
+        case 'active_matches_request': {
+            // Client requesting active matches in their room (for spectating)
+            if (player.room) {
+                const matches = matchService.getMatchesInRoom(player.room);
+                sendToPlayer(playerId, {
+                    type: 'active_matches',
+                    matches
+                });
+            }
+            break;
+        }
     }
 }
 
@@ -541,6 +1079,29 @@ setInterval(() => {
     for (const [playerId, player] of players) {
         if (player.ws.readyState !== 1) {
             console.log(`Cleaning up stale player: ${playerId}`);
+            
+            // Handle match disconnect
+            const voidResult = matchService.handleDisconnect(playerId);
+            if (voidResult) {
+                // Refund both players
+                setPlayerCoins(voidResult.player1Id, getPlayerCoins(voidResult.player1Id) + voidResult.wagerAmount);
+                setPlayerCoins(voidResult.player2Id, getPlayerCoins(voidResult.player2Id) + voidResult.wagerAmount);
+                
+                // Notify the other player
+                const otherId = playerId === voidResult.player1Id ? voidResult.player2Id : voidResult.player1Id;
+                sendToPlayer(otherId, {
+                    type: 'match_end',
+                    matchId: voidResult.matchId,
+                    result: {
+                        winner: 'void',
+                        winnerPlayerId: null,
+                        coinsWon: 0,
+                        yourCoins: getPlayerCoins(otherId),
+                        reason: 'disconnect',
+                        refunded: voidResult.wagerAmount
+                    }
+                });
+            }
             
             // Remove IP tracking
             if (player.ip) {
@@ -560,6 +1121,9 @@ setInterval(() => {
             players.delete(playerId);
         }
     }
+    
+    // Clean up expired challenges
+    inboxService.cleanupExpired();
 }, 30000);
 
 // Log server stats periodically

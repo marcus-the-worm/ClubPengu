@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import GameManager from '../engine/GameManager';
+import InboxButton from './InboxButton';
 
 /**
  * GameHUD - Heads Up Display showing coins, stats, and quick actions
  */
-const GameHUD = ({ showMinimap = false, onOpenPuffles }) => {
+const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenSettings, isMobile = false }) => {
     const [coins, setCoins] = useState(0);
     const [showStats, setShowStats] = useState(false);
     const [recentReward, setRecentReward] = useState(null);
@@ -32,11 +33,25 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles }) => {
     return (
         <>
             {/* HUD Bar - Top Right */}
-            <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 sm:gap-2">
+                {/* Settings Button */}
+                {onOpenSettings && (
+                    <button
+                        onClick={onOpenSettings}
+                        className="bg-gray-700/80 hover:bg-gray-600 active:bg-gray-500 backdrop-blur-sm text-white w-9 h-9 sm:px-3 sm:py-2 sm:w-auto sm:h-auto rounded-lg retro-text text-xs transition-colors flex items-center justify-center"
+                        title="Settings"
+                    >
+                        ⚙️
+                    </button>
+                )}
+                
+                {/* Inbox Button */}
+                {showInbox && <InboxButton />}
+                
                 {/* Puffles Button */}
                 <button
                     onClick={onOpenPuffles}
-                    className="bg-purple-600/80 hover:bg-purple-500 backdrop-blur-sm text-white px-3 py-2 rounded-lg retro-text text-xs transition-colors"
+                    className="bg-purple-600/80 hover:bg-purple-500 active:bg-purple-400 backdrop-blur-sm text-white w-9 h-9 sm:px-3 sm:py-2 sm:w-auto sm:h-auto rounded-lg retro-text text-xs transition-colors flex items-center justify-center"
                     title="Manage Puffles"
                 >
                     🐾
