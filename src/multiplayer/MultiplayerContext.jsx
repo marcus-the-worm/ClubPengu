@@ -26,9 +26,11 @@ export function MultiplayerProvider({ children }) {
     // Connection state
     const [connected, setConnected] = useState(false);
     const [playerId, setPlayerId] = useState(null);
+    const playerIdRef = useRef(null); // Ref for use in callbacks
     const [playerName, setPlayerName] = useState(() => {
         return localStorage.getItem('penguin_name') || `Penguin${Math.floor(Math.random() * 1000)}`;
     });
+    const playerNameRef = useRef(playerName); // Ref for use in callbacks
     
     // OPTIMIZATION: Player LIST in state (for join/leave only)
     // Player POSITIONS in ref (for real-time updates, no re-renders)
@@ -122,6 +124,7 @@ export function MultiplayerProvider({ children }) {
         switch (message.type) {
             case 'connected':
                 setPlayerId(message.playerId);
+                playerIdRef.current = message.playerId;
                 console.log(`🐧 Assigned player ID: ${message.playerId}`);
                 break;
                 
@@ -134,7 +137,7 @@ export function MultiplayerProvider({ children }) {
                 playersDataRef.current.clear();
                 const ids = [];
                 message.players.forEach(p => {
-                    console.log(`  - ${p.name}`, p.puffle ? `with ${p.puffle.color} puffle` : '(no puffle)', p.emote ? `emoting: ${p.emote}` : '');
+                    console.log(`  - ${p.name}`, p.puffle ? `with ${p.puffle.color} puffle` : '(no puffle)', p.emote ? `emoting: ${p.emote}` : '', p.isAfk ? '(AFK)' : '');
                     const playerData = {
                         id: p.id,
                         name: p.name,
@@ -144,8 +147,14 @@ export function MultiplayerProvider({ children }) {
                         puffle: p.puffle || null,
                         pufflePosition: p.pufflePosition || null,
                         emote: p.emote || null,
-                        emoteStartTime: p.emote ? Date.now() : null, // Initialize emote time if player is emoting
+                        emoteStartTime: p.emote ? Date.now() : null,
                         seatedOnFurniture: p.seatedOnFurniture || false,
+                        isAfk: p.isAfk || false,
+                        afkMessage: p.afkMessage || null,
+                        // Set AFK bubble if player is AFK
+                        chatMessage: p.isAfk ? p.afkMessage : null,
+                        chatTime: p.isAfk ? Date.now() : null,
+                        isAfkBubble: p.isAfk || false,
                         needsMesh: true
                     };
                     playersDataRef.current.set(p.id, playerData);
@@ -247,9 +256,93 @@ export function MultiplayerProvider({ children }) {
                 setChatMessages(prev => [...prev.slice(-50), chatMsg]);
                 callbacksRef.current.onChatMessage?.(chatMsg);
                 break;
+            
+            case 'player_afk': {
+                // Player AFK status changed
+                const afkPlayer = playersDataRef.current.get(message.playerId);
+                if (afkPlayer) {
+                    afkPlayer.isAfk = message.isAfk;
+                    afkPlayer.afkMessage = message.afkMessage || null;
+                    
+                    if (message.isAfk) {
+                        // Set permanent AFK chat bubble
+                        afkPlayer.chatMessage = message.afkMessage;
+                        afkPlayer.chatTime = Date.now();
+                        afkPlayer.isAfkBubble = true; // Mark as AFK bubble (don't auto-clear)
+                    } else {
+                        // Clear AFK bubble
+                        if (afkPlayer.isAfkBubble) {
+                            afkPlayer.chatMessage = null;
+                            afkPlayer.chatTime = null;
+                            afkPlayer.isAfkBubble = false;
+                        }
+                    }
+                }
+                
+                // If this is the local player's AFK message, add to chatMessages so their bubble shows
+                if (message.playerId === playerIdRef.current && message.isAfk) {
+                    const afkChatMsg = {
+                        id: Date.now(),
+                        playerId: message.playerId,
+                        name: message.name || playerNameRef.current,
+                        text: message.afkMessage,
+                        timestamp: Date.now(),
+                        isAfk: true
+                    };
+                    setChatMessages(prev => [...prev.slice(-50), afkChatMsg]);
+                }
+                console.log(`${message.isAfk ? '💤' : '👋'} ${message.name || message.playerId} is ${message.isAfk ? 'now AFK' : 'back'}`);
+                break;
+            }
                 
             case 'pong':
                 break;
+            
+            case 'whisper': {
+                // Received a whisper from another player
+                const whisperMsg = {
+                    id: Date.now(),
+                    playerId: message.fromId,
+                    name: message.fromName,
+                    fromName: message.fromName, // For reply functionality
+                    text: message.text,
+                    timestamp: message.timestamp || Date.now(),
+                    isWhisper: true,
+                    fromMe: false
+                };
+                setChatMessages(prev => [...prev.slice(-50), whisperMsg]);
+                console.log(`💬 Whisper from ${message.fromName}: ${message.text}`);
+                break;
+            }
+            
+            case 'whisper_sent': {
+                // Confirmation that whisper was sent
+                const sentMsg = {
+                    id: Date.now(),
+                    playerId: null,
+                    name: `To [${message.toName}]`,
+                    text: message.text,
+                    timestamp: message.timestamp || Date.now(),
+                    isWhisper: true,
+                    fromMe: true
+                };
+                setChatMessages(prev => [...prev.slice(-50), sentMsg]);
+                break;
+            }
+            
+            case 'whisper_error': {
+                // Whisper failed
+                const errorMsg = {
+                    id: Date.now(),
+                    playerId: null,
+                    name: 'System',
+                    text: `Could not whisper to "${message.targetName}": ${message.error}`,
+                    timestamp: Date.now(),
+                    isSystem: true
+                };
+                setChatMessages(prev => [...prev.slice(-50), errorMsg]);
+                break;
+            }
             
             case 'ball_update':
                 // Beach ball position update from server
@@ -360,6 +453,7 @@ export function MultiplayerProvider({ children }) {
     // Set player name
     const setName = useCallback((name) => {
         setPlayerName(name);
+        playerNameRef.current = name;
         localStorage.setItem('penguin_name', name);
     }, []);
     

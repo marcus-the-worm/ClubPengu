@@ -4,6 +4,7 @@ import { ASSETS } from './assets';
 import { generateBaseBody, generateFlippers, generateFoot, generateHead } from './generators';
 import { IconSend } from './Icons';
 import GameHUD from './components/GameHUD';
+import ChatLog from './components/ChatLog';
 import Portal from './components/Portal';
 import PufflePanel from './components/PufflePanel';
 import VirtualJoystick from './components/VirtualJoystick';
@@ -69,7 +70,8 @@ const VoxelWorld = ({
         updatePuffle: mpUpdatePuffle,
         sendBallKick: mpSendBallKick,
         requestBallSync: mpRequestBallSync,
-        registerCallbacks
+        registerCallbacks,
+        chatMessages
     } = useMultiplayer();
     
     // Challenge context for position updates and dance trigger
@@ -88,8 +90,7 @@ const VoxelWorld = ({
     const isGroundedRef = useRef(true);
     const jumpRequestedRef = useRef(false);
     
-    // Chat State
-    const [chatInput, setChatInput] = useState("");
+    // Chat State (for local player bubble)
     const [activeBubble, setActiveBubble] = useState(null);
     const bubbleSpriteRef = useRef(null);
     const isAfkRef = useRef(false);
@@ -178,8 +179,8 @@ const VoxelWorld = ({
     // Mobile State
     const [isMobile, setIsMobile] = useState(false);
     const [isLandscape, setIsLandscape] = useState(true);
-    const [showMobileChat, setShowMobileChat] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [showMobileChat, setShowMobileChat] = useState(false);
     
     // Settings (persisted to localStorage)
     const [gameSettings, setGameSettings] = useState(() => {
@@ -3142,12 +3143,16 @@ const VoxelWorld = ({
                         meshData.lastChatTime = playerData.chatTime;
                     }
                     
-                    // Remove bubble after 5 seconds
-                    if (chatAge > 5000 && meshData.bubble) {
+                    // Remove bubble after 5 seconds - BUT NOT if it's an AFK bubble
+                    if (chatAge > 5000 && meshData.bubble && !playerData.isAfkBubble) {
                         meshData.mesh.remove(meshData.bubble);
                         meshData.bubble = null;
                         playerData.chatMessage = null;
                     }
+                } else if (!playerData.chatMessage && meshData.bubble) {
+                    // Message cleared (e.g., AFK ended) - remove bubble
+                    meshData.mesh.remove(meshData.bubble);
+                    meshData.bubble = null;
                 }
             }
 
@@ -3585,48 +3590,46 @@ const VoxelWorld = ({
         return () => clearTimeout(timeout);
     }, [activeBubble]);
     
-    const sendChat = () => {
-        if(!chatInput.trim()) return;
+    // Listen for our own chat messages to show local bubble
+    const lastChatIdRef = useRef(null);
+    useEffect(() => {
+        if (!chatMessages || chatMessages.length === 0 || !playerId) return;
         
-        const trimmedInput = chatInput.trim();
+        const latestMsg = chatMessages[chatMessages.length - 1];
         
-        // Check for /afk command
-        if (trimmedInput.toLowerCase().startsWith('/afk')) {
-            const afkMessage = trimmedInput.slice(4).trim() || '💤 AFK';
+        // Only process if it's a new message from us
+        if (latestMsg.id === lastChatIdRef.current) return;
+        if (latestMsg.playerId !== playerId && latestMsg.name !== playerName) return;
+        
+        lastChatIdRef.current = latestMsg.id;
+        
+        // Don't show bubbles for whispers - they're private
+        if (latestMsg.type === 'whisper') return;
+        
+        // Don't show bubbles for system messages
+        if (latestMsg.type === 'system') return;
+        
+        // Handle AFK messages
+        if (latestMsg.text?.toLowerCase().startsWith('/afk') || latestMsg.text?.startsWith('💤')) {
+            const afkText = latestMsg.text.startsWith('💤') ? latestMsg.text : `💤 ${latestMsg.text.slice(4).trim() || 'AFK'}`;
             isAfkRef.current = true;
-            afkMessageRef.current = afkMessage;
-            setActiveBubble(`💤 ${afkMessage}`);
-            mpSendChat(`💤 ${afkMessage}`);
-            setChatInput("");
-            // Blur input immediately
-            const input = document.getElementById('chat-input-field');
-            if (input) input.blur();
-            return;
+            afkMessageRef.current = afkText;
+            setActiveBubble(afkText);
+        } else {
+            // Regular message - clear AFK if was AFK
+            if (isAfkRef.current) {
+                isAfkRef.current = false;
+                afkMessageRef.current = null;
+            }
+            setActiveBubble(latestMsg.text);
         }
-        
-        // Clear AFK state if sending a regular message
-        if (isAfkRef.current) {
-            isAfkRef.current = false;
-            afkMessageRef.current = null;
-        }
-        
-        setActiveBubble(trimmedInput);
-        
-        // Send to other players via multiplayer
-        mpSendChat(trimmedInput);
-        
-        setChatInput("");
-        
-        // Exit chat mode - blur the input so player can move again
-        const input = document.getElementById('chat-input-field');
-        if (input) input.blur();
         
         // Earn coins for chatting
         GameManager.getInstance().incrementStat('chatsSent');
         if (Math.random() > 0.7) {
             GameManager.getInstance().addCoins(5, 'chat');
         }
-    };
+    }, [chatMessages, playerId, playerName]);
 
     // Puffle management - supports multiple ownership, 1 equipped at a time
     const handleAdoptPuffle = (newPuffle) => {
@@ -4184,20 +4187,20 @@ const VoxelWorld = ({
              {/* Mobile Action Buttons - positioned on opposite side of joystick */}
              {isMobile && isLandscape && (
                 <div className={`absolute bottom-[70px] ${gameSettings.leftHanded ? 'left-6' : 'right-6'} flex flex-col gap-2 z-30`}>
+                    {/* Chat Button */}
+                    <button 
+                        className="w-12 h-12 rounded-full bg-cyan-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none"
+                        onClick={() => setShowMobileChat(true)}
+                    >
+                        <span className="text-xl">💬</span>
+                    </button>
+                    
                     {/* Emote Button */}
                     <button 
                         className="w-12 h-12 rounded-full bg-purple-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none"
                         onClick={() => setShowEmoteWheel(true)}
                     >
                         <span className="text-xl">😄</span>
-                    </button>
-                    
-                    {/* Chat Button */}
-                    <button 
-                        className="w-12 h-12 rounded-full bg-blue-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none"
-                        onClick={() => setShowMobileChat(true)}
-                    >
-                        <span className="text-2xl">💬</span>
                     </button>
                     
                     {/* Interact Button (E key) */}
@@ -4278,51 +4281,18 @@ const VoxelWorld = ({
                 </div>
              )}
              
-             {/* Mobile Chat Modal */}
-             {isMobile && showMobileChat && (
-                <div className="absolute inset-0 bg-black/80 z-40 flex items-center justify-center p-4">
-                    <div className="bg-gray-900 rounded-2xl p-4 w-full max-w-md border border-white/20">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-white retro-text text-sm">Chat</h3>
-                            <button 
-                                className="text-white/60 hover:text-white p-2"
-                                onClick={() => setShowMobileChat(false)}
-                            >✕</button>
-                        </div>
-                        <input 
-                            type="text" 
-                            value={chatInput}
-                            onChange={(e) => setChatInput(e.target.value)}
-                            placeholder="Type your message..."
-                            className="w-full bg-black/50 border border-white/20 rounded-xl px-4 py-3 text-white text-base"
-                            autoFocus
-                        />
-                        <div className="flex gap-2 mt-3">
-                            <button 
-                                className="flex-1 bg-gray-700 text-white py-3 rounded-xl retro-text text-xs"
-                                onClick={() => setShowMobileChat(false)}
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                className="flex-1 bg-yellow-500 text-black py-3 rounded-xl retro-text text-xs"
-                                onClick={() => {
-                                    sendChat();
-                                    setShowMobileChat(false);
-                                }}
-                            >
-                                Send
-                            </button>
-                        </div>
-                    </div>
-                </div>
-             )}
-             
              {/* HUD - Top Right */}
              <GameHUD 
                 onOpenPuffles={() => setShowPufflePanel(true)}
                 onOpenSettings={() => setShowSettings(true)}
                 isMobile={isMobile}
+             />
+             
+             {/* Chat Log - Desktop: bottom-left, Mobile: toggleable overlay */}
+             <ChatLog 
+                isMobile={isMobile}
+                isOpen={!isMobile || showMobileChat}
+                onClose={() => setShowMobileChat(false)}
              />
              
              {/* Door/Portal Prompt */}
@@ -4374,30 +4344,6 @@ const VoxelWorld = ({
                      </span>
                  </div>
              </div>
-
-             {/* Chat Input - Bottom (Desktop only) */}
-             {!isMobile && (
-                <div className="absolute bottom-4 left-4 right-20 flex gap-2 pointer-events-auto z-20">
-                     <input 
-                       id="chat-input-field"
-                       type="text" 
-                       value={chatInput}
-                       onChange={(e) => setChatInput(e.target.value)}
-                       onKeyDown={(e) => {
-                           if(e.key === 'Enter') {
-                               e.stopPropagation(); // Prevent global handler from re-focusing
-                               sendChat();
-                           }
-                           if(e.key === 'Escape') e.target.blur();
-                       }}
-                       placeholder="Press Enter to chat..."
-                       className="flex-1 bg-black/60 border-2 border-white/20 rounded-full px-4 py-2 text-white retro-text text-xs focus:outline-none focus:border-yellow-400 backdrop-blur-sm"
-                     />
-                     <button onClick={sendChat} className="bg-yellow-500 hover:bg-yellow-400 text-black px-4 rounded-full retro-text text-xs transition-colors">
-                         <IconSend size={16}/>
-                     </button>
-                </div>
-             )}
 
              
              {showEmoteWheel && (

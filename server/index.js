@@ -9,10 +9,12 @@ import { StatsService, InboxService, ChallengeService, MatchService } from './se
 
 const PORT = process.env.PORT || 3001;
 const MAX_CONNECTIONS_PER_IP = 2; // Maximum allowed connections per IP address
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds heartbeat check
+const CONNECTION_TIMEOUT = 35000; // 35 seconds before considering connection dead
 const IS_DEV = process.env.NODE_ENV !== 'production'; // Development mode flag
 
 // Game state
-const players = new Map(); // playerId -> { id, name, room, position, rotation, appearance, puffle, ip, coins }
+const players = new Map(); // playerId -> { id, name, room, position, rotation, appearance, puffle, ip, coins, lastPing, isAlive }
 const rooms = new Map(); // roomId -> Set of playerIds
 const ipConnections = new Map(); // ip -> Set of playerIds (for tracking connections per IP)
 
@@ -33,7 +35,7 @@ const server = http.createServer();
 // Create WebSocket server attached to HTTP server
 const wss = new WebSocketServer({ server });
 
-console.log(`🐧 Club Penguin Server running on port ${PORT}${IS_DEV ? ' (DEV MODE - IP limits disabled)' : ''}`);
+console.log(`🐧 Club Penguin Server running on port ${PORT}${IS_DEV ? ' (DEV MODE - IP limits relaxed)' : ''}`);
 
 // Helper to get client IP from request
 function getClientIP(req) {
@@ -51,10 +53,65 @@ function getClientIP(req) {
     return req.socket?.remoteAddress || 'unknown';
 }
 
+// Clean up stale/dead connections for an IP
+function cleanupStaleConnections(ip) {
+    const connections = ipConnections.get(ip);
+    if (!connections) return;
+    
+    const stalePlayerIds = [];
+    
+    for (const playerId of connections) {
+        const player = players.get(playerId);
+        if (!player) {
+            // Player entry doesn't exist, remove from tracking
+            stalePlayerIds.push(playerId);
+            continue;
+        }
+        
+        // Check if WebSocket is still alive
+        if (!player.ws || player.ws.readyState !== 1) {
+            console.log(`🧹 Cleaning up stale connection: ${playerId}`);
+            stalePlayerIds.push(playerId);
+            
+            // Clean up player data
+            if (player.room) {
+                const room = rooms.get(player.room);
+                if (room) {
+                    room.delete(playerId);
+                    // Notify room
+                    broadcastToRoom(player.room, {
+                        type: 'player_left',
+                        playerId: playerId
+                    });
+                }
+            }
+            players.delete(playerId);
+        }
+    }
+    
+    // Remove stale IDs from IP tracking
+    for (const playerId of stalePlayerIds) {
+        connections.delete(playerId);
+    }
+    
+    if (connections.size === 0) {
+        ipConnections.delete(ip);
+    }
+    
+    if (stalePlayerIds.length > 0) {
+        console.log(`🧹 Cleaned up ${stalePlayerIds.length} stale connection(s) for IP ${ip}`);
+    }
+}
+
 // Check if IP can connect (returns true if allowed)
 function canIPConnect(ip) {
-    // Bypass IP limits in development mode for easier testing
-    if (IS_DEV) return true;
+    // In development mode, allow more connections for testing
+    if (IS_DEV) {
+        return true; // No IP limits in dev mode
+    }
+    
+    // First, clean up any stale connections for this IP
+    cleanupStaleConnections(ip);
     
     const connections = ipConnections.get(ip);
     if (!connections) return true;
@@ -214,7 +271,9 @@ function getPlayersInRoom(roomId, excludeId = null) {
                 puffle: player.puffle,
                 pufflePosition: player.pufflePosition,
                 emote: player.emote,
-                seatedOnFurniture: player.seatedOnFurniture || false
+                seatedOnFurniture: player.seatedOnFurniture || false,
+                isAfk: player.isAfk || false,
+                afkMessage: player.afkMessage || null
             });
         }
     }
@@ -419,6 +478,20 @@ function handleMessage(playerId, message) {
                 player.pufflePosition = message.pufflePosition;
             }
             
+            // Clear AFK status when player moves
+            if (posChanged && player.isAfk) {
+                player.isAfk = false;
+                player.afkMessage = null;
+                if (player.room) {
+                    broadcastToRoomAll(player.room, {
+                        type: 'player_afk',
+                        playerId: playerId,
+                        isAfk: false
+                    });
+                }
+                console.log(`${player.name} is no longer AFK (moved)`);
+            }
+            
             // Only broadcast if something actually changed
             if ((posChanged || rotChanged) && player.room) {
                 broadcastToRoom(player.room, {
@@ -435,11 +508,92 @@ function handleMessage(playerId, message) {
         case 'chat': {
             // Chat message
             if (player.room && message.text) {
-                broadcastToRoomAll(player.room, {
-                    type: 'chat',
-                    playerId: playerId,
-                    name: player.name,
-                    text: message.text.substring(0, 200) // Limit message length
+                const text = message.text.substring(0, 200); // Limit message length
+                
+                // Check for /afk command
+                if (text.toLowerCase().startsWith('/afk')) {
+                    const afkMessage = text.slice(4).trim() || 'AFK';
+                    player.isAfk = true;
+                    player.afkMessage = `💤 ${afkMessage}`;
+                    
+                    // Broadcast AFK status to room
+                    broadcastToRoomAll(player.room, {
+                        type: 'player_afk',
+                        playerId: playerId,
+                        name: player.name,
+                        isAfk: true,
+                        afkMessage: player.afkMessage
+                    });
+                    
+                    console.log(`${player.name} is now AFK: ${afkMessage}`);
+                } else {
+                    // Regular chat message - clear AFK if was AFK
+                    if (player.isAfk) {
+                        player.isAfk = false;
+                        player.afkMessage = null;
+                        broadcastToRoomAll(player.room, {
+                            type: 'player_afk',
+                            playerId: playerId,
+                            isAfk: false
+                        });
+                    }
+                    
+                    // Broadcast regular chat
+                    broadcastToRoomAll(player.room, {
+                        type: 'chat',
+                        playerId: playerId,
+                        name: player.name,
+                        text: text,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+            break;
+        }
+        
+        case 'whisper': {
+            // Private message to another player by name
+            if (!message.targetName || !message.text) break;
+            
+            const targetName = message.targetName.toLowerCase();
+            const text = message.text.substring(0, 200);
+            
+            // Find player by name (case-insensitive)
+            let targetPlayer = null;
+            let targetId = null;
+            for (const [pid, p] of players) {
+                if (p.name && p.name.toLowerCase() === targetName) {
+                    targetPlayer = p;
+                    targetId = pid;
+                    break;
+                }
+            }
+            
+            if (targetPlayer && targetPlayer.ws && targetPlayer.ws.readyState === 1) {
+                // Send whisper to target
+                targetPlayer.ws.send(JSON.stringify({
+                    type: 'whisper',
+                    fromId: playerId,
+                    fromName: player.name,
+                    text: text,
+                    timestamp: Date.now()
+                }));
+                
+                // Confirm to sender
+                sendToPlayer(playerId, {
+                    type: 'whisper_sent',
+                    toName: targetPlayer.name,
+                    text: text,
+                    timestamp: Date.now()
+                });
+                
+                console.log(`💬 Whisper: ${player.name} -> ${targetPlayer.name}: ${text.substring(0, 30)}...`);
+            } else {
+                // Player not found or offline
+                sendToPlayer(playerId, {
+                    type: 'whisper_error',
+                    targetName: message.targetName,
+                    error: 'Player not found or offline'
                 });
             }
             break;

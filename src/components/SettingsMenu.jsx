@@ -67,6 +67,27 @@ const SettingsMenu = ({ isOpen, onClose, settings, onSettingsChange }) => {
                 
                 {/* Settings List */}
                 <div className="space-y-3">
+                    {/* Controls Guide */}
+                    <div className="bg-black/30 rounded-xl p-3">
+                        <h3 className="text-white font-medium text-sm mb-2">Controls</h3>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                            <div className="text-white/50">Move</div>
+                            <div className="text-white/80">WASD / Joystick</div>
+                            <div className="text-white/50">Camera</div>
+                            <div className="text-white/80">Mouse / Touch</div>
+                            <div className="text-white/50">Jump</div>
+                            <div className="text-white/80">Space</div>
+                            <div className="text-white/50">Chat</div>
+                            <div className="text-white/80">Enter</div>
+                            <div className="text-white/50">Emotes</div>
+                            <div className="text-white/80">Hold T</div>
+                            <div className="text-white/50">Whisper</div>
+                            <div className="text-white/80">/w name msg</div>
+                            <div className="text-white/50">AFK</div>
+                            <div className="text-white/80">/afk message</div>
+                        </div>
+                    </div>
+                    
                     {/* Left-Handed Mode */}
                     <div className="bg-black/30 rounded-xl p-3">
                         <div className="flex items-center justify-between">
