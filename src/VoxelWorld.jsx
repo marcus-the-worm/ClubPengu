@@ -14,6 +14,7 @@ import Puffle from './engine/Puffle';
 import TownCenter from './rooms/TownCenter';
 import { useMultiplayer } from './multiplayer';
 import { useChallenge } from './challenge';
+import { MarcusGenerators, MARCUS_PALETTE } from './characters';
 
 const VoxelWorld = ({ 
     penguinData, 
@@ -365,7 +366,13 @@ const VoxelWorld = ({
     const BUILDING_SCALE = 4;
     
     // Create Chat Bubble Sprite
-    const createChatSprite = (message) => {
+    // Height constants for different character types
+    const BUBBLE_HEIGHT_PENGUIN = 4.5;
+    const BUBBLE_HEIGHT_MARCUS = 5.5; // Marcus is taller but not too high to block view
+    const NAME_HEIGHT_PENGUIN = 5;
+    const NAME_HEIGHT_MARCUS = 6;
+    
+    const createChatSprite = (message, height = BUBBLE_HEIGHT_PENGUIN) => {
         const THREE = window.THREE;
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
@@ -444,7 +451,7 @@ const VoxelWorld = ({
         
         const scale = 0.02;
         sprite.scale.set(w * scale, h * scale, 1);
-        sprite.position.set(0, 4.5, 0);
+        sprite.position.set(0, height, 0);
         sprite.renderOrder = 999;
         
         return sprite;
@@ -1597,59 +1604,100 @@ const VoxelWorld = ({
                  return g;
              };
              
-             const skin = data.skin || 'blue';
-             const body = buildPartMerged(generateBaseBody(PALETTE[skin] || skin), PALETTE);
-             const head = buildPartMerged(generateHead(PALETTE[skin] || skin), PALETTE);
-             
-             const footL = buildPartMerged(generateFoot(3), PALETTE, {x:3, y:-6, z:1});
-             footL.name = 'foot_l';
-             const footR = buildPartMerged(generateFoot(-3), PALETTE, {x:-3, y:-6, z:1});
-             footR.name = 'foot_r';
-             
-             const flippersLeft = buildPartMerged(generateFlippers(PALETTE[skin] || skin, true), PALETTE, {x:5, y:0, z:0});
-             const flippersRight = buildPartMerged(generateFlippers(PALETTE[skin] || skin, false), PALETTE, {x:-5, y:0, z:0});
-             
-             flippersLeft.name = 'flipper_l';
-             flippersRight.name = 'flipper_r';
-             head.name = 'head';
-             body.name = 'body';
-             
-             group.add(body, head, flippersLeft, flippersRight, footL, footR);
-             
-             if (data.hat && data.hat !== 'none' && ASSETS.HATS[data.hat]) {
-                 const p = buildPartMerged(ASSETS.HATS[data.hat], PALETTE);
-                 p.name = 'hat';
-                 group.add(p);
+             // Check for special character types (Marcus, etc.)
+             if (data.characterType === 'marcus') {
+                 // Build Marcus with SEPARATE PARTS for animation (like penguin)
+                 const pivots = MarcusGenerators.pivots();
+                 
+                 // Head (for laugh animation)
+                 const headVoxels = MarcusGenerators.head();
+                 const head = buildPartMerged(headVoxels, MARCUS_PALETTE, pivots.head);
+                 head.name = 'head';
+                 
+                 // Body
+                 const bodyVoxels = MarcusGenerators.body();
+                 const body = buildPartMerged(bodyVoxels, MARCUS_PALETTE);
+                 body.name = 'body';
+                 
+                 // Arms (named flipper_l/flipper_r for animation compatibility)
+                 const armLVoxels = MarcusGenerators.armLeft();
+                 const armL = buildPartMerged(armLVoxels, MARCUS_PALETTE, pivots.armLeft);
+                 armL.name = 'flipper_l';
+                 
+                 const armRVoxels = MarcusGenerators.armRight();
+                 const armR = buildPartMerged(armRVoxels, MARCUS_PALETTE, pivots.armRight);
+                 armR.name = 'flipper_r';
+                 
+                 // Legs (named foot_l/foot_r for animation compatibility)
+                 const legLVoxels = MarcusGenerators.legLeft();
+                 const legL = buildPartMerged(legLVoxels, MARCUS_PALETTE, pivots.legLeft);
+                 legL.name = 'foot_l';
+                 
+                 const legRVoxels = MarcusGenerators.legRight();
+                 const legR = buildPartMerged(legRVoxels, MARCUS_PALETTE, pivots.legRight);
+                 legR.name = 'foot_r';
+                 
+                 group.add(body, head, armL, armR, legL, legR);
+                 
+                 // Same scale and position as penguin
+                 group.scale.set(0.18, 0.18, 0.18);
+                 group.position.y = 1.4;
+             } else {
+                 // Build standard Penguin character
+                 const skin = data.skin || 'blue';
+                 const body = buildPartMerged(generateBaseBody(PALETTE[skin] || skin), PALETTE);
+                 const head = buildPartMerged(generateHead(PALETTE[skin] || skin), PALETTE);
+                 
+                 const footL = buildPartMerged(generateFoot(3), PALETTE, {x:3, y:-6, z:1});
+                 footL.name = 'foot_l';
+                 const footR = buildPartMerged(generateFoot(-3), PALETTE, {x:-3, y:-6, z:1});
+                 footR.name = 'foot_r';
+                 
+                 const flippersLeft = buildPartMerged(generateFlippers(PALETTE[skin] || skin, true), PALETTE, {x:5, y:0, z:0});
+                 const flippersRight = buildPartMerged(generateFlippers(PALETTE[skin] || skin, false), PALETTE, {x:-5, y:0, z:0});
+                 
+                 flippersLeft.name = 'flipper_l';
+                 flippersRight.name = 'flipper_r';
+                 head.name = 'head';
+                 body.name = 'body';
+                 
+                 group.add(body, head, flippersLeft, flippersRight, footL, footR);
+                 
+                 if (data.hat && data.hat !== 'none' && ASSETS.HATS[data.hat]) {
+                     const p = buildPartMerged(ASSETS.HATS[data.hat], PALETTE);
+                     p.name = 'hat';
+                     group.add(p);
+                 }
+                 
+                 if (data.eyes && ASSETS.EYES[data.eyes]) {
+                     const p = buildPartMerged(ASSETS.EYES[data.eyes], PALETTE);
+                     p.name = 'eyes';
+                     group.add(p);
+                 } else if (ASSETS.EYES.normal) {
+                     const p = buildPartMerged(ASSETS.EYES.normal, PALETTE);
+                     p.name = 'eyes';
+                     group.add(p);
+                 }
+                 
+                 if (data.mouth && ASSETS.MOUTH[data.mouth]) {
+                     const p = buildPartMerged(ASSETS.MOUTH[data.mouth], PALETTE);
+                     p.name = 'mouth';
+                     group.add(p);
+                 } else if (ASSETS.MOUTH.beak) {
+                     const p = buildPartMerged(ASSETS.MOUTH.beak, PALETTE);
+                     p.name = 'mouth';
+                     group.add(p);
+                 }
+                 
+                 if (data.bodyItem && data.bodyItem !== 'none' && ASSETS.BODY[data.bodyItem]) {
+                     const p = buildPartMerged(ASSETS.BODY[data.bodyItem], PALETTE);
+                     p.name = 'accessory';
+                     group.add(p);
+                 }
+                 
+                 group.scale.set(0.2, 0.2, 0.2); 
+                 group.position.y = 1.4;
              }
-             
-             if (data.eyes && ASSETS.EYES[data.eyes]) {
-                 const p = buildPartMerged(ASSETS.EYES[data.eyes], PALETTE);
-                 p.name = 'eyes';
-                 group.add(p);
-             } else if (ASSETS.EYES.normal) {
-                 const p = buildPartMerged(ASSETS.EYES.normal, PALETTE);
-                 p.name = 'eyes';
-                 group.add(p);
-             }
-             
-             if (data.mouth && ASSETS.MOUTH[data.mouth]) {
-                 const p = buildPartMerged(ASSETS.MOUTH[data.mouth], PALETTE);
-                 p.name = 'mouth';
-                 group.add(p);
-             } else if (ASSETS.MOUTH.beak) {
-                 const p = buildPartMerged(ASSETS.MOUTH.beak, PALETTE);
-                 p.name = 'mouth';
-                 group.add(p);
-             }
-             
-             if (data.bodyItem && data.bodyItem !== 'none' && ASSETS.BODY[data.bodyItem]) {
-                 const p = buildPartMerged(ASSETS.BODY[data.bodyItem], PALETTE);
-                 p.name = 'accessory';
-                 group.add(p);
-             }
-             
-             group.scale.set(0.2, 0.2, 0.2); 
-             group.position.y = 1.4;
              
              const wrapper = new THREE.Group();
              wrapper.add(group);
@@ -2487,10 +2535,11 @@ const VoxelWorld = ({
                 }
             }
             
-            // animateMesh now accepts isSeatedOnFurniture as 5th param (per-player state)
-            const animateMesh = (meshWrapper, isMoving, emoteType, emoteStartTime, isSeatedOnFurniture = false) => {
+            // animateMesh now accepts isSeatedOnFurniture as 5th param, characterType as 6th
+            const animateMesh = (meshWrapper, isMoving, emoteType, emoteStartTime, isSeatedOnFurniture = false, characterType = 'penguin') => {
                 if (!meshWrapper || !meshWrapper.children[0]) return;
                 const meshInner = meshWrapper.children[0];
+                const isMarcus = characterType === 'marcus';
                 const flipperL = meshInner.getObjectByName('flipper_l');
                 const flipperR = meshInner.getObjectByName('flipper_r');
                 const head = meshInner.getObjectByName('head');
@@ -2530,23 +2579,41 @@ const VoxelWorld = ({
                     }
                     else if (emoteType === 'Sit') {
                         // Use passed isSeatedOnFurniture flag (per-player, not global)
-                        if (isSeatedOnFurniture) {
-                            // FURNITURE SITTING: Elevate to sit ON TOP of bench
-                            meshInner.position.y = 1.6;
+                        // Adjust positions based on character type
+                        if (isMarcus) {
+                            // Marcus sitting - lower body more due to longer legs
+                            if (isSeatedOnFurniture) {
+                                meshInner.position.y = 0.8; // Lower for Marcus on furniture
+                            } else {
+                                meshInner.position.y = -0.2; // Much lower for ground sitting
+                            }
+                            // Marcus legs extend forward
+                            if(footL) {
+                                footL.rotation.x = -Math.PI / 3;
+                                footL.position.z = 1.5;
+                            }
+                            if(footR) {
+                                footR.rotation.x = -Math.PI / 3;
+                                footR.position.z = 1.5;
+                            }
                         } else {
-                            // GROUND SITTING: Sit on the ground, lower position
-                            meshInner.position.y = 0.5;
+                            // Penguin sitting
+                            if (isSeatedOnFurniture) {
+                                meshInner.position.y = 1.6;
+                            } else {
+                                meshInner.position.y = 0.5;
+                            }
+                            // Penguin feet extend forward
+                            if(footL) {
+                                footL.rotation.x = -Math.PI / 2.5;
+                                footL.position.z = 2.5;
+                            }
+                            if(footR) {
+                                footR.rotation.x = -Math.PI / 2.5;
+                                footR.position.z = 2.5;
+                            }
                         }
-                        // Feet extend forward when sitting
-                        if(footL) {
-                            footL.rotation.x = -Math.PI / 2.5;
-                            footL.position.z = 2.5;
-                        }
-                        if(footR) {
-                            footR.rotation.x = -Math.PI / 2.5;
-                            footR.position.z = 2.5;
-                        }
-                        // Flippers rest on sides
+                        // Arms/flippers rest on sides (same for both)
                         if(flipperL) flipperL.rotation.z = 0.3;
                         if(flipperR) flipperR.rotation.z = -0.3;
                     }
@@ -2580,8 +2647,8 @@ const VoxelWorld = ({
             };
 
             if (playerRef.current) {
-                // Pass local player's seatedRef state for furniture sitting
-                animateMesh(playerRef.current, moving, emoteRef.current.type, emoteRef.current.startTime, !!seatedRef.current);
+                // Pass local player's seatedRef state for furniture sitting and character type
+                animateMesh(playerRef.current, moving, emoteRef.current.type, emoteRef.current.startTime, !!seatedRef.current, penguinData?.characterType || 'penguin');
             }
             
             // --- AI UPDATE LOOP (runs always, AI have their own room state) ---
@@ -3053,8 +3120,8 @@ const VoxelWorld = ({
                     Math.abs(playerData.position.x - meshData.mesh.position.x) > 0.1 ||
                     Math.abs(playerData.position.z - meshData.mesh.position.z) > 0.1
                 );
-                // Pass each player's seatedOnFurniture state (synced from server)
-                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false);
+                // Pass each player's seatedOnFurniture state (synced from server) and character type
+                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false, playerData.appearance?.characterType || 'penguin');
                 
                 // Handle chat bubbles
                 if (playerData.chatMessage && playerData.chatTime) {
@@ -3066,8 +3133,9 @@ const VoxelWorld = ({
                         if (meshData.bubble) {
                             meshData.mesh.remove(meshData.bubble);
                         }
-                        // Create new bubble
-                        meshData.bubble = createChatSprite(playerData.chatMessage);
+                        // Create new bubble - adjust height for character type
+                        const bubbleHeight = playerData.appearance?.characterType === 'marcus' ? BUBBLE_HEIGHT_MARCUS : BUBBLE_HEIGHT_PENGUIN;
+                        meshData.bubble = createChatSprite(playerData.chatMessage, bubbleHeight);
                         if (meshData.bubble) {
                             meshData.mesh.add(meshData.bubble);
                         }
@@ -3495,7 +3563,9 @@ const VoxelWorld = ({
             playerRef.current.remove(bubbleSpriteRef.current);
         }
         
-        const sprite = createChatSprite(activeBubble);
+        // Use taller bubble height for Marcus
+        const bubbleHeight = penguinData?.characterType === 'marcus' ? BUBBLE_HEIGHT_MARCUS : BUBBLE_HEIGHT_PENGUIN;
+        const sprite = createChatSprite(activeBubble, bubbleHeight);
         playerRef.current.add(sprite);
         bubbleSpriteRef.current = sprite;
         
@@ -3973,10 +4043,11 @@ const VoxelWorld = ({
             mesh.rotation.y = playerData.rotation || 0;
             scene.add(mesh);
             
-            // Create name tag
+            // Create name tag - adjust height for character type
             const nameSprite = createNameSprite(playerData.name || 'Player');
             if (nameSprite) {
-                nameSprite.position.set(0, 5, 0);
+                const nameHeight = playerData.appearance?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                nameSprite.position.set(0, nameHeight, 0);
                 mesh.add(nameSprite);
             }
             

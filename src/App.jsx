@@ -24,7 +24,8 @@ const AppContent = () => {
         hat: 'none',
         eyes: 'normal',
         mouth: 'beak',
-        bodyItem: 'none'
+        bodyItem: 'none',
+        characterType: 'penguin'
     });
     
     // Puffle state (shared across all rooms)

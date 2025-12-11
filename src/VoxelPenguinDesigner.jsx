@@ -4,6 +4,7 @@ import { ASSETS } from './assets';
 import { generateBaseBody, generateFlippers, generateFeet, generateHead } from './generators';
 import { IconSettings, IconChevronLeft, IconChevronRight, IconCamera, IconWorld } from './Icons';
 import { useMultiplayer } from './multiplayer';
+import { characterRegistry, MarcusGenerators, MARCUS_PALETTE } from './characters';
 
 function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     const mountRef = useRef(null);
@@ -16,6 +17,15 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     const [username, setUsername] = useState(() => {
         return localStorage.getItem('penguin_name') || '';
     });
+    
+    // Character type state - 'penguin' is default, can unlock others via promo codes
+    const [characterType, setCharacterType] = useState(() => {
+        return localStorage.getItem('character_type') || 'penguin';
+    });
+    
+    // Promo code input state
+    const [promoCode, setPromoCode] = useState('');
+    const [promoMessage, setPromoMessage] = useState(null); // { type: 'success'|'error', text: string }
     
     const [skinColor, setSkinColor] = useState(currentData?.skin || 'blue');
     const [hat, setHat] = useState(currentData?.hat || 'none');
@@ -32,9 +42,39 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
         if (setName) setName(trimmed);
     };
     
+    // Handle promo code submission
+    const handlePromoCodeSubmit = () => {
+        if (!promoCode.trim()) return;
+        
+        const result = characterRegistry.redeemPromoCode(promoCode);
+        if (result) {
+            setPromoMessage({ type: 'success', text: `🎉 Unlocked: ${result.name}!` });
+            setCharacterType(result.id);
+            localStorage.setItem('character_type', result.id);
+            setPromoCode('');
+            // Clear message after 3 seconds
+            setTimeout(() => setPromoMessage(null), 3000);
+        } else {
+            setPromoMessage({ type: 'error', text: 'Invalid promo code' });
+            setTimeout(() => setPromoMessage(null), 2000);
+        }
+    };
+    
+    // Handle character type change
+    const handleCharacterTypeChange = (typeId) => {
+        if (characterRegistry.isUnlocked(typeId)) {
+            setCharacterType(typeId);
+            localStorage.setItem('character_type', typeId);
+        }
+    };
+    
+    // Get current character config
+    const currentCharacter = characterRegistry.getCharacter(characterType);
+    const unlockedCharacters = characterRegistry.getAvailableCharacterIds();
+    
     useEffect(() => {
-        if(updateData) updateData({skin: skinColor, hat, eyes, mouth, bodyItem});
-    }, [skinColor, hat, eyes, mouth, bodyItem, updateData]);
+        if(updateData) updateData({skin: skinColor, hat, eyes, mouth, bodyItem, characterType});
+    }, [skinColor, hat, eyes, mouth, bodyItem, characterType, updateData]);
 
     const sceneRef = useRef(null);
     const penguinRef = useRef(null);
@@ -300,19 +340,8 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
             return partGroup;
         }
 
-        const bodyVoxels = generateBaseBody(PALETTE[skinColor] || skinColor);
-        const headVoxels = generateHead(PALETTE[skinColor] || skinColor);
-        const flippersLeft = generateFlippers(PALETTE[skinColor] || skinColor, true);
-        const flippersRight = generateFlippers(PALETTE[skinColor] || skinColor, false);
-        const feetVoxels = generateFeet();
-
-        const hatVoxels = ASSETS.HATS[hat] || [];
-        const eyeVoxels = ASSETS.EYES[eyes] || [];
-        const mouthVoxels = ASSETS.MOUTH[mouth] || [];
-        const bodyItemVoxels = ASSETS.BODY[bodyItem] || [];
-
-        const addPart = (voxels, name) => {
-            const partGroup = buildVoxelPart(voxels, PALETTE);
+        const addPart = (voxels, name, palette = PALETTE) => {
+            const partGroup = buildVoxelPart(voxels, palette);
             partGroup.name = name;
             group.add(partGroup);
             if (mirrorGroup) {
@@ -321,15 +350,38 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
             }
         };
 
-        addPart(bodyVoxels, 'body');
-        addPart(headVoxels, 'head');
-        addPart(flippersLeft, 'flipper_l');
-        addPart(flippersRight, 'flipper_r');
-        addPart(feetVoxels, 'feet');
-        addPart(hatVoxels, 'hat');
-        addPart(eyeVoxels, 'eyes');
-        addPart(mouthVoxels, 'mouth');
-        addPart(bodyItemVoxels, 'accessory');
+        // Build character based on type
+        if (characterType === 'marcus') {
+            // Build Marcus with separate parts (Y offset is built into the generators now)
+            addPart(MarcusGenerators.head(), 'head', MARCUS_PALETTE);
+            addPart(MarcusGenerators.body(), 'body', MARCUS_PALETTE);
+            addPart(MarcusGenerators.armLeft(), 'flipper_l', MARCUS_PALETTE);
+            addPart(MarcusGenerators.armRight(), 'flipper_r', MARCUS_PALETTE);
+            addPart(MarcusGenerators.legLeft(), 'foot_l', MARCUS_PALETTE);
+            addPart(MarcusGenerators.legRight(), 'foot_r', MARCUS_PALETTE);
+        } else {
+            // Build standard Penguin character
+            const bodyVoxels = generateBaseBody(PALETTE[skinColor] || skinColor);
+            const headVoxels = generateHead(PALETTE[skinColor] || skinColor);
+            const flippersLeft = generateFlippers(PALETTE[skinColor] || skinColor, true);
+            const flippersRight = generateFlippers(PALETTE[skinColor] || skinColor, false);
+            const feetVoxels = generateFeet();
+
+            const hatVoxels = ASSETS.HATS[hat] || [];
+            const eyeVoxels = ASSETS.EYES[eyes] || [];
+            const mouthVoxels = ASSETS.MOUTH[mouth] || [];
+            const bodyItemVoxels = ASSETS.BODY[bodyItem] || [];
+
+            addPart(bodyVoxels, 'body');
+            addPart(headVoxels, 'head');
+            addPart(flippersLeft, 'flipper_l');
+            addPart(flippersRight, 'flipper_r');
+            addPart(feetVoxels, 'feet');
+            addPart(hatVoxels, 'hat');
+            addPart(eyeVoxels, 'eyes');
+            addPart(mouthVoxels, 'mouth');
+            addPart(bodyItemVoxels, 'accessory');
+        }
 
         if (hat === 'propeller') {
             const blades = new THREE.Group();
@@ -385,7 +437,7 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
              if (mirrorGroup) mirrorGroup.add(light.clone());
         }
 
-    }, [scriptsLoaded, skinColor, hat, eyes, mouth, bodyItem]);
+    }, [scriptsLoaded, skinColor, hat, eyes, mouth, bodyItem, characterType]);
 
     const options = {
         skin: Object.keys(PALETTE).filter(k => !['floorLight','floorDark','wood','rug','glass','beerGold','mirrorFrame','mirrorGlass', 'asphalt', 'roadLine', 'buildingBrickRed', 'buildingBrickYellow', 'buildingBrickBlue', 'windowLight', 'windowDark', 'grass', 'snow', 'water', 'waterDeep', 'butterfly1', 'butterfly2', 'butterfly3'].includes(k) && !k.startsWith('tie') && !k.startsWith('shirt') && !k.startsWith('camo') && !k.startsWith('jeans')),
@@ -416,53 +468,72 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
             <div className="absolute bottom-10 right-10 z-10 w-80 pointer-events-auto">
                 <div className="glass-panel p-6 rounded-2xl flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
                     <h2 className="text-white font-bold text-lg mb-2 flex items-center gap-2 sticky top-0 bg-gray-900/50 p-2 rounded backdrop-blur-md z-20">
-                        <IconSettings size={20} /> Wardrobe
+                        <IconSettings size={20} /> {characterType === 'penguin' ? 'Wardrobe' : currentCharacter?.name || 'Character'}
                     </h2>
 
-                    <div className="flex flex-col gap-2 text-white">
-                        <span className="font-semibold text-xs text-gray-300 uppercase tracking-wider">Feathers ({options.skin.length})</span>
-                        <div className="grid grid-cols-6 gap-2">
-                            {options.skin.map(c => (
-                                <button 
-                                    key={c}
-                                    onClick={() => setSkinColor(c)}
-                                    title={c}
-                                    className={`w-8 h-8 rounded-full border-2 ${skinColor === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-70'} transition-all hover:scale-105`}
-                                    style={{backgroundColor: PALETTE[c] || c}}
-                                />
+                    {/* Customization options - ONLY for penguin character */}
+                    {characterType === 'penguin' ? (
+                        <>
+                            <div className="flex flex-col gap-2 text-white">
+                                <span className="font-semibold text-xs text-gray-300 uppercase tracking-wider">Feathers ({options.skin.length})</span>
+                                <div className="grid grid-cols-6 gap-2">
+                                    {options.skin.map(c => (
+                                        <button 
+                                            key={c}
+                                            onClick={() => setSkinColor(c)}
+                                            title={c}
+                                            className={`w-8 h-8 rounded-full border-2 ${skinColor === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-70'} transition-all hover:scale-105`}
+                                            style={{backgroundColor: PALETTE[c] || c}}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
+                            <hr className="border-gray-600/50" />
+
+                            {[
+                                { label: `HEADWEAR (${options.head.length})`, val: hat, set: setHat, list: options.head },
+                                { label: `EYES (${options.eyes.length})`, val: eyes, set: setEyes, list: options.eyes },
+                                { label: `MOUTH (${options.mouth.length})`, val: mouth, set: setMouth, list: options.mouth },
+                                { label: `CLOTHING (${options.body.length})`, val: bodyItem, set: setBodyItem, list: options.body },
+                            ].map((opt, i) => (
+                                <div key={i} className="flex flex-col gap-1">
+                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{opt.label}</span>
+                                    <div className="flex items-center justify-between bg-black/30 rounded-lg p-1">
+                                        <button 
+                                            className="voxel-btn p-2 text-white hover:text-yellow-400"
+                                            onClick={() => cycle(opt.val, opt.list, opt.set, -1)}
+                                        >
+                                            <IconChevronLeft size={20} />
+                                        </button>
+                                        <span className="text-white font-medium text-sm capitalize truncate max-w-[120px] text-center">
+                                            {opt.val.replace(/([A-Z])/g, ' $1').trim()}
+                                        </span>
+                                        <button 
+                                            className="voxel-btn p-2 text-white hover:text-yellow-400"
+                                            onClick={() => cycle(opt.val, opt.list, opt.set, 1)}
+                                        >
+                                            <IconChevronRight size={20} />
+                                        </button>
+                                    </div>
+                                </div>
                             ))}
-                        </div>
-                    </div>
-
-                    <hr className="border-gray-600/50" />
-
-                    {[
-                        { label: `HEADWEAR (${options.head.length})`, val: hat, set: setHat, list: options.head },
-                        { label: `EYES (${options.eyes.length})`, val: eyes, set: setEyes, list: options.eyes },
-                        { label: `MOUTH (${options.mouth.length})`, val: mouth, set: setMouth, list: options.mouth },
-                        { label: `CLOTHING (${options.body.length})`, val: bodyItem, set: setBodyItem, list: options.body },
-                    ].map((opt, i) => (
-                        <div key={i} className="flex flex-col gap-1">
-                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{opt.label}</span>
-                            <div className="flex items-center justify-between bg-black/30 rounded-lg p-1">
-                                <button 
-                                    className="voxel-btn p-2 text-white hover:text-yellow-400"
-                                    onClick={() => cycle(opt.val, opt.list, opt.set, -1)}
-                                >
-                                    <IconChevronLeft size={20} />
-                                </button>
-                                <span className="text-white font-medium text-sm capitalize truncate max-w-[120px] text-center">
-                                    {opt.val.replace(/([A-Z])/g, ' $1').trim()}
-                                </span>
-                                <button 
-                                    className="voxel-btn p-2 text-white hover:text-yellow-400"
-                                    onClick={() => cycle(opt.val, opt.list, opt.set, 1)}
-                                >
-                                    <IconChevronRight size={20} />
-                                </button>
+                        </>
+                    ) : (
+                        /* Special character info - no customization */
+                        <div className="bg-gradient-to-br from-purple-900/50 to-cyan-900/50 rounded-xl p-4 border border-purple-500/30">
+                            <div className="text-center">
+                                <span className="text-2xl">🎭</span>
+                                <h3 className="text-white font-bold mt-2">{currentCharacter?.name || 'Special Character'}</h3>
+                                <p className="text-white/60 text-xs mt-1">
+                                    {currentCharacter?.description || 'A unique character model'}
+                                </p>
+                                <p className="text-purple-400 text-xs mt-3 italic">
+                                    Special characters cannot be customized
+                                </p>
                             </div>
                         </div>
-                    ))}
+                    )}
                     
                     {/* Username Input */}
                     <div className="mt-4">
@@ -478,9 +549,62 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                         <p className="text-xs text-white/40 mt-1 text-right">{username.length}/20</p>
                     </div>
                     
+                    {/* Promo Code Input */}
+                    <div className="mt-2">
+                        <label className="block text-xs text-purple-400 mb-1 retro-text">PROMO CODE</label>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={promoCode}
+                                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                                onKeyDown={(e) => e.key === 'Enter' && handlePromoCodeSubmit()}
+                                maxLength={20}
+                                placeholder="Enter code..."
+                                className="flex-1 px-3 py-2 bg-black/50 border-2 border-purple-500/50 rounded-lg text-white text-sm focus:border-purple-400 focus:outline-none placeholder-white/30 uppercase"
+                            />
+                            <button
+                                onClick={handlePromoCodeSubmit}
+                                className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-colors"
+                            >
+                                REDEEM
+                            </button>
+                        </div>
+                        {promoMessage && (
+                            <p className={`text-xs mt-1 ${promoMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                                {promoMessage.text}
+                            </p>
+                        )}
+                    </div>
+                    
+                    {/* Character Selector - only show if multiple characters unlocked */}
+                    {unlockedCharacters.length > 1 && (
+                        <div className="mt-4">
+                            <label className="block text-xs text-cyan-400 mb-2 retro-text">CHARACTER</label>
+                            <div className="flex gap-2">
+                                {unlockedCharacters.map(charId => {
+                                    const char = characterRegistry.getCharacter(charId);
+                                    if (!char) return null;
+                                    return (
+                                        <button
+                                            key={charId}
+                                            onClick={() => handleCharacterTypeChange(charId)}
+                                            className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                                                characterType === charId
+                                                    ? 'bg-cyan-500 text-black border-2 border-cyan-300'
+                                                    : 'bg-black/50 text-white border-2 border-cyan-500/30 hover:border-cyan-400'
+                                            }`}
+                                        >
+                                            {char.name.toUpperCase()}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    
                     <button 
                         onClick={onEnterWorld}
-                        className="mt-2 w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg shadow-lg transform active:scale-95 transition-all retro-text text-xs border-b-4 border-yellow-700 flex justify-center items-center gap-2"
+                        className="mt-4 w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg shadow-lg transform active:scale-95 transition-all retro-text text-xs border-b-4 border-yellow-700 flex justify-center items-center gap-2"
                     >
                         <IconWorld size={16} /> ENTER WORLD
                     </button>
