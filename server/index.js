@@ -454,7 +454,9 @@ function handleMessage(playerId, message) {
                     puffle: player.puffle,
                     pufflePosition: player.pufflePosition,
                     emote: player.emote || null,
-                    seatedOnFurniture: player.seatedOnFurniture || false
+                    seatedOnFurniture: player.seatedOnFurniture || false,
+                    isAfk: player.isAfk || false,
+                    afkMessage: player.afkMessage || null
                 }
             }, playerId);
             
@@ -674,7 +676,9 @@ function handleMessage(playerId, message) {
                         puffle: player.puffle,
                         pufflePosition: player.pufflePosition,
                         emote: player.emote || null,
-                        seatedOnFurniture: player.seatedOnFurniture || false
+                        seatedOnFurniture: player.seatedOnFurniture || false,
+                        isAfk: player.isAfk || false,
+                        afkMessage: player.afkMessage || null
                     }
                 }, playerId);
                 

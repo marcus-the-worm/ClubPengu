@@ -105,12 +105,13 @@ class TownCenter {
             { x: C + 40, z: C + 40, size: 'medium' },
         ];
         
-        // Interior decorative trees
+        // Interior decorative trees - frame key areas
         const interiorTrees = [
-            { x: C - 35, z: C - 25, size: 'small' },  // Near gift shop
-            { x: C + 38, z: C - 5, size: 'small' },   // Near pizza
-            { x: C - 10, z: C + 20, size: 'medium' }, // Plaza area
-            { x: C + 15, z: C + 25, size: 'medium' }, // Plaza area
+            { x: C - 32, z: C - 18, size: 'small' },  // Near gift shop
+            { x: C + 35, z: C - 8, size: 'small' },   // Near pizza
+            { x: C + 18, z: C + 20, size: 'medium' }, // East plaza
+            { x: C - 42, z: C + 12, size: 'medium' }, // Frame igloo village
+            { x: C - 48, z: C + 25, size: 'large' },  // Behind igloos
         ];
         
         [...northTrees, ...westTrees, ...eastTrees, ...southTrees, ...interiorTrees].forEach(tree => {
@@ -121,85 +122,94 @@ class TownCenter {
             });
         });
         
-        // ==================== IGLOOS ====================
-        // Residential area - southwest
+        // ==================== IGLOO VILLAGE ====================
+        // Cozy residential cluster in the southwest with campsite
+        const villageX = C - 32;
+        const villageZ = C + 22;
+        
         props.push(
-            // Igloos face forward (toward +Z) so entrances align with portal detection
-            { type: 'igloo', x: C - 35, z: C + 20, rotation: 0 },
-            { type: 'igloo', x: C - 25, z: C + 30, rotation: 0 },
+            // Igloos with entrances facing toward town center (southeast direction)
+            { type: 'igloo', x: villageX - 8, z: villageZ + 10, rotation: Math.PI * 0.7 },   // Back left igloo - faces town
+            { type: 'igloo', x: villageX + 5, z: villageZ + 8, rotation: Math.PI * 0.6 },    // Back right igloo - faces town
+        );
+        
+        // Campsite in front of the igloos - the village gathering spot
+        const campsiteX = villageX;
+        const campsiteZ = villageZ - 5;
+        
+        props.push(
+            // Campfire in the center
+            { type: 'campfire', x: campsiteX, z: campsiteZ },
+            // Log seats arranged around the fire (3 seats, leaving opening toward igloos)
+            { type: 'log_seat', x: campsiteX - 4, z: campsiteZ - 1, rotation: Math.PI / 2 },       // Left
+            { type: 'log_seat', x: campsiteX + 4, z: campsiteZ - 1, rotation: -Math.PI / 2 },      // Right  
+            { type: 'log_seat', x: campsiteX, z: campsiteZ - 4.5, rotation: 0 },                   // Front (facing fireplace)
+        );
+        
+        // ==================== ROCKS ====================
+        // Natural rock formations - one large rock by the campsite
+        props.push(
+            { type: 'rock', x: campsiteX + 8, z: campsiteZ + 2, size: 'large' },   // Scenic rock by campfire
+            { type: 'rock', x: C + 42, z: C - 28, size: 'medium' },                 // Northeast corner
+            { type: 'rock', x: C - 45, z: C - 30, size: 'large' },                  // Northwest corner
+            { type: 'rock', x: C + 38, z: C + 35, size: 'medium' },                 // Southeast
+            { type: 'rock', x: C, z: C - 38, size: 'small' },                       // Near dojo
         );
         
         // ==================== LAMP POSTS ====================
-        // Path lighting - main walkways
-        const lampPositions = [
-            // Main plaza circle
-            { x: C, z: C + 15 },
-            { x: C + 12, z: C + 10 },
-            { x: C - 12, z: C + 10 },
-            { x: C + 10, z: C - 5 },
-            { x: C - 10, z: C - 5 },
+        // Reduced count - strategic placement for atmosphere and night lighting
+        // Key lamps cast shadows, ambient lamps don't (performance)
+        props.push(
+            // Main plaza - key lights (cast shadows)
+            { type: 'lamp_post', x: C + 8, z: C + 6, isOn: true, castShadow: true },
+            { type: 'lamp_post', x: C - 8, z: C + 6, isOn: true, castShadow: true },
             
             // Path to dojo
-            { x: C, z: C - 10 },
+            { type: 'lamp_post', x: C, z: C - 10, isOn: true, castShadow: true },
             
-            // Near gift shop
-            { x: C - 18, z: C },
-            { x: C - 30, z: C - 15 },
+            // Near buildings (ambient, no shadows)
+            { type: 'lamp_post', x: C - 18, z: C - 5, isOn: true, castShadow: false },  // Gift shop
+            { type: 'lamp_post', x: C + 28, z: C + 8, isOn: true, castShadow: false },  // Pizza
             
-            // Near pizza parlor
-            { x: C + 20, z: C + 12 },
-            { x: C + 35, z: C + 8 },
-            
-            // Southern path
-            { x: C - 5, z: C + 30 },
-            { x: C + 10, z: C + 35 },
-        ];
-        
-        lampPositions.forEach(pos => {
-            props.push({ type: 'lamp_post', ...pos, isOn: true });
-        });
+            // Igloo village - warm lighting
+            { type: 'lamp_post', x: campsiteX + 10, z: campsiteZ - 3, isOn: true, castShadow: true },  // Near campsite
+        );
         
         // ==================== BENCHES ====================
         // Rest spots with scenic views
         props.push(
-            // Central plaza benches
-            { type: 'bench', x: C + 8, z: C + 5, rotation: -Math.PI / 4 },
-            { type: 'bench', x: C - 8, z: C + 5, rotation: Math.PI / 4 },
+            // Central plaza benches - facing each other
+            { type: 'bench', x: C + 6, z: C + 3, rotation: Math.PI },      // Faces south
+            { type: 'bench', x: C - 6, z: C + 3, rotation: Math.PI },      // Faces south
             
-            // Near gift shop
-            { type: 'bench', x: C - 28, z: C + 5, rotation: Math.PI / 2 },
+            // Near gift shop - scenic view of plaza
+            { type: 'bench', x: C - 25, z: C - 8, rotation: Math.PI / 3 },
             
-            // Near pizza parlor
-            { type: 'bench', x: C + 30, z: C + 18, rotation: -Math.PI / 2 },
+            // Near pizza parlor - outdoor seating
+            { type: 'bench', x: C + 28, z: C + 15, rotation: -Math.PI / 2 },
             
-            // South scenic
-            { type: 'bench', x: C, z: C + 35, rotation: 0 },
+            // Southern scenic overlook
+            { type: 'bench', x: C + 8, z: C + 32, rotation: Math.PI / 6 },
         );
         
         // ==================== SNOWMEN ====================
-        // Fun interactive snowmen placed around town
+        // Fun interactive snowmen in discoverable spots
         props.push(
-            { type: 'snowman', x: C - 15, z: C + 15 },
-            { type: 'snowman', x: C + 20, z: C - 15 },
-        );
-        
-        // ==================== ROCKS ====================
-        // Natural rock formations at edges
-        props.push(
-            { type: 'rock', x: C - 40, z: C - 35, size: 'large' },
-            { type: 'rock', x: C + 42, z: C - 30, size: 'medium' },
-            { type: 'rock', x: C - 45, z: C + 35, size: 'large' },
-            { type: 'rock', x: C + 40, z: C + 38, size: 'medium' },
-            { type: 'rock', x: C + 5, z: C - 40, size: 'small' },
+            { type: 'snowman', x: C - 5, z: C + 18 },      // Plaza area
+            { type: 'snowman', x: C + 25, z: C - 18 },     // Near pizza/dojo path
         );
         
         // ==================== SNOW PILES ====================
-        // Decorative snow drifts
+        // Decorative snow drifts scattered naturally
         const snowPilePositions = [
-            // Building edges
-            { x: C - 28, z: C - 12, size: 'medium' },
-            { x: C + 30, z: C, size: 'small' },
-            { x: C + 5, z: C - 30, size: 'medium' },
+            // Near buildings
+            { x: C - 28, z: C - 15, size: 'medium' },
+            { x: C + 32, z: C - 5, size: 'small' },
+            { x: C + 3, z: C - 32, size: 'medium' },
+            
+            // Around igloo village
+            { x: villageX - 18, z: villageZ + 5, size: 'small' },
+            { x: villageX + 10, z: villageZ + 15, size: 'medium' },
             
             // Path edges
             { x: C - 5, z: C + 25, size: 'large' },
@@ -219,37 +229,39 @@ class TownCenter {
         // Directional signs at key intersections
         // Direction: 0=East(+X), 90=North(-Z), 180=West(-X), -90=South(+Z)
         props.push(
+            // Main plaza signpost
             {
                 type: 'signpost',
                 x: C,
-                z: C + 8,
+                z: C + 6,
                 signs: [
                     { text: 'DOJO', direction: 90 },       // North
                     { text: 'BEACH', direction: -90 },     // South
-                    { text: 'GIFT SHOP', direction: 150 }, // West-Northwest
-                    { text: 'PIZZA', direction: -15 },     // East-Southeast
+                    { text: 'GIFT SHOP', direction: 160 }, // West
+                    { text: 'PIZZA', direction: -20 },     // East
                 ]
             },
+            // Near igloo village - points to town and ski areas
             {
                 type: 'signpost',
-                x: C - 30,
-                z: C + 10,
+                x: campsiteX + 15,
+                z: campsiteZ - 2,
                 signs: [
-                    { text: 'SKI VILLAGE', direction: 90 }, // North (mountains)
-                    { text: 'TOWN', direction: 20 },        // East-Northeast
+                    { text: 'IGLOOS', direction: 140 },    // Southwest (toward igloos)
+                    { text: 'TOWN CENTER', direction: 20 }, // Northeast (toward plaza)
                 ]
             },
         );
         
         // ==================== FENCES ====================
-        // Boundary fences at water edge areas
+        // Boundary fences near water edges - rustic village feel
         props.push(
-            // Southwest fence section
-            { type: 'fence', x: C - 48, z: C + 30, rotation: 0, length: 6 },
-            { type: 'fence', x: C - 48, z: C + 38, rotation: Math.PI / 4, length: 4 },
+            // Near igloo village (protective fencing)
+            { type: 'fence', x: villageX - 15, z: villageZ + 18, rotation: -Math.PI / 6, length: 5 },
+            { type: 'fence', x: villageX - 20, z: villageZ + 12, rotation: -Math.PI / 3, length: 4 },
             
-            // Southeast fence section
-            { type: 'fence', x: C + 48, z: C + 35, rotation: 0, length: 6 },
+            // Southeast corner
+            { type: 'fence', x: C + 45, z: C + 38, rotation: Math.PI / 6, length: 5 },
         );
         
         return props;
@@ -278,7 +290,7 @@ class TownCenter {
                     mesh = this.propsFactory.createIgloo(true);
                     break;
                 case 'lamp_post':
-                    mesh = this.propsFactory.createLampPost(prop.isOn);
+                    mesh = this.propsFactory.createLampPost(prop.isOn, prop.castShadow || false);
                     if (mesh.userData.light) {
                         this.lights.push(mesh.userData.light);
                     }
@@ -291,6 +303,20 @@ class TownCenter {
                     break;
                 case 'rock':
                     mesh = this.propsFactory.createRock(prop.size);
+                    break;
+                case 'campfire':
+                    const campfireResult = this.propsFactory.createCampfire(true);
+                    mesh = campfireResult.mesh;
+                    // Store light and particles for animation
+                    if (campfireResult.light) {
+                        mesh.userData.fireLight = campfireResult.light;
+                    }
+                    if (campfireResult.particles) {
+                        mesh.userData.particles = campfireResult.particles;
+                    }
+                    break;
+                case 'log_seat':
+                    mesh = this.propsFactory.createLogSeat(prop.rotation || 0);
                     break;
                 case 'snow_pile':
                     mesh = this.propsFactory.createSnowPile(prop.size);
@@ -472,6 +498,56 @@ class TownCenter {
      */
     getActiveTriggers(playerX, playerZ) {
         return this.collisionSystem.getActiveTriggers(playerX, playerZ);
+    }
+
+    /**
+     * Update animated elements (call every frame)
+     * @param {number} time - Current time in seconds
+     * @param {number} delta - Delta time since last frame
+     */
+    update(time, delta) {
+        // Animate campfire flames and embers
+        this.propMeshes.forEach(mesh => {
+            if (mesh.name === 'campfire') {
+                // Animate flames
+                mesh.traverse(child => {
+                    if (child.userData.isFlame) {
+                        const offset = child.userData.offset || 0;
+                        child.position.y = child.userData.baseY + Math.sin(time * 8 + offset) * 0.1;
+                        child.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.2;
+                        child.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.2;
+                        child.rotation.y = time * 2 + offset;
+                    }
+                });
+                
+                // Animate ember particles
+                const particles = mesh.userData.particles;
+                if (particles) {
+                    const positions = particles.geometry.attributes.position.array;
+                    for (let i = 0; i < positions.length / 3; i++) {
+                        // Rise upward
+                        positions[i * 3 + 1] += delta * (1 + Math.random());
+                        // Slight drift
+                        positions[i * 3] += (Math.random() - 0.5) * delta * 0.5;
+                        positions[i * 3 + 2] += (Math.random() - 0.5) * delta * 0.5;
+                        
+                        // Reset if too high
+                        if (positions[i * 3 + 1] > 3) {
+                            positions[i * 3] = (Math.random() - 0.5) * 0.8;
+                            positions[i * 3 + 1] = 0.2;
+                            positions[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
+                        }
+                    }
+                    particles.geometry.attributes.position.needsUpdate = true;
+                }
+                
+                // Flicker light
+                const light = mesh.userData.fireLight;
+                if (light) {
+                    light.intensity = 1.5 + Math.sin(time * 15) * 0.3 + Math.random() * 0.2;
+                }
+            }
+        });
     }
 
     /**

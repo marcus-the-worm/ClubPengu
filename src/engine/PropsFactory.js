@@ -191,7 +191,7 @@ class PropsFactory {
     // ==================== IGLOO ====================
     
     /**
-     * Create a clean igloo with entrance tunnel
+     * Create a high-quality igloo with realistic ice block pattern
      * @param {boolean} withEntrance - Include the entrance tunnel
      * @returns {THREE.Group}
      */
@@ -200,115 +200,262 @@ class PropsFactory {
         const group = new THREE.Group();
         group.name = 'igloo';
         
-        const domeRadius = 3;
-        const domeHeight = 2.2;
+        const domeRadius = 3.2;
+        const domeHeight = 2.5;
         
-        const domeMat = this.getMaterial(PropsFactory.COLORS.iglooWhite, { roughness: 0.4 });
-        const shadowMat = this.getMaterial(PropsFactory.COLORS.iglooShadow, { roughness: 0.5 });
-        const darkMat = this.getMaterial('#0A1520', { roughness: 1 });
+        // Multi-tone ice materials for realism
+        const iceWhite = this.getMaterial(0xF8FCFF, { roughness: 0.3, metalness: 0.02 });
+        const iceMedium = this.getMaterial(0xE8F4FA, { roughness: 0.35, metalness: 0.02 });
+        const iceBlue = this.getMaterial(0xD8EAF5, { roughness: 0.4, metalness: 0.03 });
+        const seamMat = this.getMaterial(0xB8D4E8, { roughness: 0.5 });
+        const darkMat = this.getMaterial('#030810', { roughness: 1 });
+        const snowMat = this.getMaterial(PropsFactory.COLORS.snowLight, { roughness: 0.6 });
+        const warmGlow = this.getMaterial(0xFFA500, { 
+            emissive: 0xFF8C00, 
+            emissiveIntensity: 0.3,
+            transparent: true,
+            opacity: 0.6
+        });
         
-        // Main dome - solid hemisphere
-        const domeGeo = new THREE.SphereGeometry(domeRadius, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2);
-        const dome = new THREE.Mesh(domeGeo, domeMat);
+        // Main dome - very high poly for smoothness
+        const domeGeo = new THREE.SphereGeometry(domeRadius, 64, 40, 0, Math.PI * 2, 0, Math.PI / 2);
+        const dome = new THREE.Mesh(domeGeo, iceMedium);
         dome.scale.y = domeHeight / domeRadius;
         dome.castShadow = true;
         dome.receiveShadow = true;
         group.add(dome);
         
-        // Ice block brick pattern - horizontal rings only (cleaner look)
-        const ringCount = 5;
-        for (let i = 1; i < ringCount; i++) {
-            const t = i / ringCount;
-            const ringY = t * domeHeight * 0.95;
-            // Calculate radius at this height using ellipse formula
-            const ringRadius = domeRadius * Math.sqrt(1 - Math.pow(t, 2)) * 0.98;
-            if (ringRadius > 0.3) {
-                const ringGeo = new THREE.TorusGeometry(ringRadius, 0.04, 4, 48);
-                const ring = new THREE.Mesh(ringGeo, shadowMat);
-                ring.position.y = ringY;
-                ring.rotation.x = Math.PI / 2;
-                group.add(ring);
+        // Ice block rows - realistic spiral pattern like real igloos
+        const rowCount = 7;
+        const blocksPerRow = [16, 15, 14, 12, 10, 8, 5]; // Decreasing as we go up
+        
+        for (let row = 0; row < rowCount; row++) {
+            const t = (row + 0.5) / rowCount;
+            const rowY = t * domeHeight * 0.95;
+            const rowRadius = domeRadius * Math.sqrt(1 - Math.pow(t, 2)) * 0.998;
+            
+            if (rowRadius < 0.5) continue;
+            
+            // Horizontal seam
+            const seamGeo = new THREE.TorusGeometry(rowRadius, 0.025, 4, 64);
+            const seam = new THREE.Mesh(seamGeo, seamMat);
+            seam.position.y = rowY;
+            seam.rotation.x = Math.PI / 2;
+            group.add(seam);
+            
+            // Vertical seams (block edges) with spiral offset
+            const blockCount = blocksPerRow[row] || 8;
+            const spiralOffset = row * 0.15; // Spiral effect
+            
+            for (let b = 0; b < blockCount; b++) {
+                const blockAngle = (b / blockCount) * Math.PI * 2 + spiralOffset;
+                
+                // Skip blocks near entrance (front)
+                if (Math.abs(Math.sin(blockAngle)) < 0.25 && Math.cos(blockAngle) > 0) continue;
+                
+                // Vertical seam line
+                const nextRowT = (row + 1.5) / rowCount;
+                const nextRowY = Math.min(nextRowT * domeHeight * 0.95, domeHeight * 0.9);
+                const nextRowRadius = domeRadius * Math.sqrt(1 - Math.pow(nextRowT, 2)) * 0.998;
+                
+                if (nextRowRadius > 0.3) {
+                    const points = [
+                        new THREE.Vector3(
+                            Math.cos(blockAngle) * rowRadius,
+                            rowY,
+                            Math.sin(blockAngle) * rowRadius
+                        ),
+                        new THREE.Vector3(
+                            Math.cos(blockAngle + spiralOffset * 0.1) * nextRowRadius,
+                            nextRowY,
+                            Math.sin(blockAngle + spiralOffset * 0.1) * nextRowRadius
+                        )
+                    ];
+                    
+                    const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+                    const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ 
+                        color: 0xA8C8DD, 
+                        linewidth: 1 
+                    }));
+                    group.add(line);
+                }
+                
+                // Subtle block highlight (every other block slightly different shade)
+                if (b % 3 === 0 && row < rowCount - 1) {
+                    const highlightT = t + 0.05;
+                    const highlightR = domeRadius * Math.sqrt(1 - Math.pow(highlightT, 2)) * 0.99;
+                    const highlightGeo = new THREE.SphereGeometry(0.15, 6, 4);
+                    const highlight = new THREE.Mesh(highlightGeo, iceWhite);
+                    highlight.position.set(
+                        Math.cos(blockAngle + 0.1) * highlightR,
+                        rowY + 0.1,
+                        Math.sin(blockAngle + 0.1) * highlightR
+                    );
+                    highlight.scale.set(1.5, 0.8, 1);
+                    group.add(highlight);
+                }
             }
         }
         
-        // Entrance tunnel using simple boxes
+        // Entrance tunnel
         if (withEntrance) {
-            const tunnelW = 1.6;
+            const tunnelW = 1.4;
             const tunnelH = 1.4;
-            const tunnelD = 2.2;
-            const tunnelZ = domeRadius * 0.7;
+            const tunnelD = 2.0;
+            const tunnelZ = domeRadius * 0.6;
             
-            // Tunnel walls (left and right)
-            const wallGeo = new THREE.BoxGeometry(0.25, tunnelH, tunnelD);
-            [-tunnelW/2, tunnelW/2].forEach(x => {
-                const wall = new THREE.Mesh(wallGeo, domeMat);
-                wall.position.set(x, tunnelH / 2, tunnelZ + tunnelD / 2);
-                wall.castShadow = true;
-                wall.receiveShadow = true;
-                group.add(wall);
-            });
-            
-            // Tunnel roof (curved using multiple boxes)
-            const roofSegments = 6;
-            for (let i = 0; i < roofSegments; i++) {
-                const angle = (i / (roofSegments - 1)) * Math.PI;
-                const roofW = tunnelW + 0.3;
-                const roofGeo = new THREE.BoxGeometry(roofW * Math.cos(angle - Math.PI/2) * 0.3 + 0.3, 0.2, tunnelD);
-                const roof = new THREE.Mesh(roofGeo, domeMat);
-                roof.position.set(
-                    Math.cos(angle) * (tunnelW / 2) * 0.6,
-                    tunnelH + Math.sin(angle) * 0.4,
-                    tunnelZ + tunnelD / 2
-                );
-                roof.castShadow = true;
-                group.add(roof);
+            // Curved tunnel using lathe for realistic arch
+            const tunnelProfilePts = [];
+            const archSteps = 12;
+            for (let i = 0; i <= archSteps; i++) {
+                const angle = (i / archSteps) * Math.PI;
+                tunnelProfilePts.push(new THREE.Vector2(
+                    tunnelW / 2 * Math.cos(angle),
+                    tunnelH / 2 + tunnelH / 2 * Math.sin(angle)
+                ));
             }
             
-            // Tunnel top cover
-            const topGeo = new THREE.BoxGeometry(tunnelW + 0.5, 0.25, tunnelD);
-            const top = new THREE.Mesh(topGeo, domeMat);
-            top.position.set(0, tunnelH + 0.4, tunnelZ + tunnelD / 2);
-            top.castShadow = true;
-            group.add(top);
+            // Tunnel walls as smooth curved mesh
+            const wallThickness = 0.15;
+            
+            // Left wall
+            const leftWallShape = new THREE.Shape();
+            leftWallShape.moveTo(-tunnelW/2 - wallThickness, 0);
+            leftWallShape.lineTo(-tunnelW/2 - wallThickness, tunnelH * 0.8);
+            leftWallShape.quadraticCurveTo(-tunnelW/2 - wallThickness, tunnelH + 0.1, -tunnelW/4, tunnelH + 0.2);
+            leftWallShape.lineTo(-tunnelW/2, tunnelH);
+            leftWallShape.quadraticCurveTo(-tunnelW/2, tunnelH * 0.7, -tunnelW/2, 0);
+            
+            const wallExtrudeSettings = { depth: tunnelD, bevelEnabled: false };
+            const leftWallGeo = new THREE.ExtrudeGeometry(leftWallShape, wallExtrudeSettings);
+            const leftWall = new THREE.Mesh(leftWallGeo, iceMedium);
+            leftWall.position.set(0, 0, tunnelZ);
+            leftWall.castShadow = true;
+            leftWall.receiveShadow = true;
+            group.add(leftWall);
+            
+            // Right wall (mirror)
+            const rightWallShape = new THREE.Shape();
+            rightWallShape.moveTo(tunnelW/2 + wallThickness, 0);
+            rightWallShape.lineTo(tunnelW/2 + wallThickness, tunnelH * 0.8);
+            rightWallShape.quadraticCurveTo(tunnelW/2 + wallThickness, tunnelH + 0.1, tunnelW/4, tunnelH + 0.2);
+            rightWallShape.lineTo(tunnelW/2, tunnelH);
+            rightWallShape.quadraticCurveTo(tunnelW/2, tunnelH * 0.7, tunnelW/2, 0);
+            
+            const rightWallGeo = new THREE.ExtrudeGeometry(rightWallShape, wallExtrudeSettings);
+            const rightWall = new THREE.Mesh(rightWallGeo, iceMedium);
+            rightWall.position.set(0, 0, tunnelZ);
+            rightWall.castShadow = true;
+            rightWall.receiveShadow = true;
+            group.add(rightWall);
+            
+            // Arched roof
+            const roofShape = new THREE.Shape();
+            roofShape.moveTo(-tunnelW/2 - 0.1, tunnelH);
+            roofShape.quadraticCurveTo(0, tunnelH + 0.5, tunnelW/2 + 0.1, tunnelH);
+            roofShape.lineTo(tunnelW/2 + 0.2, tunnelH + 0.15);
+            roofShape.quadraticCurveTo(0, tunnelH + 0.7, -tunnelW/2 - 0.2, tunnelH + 0.15);
+            
+            const roofGeo = new THREE.ExtrudeGeometry(roofShape, wallExtrudeSettings);
+            const roof = new THREE.Mesh(roofGeo, iceWhite);
+            roof.position.set(0, 0, tunnelZ);
+            roof.castShadow = true;
+            group.add(roof);
             
             // Tunnel floor
-            const floorGeo = new THREE.BoxGeometry(tunnelW, 0.1, tunnelD);
-            const floor = new THREE.Mesh(floorGeo, this.getMaterial(PropsFactory.COLORS.snowMedium));
-            floor.position.set(0, 0.05, tunnelZ + tunnelD / 2);
+            const floorGeo = new THREE.BoxGeometry(tunnelW + 0.3, 0.06, tunnelD + 0.3);
+            const floor = new THREE.Mesh(floorGeo, this.getMaterial(0xE0E8EE, { roughness: 0.55 }));
+            floor.position.set(0, 0.03, tunnelZ + tunnelD / 2);
             floor.receiveShadow = true;
             group.add(floor);
             
-            // Dark interior opening
-            const interiorGeo = new THREE.PlaneGeometry(tunnelW * 0.8, tunnelH * 0.9);
+            // Warm glow from interior (simulates fireplace inside)
+            const glowGeo = new THREE.CircleGeometry(tunnelW * 0.4, 16);
+            const glow = new THREE.Mesh(glowGeo, warmGlow);
+            glow.position.set(0, tunnelH * 0.5, tunnelZ - 0.1);
+            group.add(glow);
+            
+            // Dark interior behind glow
+            const interiorGeo = new THREE.CircleGeometry(tunnelW * 0.45, 16);
             const interior = new THREE.Mesh(interiorGeo, darkMat);
-            interior.position.set(0, tunnelH * 0.5, tunnelZ - 0.1);
+            interior.position.set(0, tunnelH * 0.5, tunnelZ - 0.15);
             group.add(interior);
             
-            // Entrance arch frame
-            const archGeo = new THREE.TorusGeometry(tunnelW / 2 + 0.1, 0.12, 6, 12, Math.PI);
-            const arch = new THREE.Mesh(archGeo, shadowMat);
-            arch.position.set(0, tunnelH * 0.6, tunnelZ + tunnelD);
-            arch.rotation.y = Math.PI;
-            group.add(arch);
-        }
-        
-        // Snow drift at base
-        const driftGeo = new THREE.TorusGeometry(domeRadius + 0.3, 0.5, 8, 32);
-        const drift = new THREE.Mesh(driftGeo, this.getMaterial(PropsFactory.COLORS.snowMedium, { roughness: 0.7 }));
-        drift.rotation.x = Math.PI / 2;
-        drift.position.y = 0.12;
-        drift.scale.y = 0.35;
-        group.add(drift);
-        
-        // Small snow mounds near entrance
-        if (withEntrance) {
-            const pileMat = this.getMaterial(PropsFactory.COLORS.snowLight);
+            // Entrance arch frame (decorative ice blocks)
+            const archBlockCount = 7;
+            for (let i = 0; i < archBlockCount; i++) {
+                const angle = (i / (archBlockCount - 1)) * Math.PI;
+                const archRadius = tunnelW / 2 + 0.25;
+                const blockGeo = new THREE.BoxGeometry(0.2, 0.15, 0.15);
+                const block = new THREE.Mesh(blockGeo, iceBlue);
+                block.position.set(
+                    Math.cos(angle) * archRadius,
+                    tunnelH * 0.5 + Math.sin(angle) * archRadius,
+                    tunnelZ + tunnelD + 0.08
+                );
+                block.rotation.z = angle - Math.PI / 2;
+                group.add(block);
+            }
+            
+            // Snow piles at entrance
             [-1, 1].forEach(side => {
-                const pile = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 6), pileMat);
-                pile.position.set(side * 1.3, 0.2, domeRadius + 2.2);
-                pile.scale.set(1.2, 0.5, 1);
+                const pile = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 8), snowMat);
+                pile.position.set(side * 1.2, 0.2, tunnelZ + tunnelD + 0.5);
+                pile.scale.set(1.3, 0.5, 1.1);
+                pile.castShadow = true;
                 group.add(pile);
             });
+        }
+        
+        // Snow drift ring at base (natural looking)
+        const driftGeo = new THREE.TorusGeometry(domeRadius + 0.4, 0.6, 12, 64);
+        const drift = new THREE.Mesh(driftGeo, this.getMaterial(0xF0F5FA, { roughness: 0.6 }));
+        drift.rotation.x = Math.PI / 2;
+        drift.position.y = 0.15;
+        drift.scale.y = 0.3;
+        group.add(drift);
+        
+        // Random snow mounds around base
+        const moundCount = 5;
+        for (let i = 0; i < moundCount; i++) {
+            const angle = (i / moundCount) * Math.PI * 2 + 0.5;
+            // Skip entrance area
+            if (Math.abs(Math.sin(angle)) < 0.3 && Math.cos(angle) > 0) continue;
+            
+            const moundGeo = new THREE.SphereGeometry(0.3 + Math.random() * 0.2, 8, 6);
+            const mound = new THREE.Mesh(moundGeo, snowMat);
+            mound.position.set(
+                Math.cos(angle) * (domeRadius + 0.8),
+                0.1 + Math.random() * 0.1,
+                Math.sin(angle) * (domeRadius + 0.8)
+            );
+            mound.scale.set(1.2, 0.4, 1);
+            group.add(mound);
+        }
+        
+        // Icicles hanging from dome edge
+        const icicleCount = 8;
+        for (let i = 0; i < icicleCount; i++) {
+            const angle = (i / icicleCount) * Math.PI * 2 + 0.4;
+            // Skip entrance area
+            if (Math.abs(Math.sin(angle)) < 0.35 && Math.cos(angle) > 0) continue;
+            
+            const icicleLen = 0.25 + Math.random() * 0.2;
+            const icicleGeo = new THREE.ConeGeometry(0.04, icicleLen, 4);
+            const icicleMat = this.getMaterial(0xD0F0FF, { 
+                roughness: 0.05, 
+                transparent: true, 
+                opacity: 0.9,
+                metalness: 0.1
+            });
+            const icicle = new THREE.Mesh(icicleGeo, icicleMat);
+            icicle.position.set(
+                Math.cos(angle) * (domeRadius - 0.02),
+                0.4 + Math.random() * 0.2,
+                Math.sin(angle) * (domeRadius - 0.02)
+            );
+            icicle.rotation.x = Math.PI;
+            group.add(icicle);
         }
         
         // Collision data
@@ -321,8 +468,8 @@ class PropsFactory {
         // Interactive zone at entrance
         group.userData.interactionZone = {
             type: 'box',
-            position: { x: 0, z: domeRadius + 2.5 },
-            size: { x: 2, z: 2 },
+            position: { x: 0, z: domeRadius + 2.2 },
+            size: { x: 2.5, z: 2 },
             action: 'enter_igloo'
         };
         
@@ -334,9 +481,10 @@ class PropsFactory {
     /**
      * Create a classic street lamp with warm glow
      * @param {boolean} isOn - Whether the lamp is lit
+     * @param {boolean} castShadow - Whether the light casts shadows (performance impact)
      * @returns {{ mesh: THREE.Group, light: THREE.PointLight }}
      */
-    createLampPost(isOn = true) {
+    createLampPost(isOn = true, castShadow = false) {
         const THREE = this.THREE;
         const group = new THREE.Group();
         group.name = 'lamp_post';
@@ -344,82 +492,113 @@ class PropsFactory {
         const postHeight = 5;
         const postRadius = 0.12;
         
-        // Base plate
-        const baseGeo = new THREE.CylinderGeometry(0.4, 0.5, 0.3, 8);
-        const metalMat = this.getMaterial(PropsFactory.COLORS.metalDark, { roughness: 0.6, metalness: 0.3 });
+        // Base plate - ornate Victorian style
+        const baseGeo = new THREE.CylinderGeometry(0.35, 0.45, 0.25, 8);
+        const metalMat = this.getMaterial(PropsFactory.COLORS.metalDark, { roughness: 0.5, metalness: 0.4 });
         const base = new THREE.Mesh(baseGeo, metalMat);
-        base.position.y = 0.15;
+        base.position.y = 0.125;
         base.castShadow = true;
         group.add(base);
         
-        // Post
-        const postGeo = new THREE.CylinderGeometry(postRadius, postRadius * 1.2, postHeight, 8);
+        // Base ring detail
+        const baseRingGeo = new THREE.TorusGeometry(0.4, 0.04, 6, 16);
+        const baseRing = new THREE.Mesh(baseRingGeo, metalMat);
+        baseRing.position.y = 0.25;
+        baseRing.rotation.x = Math.PI / 2;
+        group.add(baseRing);
+        
+        // Post - tapered
+        const postGeo = new THREE.CylinderGeometry(postRadius * 0.9, postRadius * 1.1, postHeight, 8);
         const post = new THREE.Mesh(postGeo, metalMat);
-        post.position.y = postHeight / 2 + 0.3;
+        post.position.y = postHeight / 2 + 0.25;
         post.castShadow = true;
         group.add(post);
         
-        // Decorative ring
-        const ringGeo = new THREE.TorusGeometry(postRadius * 1.5, 0.03, 8, 16);
-        const ring = new THREE.Mesh(ringGeo, metalMat);
-        ring.position.y = postHeight * 0.7;
-        ring.rotation.x = Math.PI / 2;
-        group.add(ring);
+        // Decorative rings on post
+        [0.4, 0.7].forEach(t => {
+            const ringGeo = new THREE.TorusGeometry(postRadius * 1.4, 0.025, 6, 12);
+            const ring = new THREE.Mesh(ringGeo, metalMat);
+            ring.position.y = postHeight * t;
+            ring.rotation.x = Math.PI / 2;
+            group.add(ring);
+        });
         
-        // Lamp housing (top)
-        const housingGeo = new THREE.CylinderGeometry(0.35, 0.25, 0.4, 6);
+        // Lamp arm bracket
+        const bracketGeo = new THREE.BoxGeometry(0.08, 0.4, 0.08);
+        const bracket = new THREE.Mesh(bracketGeo, metalMat);
+        bracket.position.y = postHeight + 0.2;
+        group.add(bracket);
+        
+        // Lamp housing (lantern style)
+        const housingGeo = new THREE.CylinderGeometry(0.3, 0.25, 0.35, 6);
         const housing = new THREE.Mesh(housingGeo, metalMat);
-        housing.position.y = postHeight + 0.5;
+        housing.position.y = postHeight + 0.55;
         housing.castShadow = true;
         group.add(housing);
         
-        // Lamp roof
-        const roofGeo = new THREE.ConeGeometry(0.5, 0.3, 6);
+        // Lamp roof (pointed)
+        const roofGeo = new THREE.ConeGeometry(0.4, 0.35, 6);
         const roof = new THREE.Mesh(roofGeo, metalMat);
-        roof.position.y = postHeight + 0.85;
+        roof.position.y = postHeight + 0.9;
         group.add(roof);
         
-        // Glass globe
-        const globeGeo = new THREE.SphereGeometry(0.25, 12, 12);
+        // Roof finial
+        const finialGeo = new THREE.SphereGeometry(0.06, 6, 6);
+        const finial = new THREE.Mesh(finialGeo, metalMat);
+        finial.position.y = postHeight + 1.1;
+        group.add(finial);
+        
+        // Glass globe (brighter when on)
+        const globeGeo = new THREE.SphereGeometry(0.22, 16, 16);
         const globeMat = this.getMaterial(
-            isOn ? PropsFactory.COLORS.lampGlow : PropsFactory.COLORS.iceTranslucent,
+            isOn ? 0xFFF8E0 : PropsFactory.COLORS.iceTranslucent,
             {
                 roughness: 0.1,
                 transparent: true,
-                opacity: 0.9,
-                emissive: isOn ? PropsFactory.COLORS.lampGlow : undefined,
-                emissiveIntensity: isOn ? 0.8 : 0,
+                opacity: isOn ? 0.95 : 0.6,
+                emissive: isOn ? 0xFFE4B5 : undefined,
+                emissiveIntensity: isOn ? 1.2 : 0,
             }
         );
         const globe = new THREE.Mesh(globeGeo, globeMat);
-        globe.position.y = postHeight + 0.3;
+        globe.position.y = postHeight + 0.35;
         group.add(globe);
         
-        // Point light - NO SHADOWS for performance (many lamps in scene)
+        // Point light with configurable shadows
         let light = null;
         if (isOn) {
-            light = new THREE.PointLight(0xFFE4B5, 0.8, 10, 2);
-            light.position.y = postHeight + 0.3;
-            light.castShadow = false; // PERFORMANCE: Shadows disabled - too many lights
+            light = new THREE.PointLight(0xFFE4B5, 1.2, 12, 2);
+            light.position.y = postHeight + 0.35;
+            light.castShadow = castShadow;
+            
+            if (castShadow) {
+                // Configure shadow for quality
+                light.shadow.mapSize.width = 512;
+                light.shadow.mapSize.height = 512;
+                light.shadow.camera.near = 0.5;
+                light.shadow.camera.far = 15;
+                light.shadow.bias = -0.001;
+            }
             group.add(light);
         }
         
         // Snow on top
-        const snowCapGeo = new THREE.SphereGeometry(0.35, 8, 8);
+        const snowCapGeo = new THREE.SphereGeometry(0.28, 8, 8);
         const snowMat = this.getMaterial(PropsFactory.COLORS.snowLight);
         const snowCap = new THREE.Mesh(snowCapGeo, snowMat);
-        snowCap.position.y = postHeight + 1;
-        snowCap.scale.set(1.2, 0.4, 1.2);
+        snowCap.position.y = postHeight + 1.15;
+        snowCap.scale.set(1.4, 0.35, 1.4);
         group.add(snowCap);
         
         // Collision
         group.userData.collision = {
             type: 'cylinder',
-            radius: 0.4,
-            height: postHeight + 1,
+            radius: 0.35,
+            height: postHeight + 1.2,
         };
         
         group.userData.light = light;
+        group.userData.castShadow = castShadow;
         
         return group;
     }
@@ -1101,6 +1280,228 @@ class PropsFactory {
             
             group.add(sprite);
         });
+        
+        return group;
+    }
+
+    // ==================== CAMPSITE PROPS ====================
+
+    /**
+     * Create a campfire with flames and logs
+     * @param {boolean} isLit - Whether the fire is burning
+     * @returns {{ mesh: THREE.Group, light: THREE.PointLight, particles: THREE.Points }}
+     */
+    createCampfire(isLit = true) {
+        const THREE = this.THREE;
+        const group = new THREE.Group();
+        group.name = 'campfire';
+        
+        // Stone ring
+        const stoneMat = this.getMaterial(0x555555, { roughness: 0.9 });
+        const stoneRingRadius = 1.2;
+        const stoneCount = 10;
+        
+        for (let i = 0; i < stoneCount; i++) {
+            const angle = (i / stoneCount) * Math.PI * 2;
+            const stoneGeo = new THREE.DodecahedronGeometry(0.25, 0);
+            const stone = new THREE.Mesh(stoneGeo, stoneMat);
+            stone.position.set(
+                Math.cos(angle) * stoneRingRadius,
+                0.1,
+                Math.sin(angle) * stoneRingRadius
+            );
+            stone.rotation.set(Math.random(), Math.random(), Math.random());
+            stone.scale.set(1 + Math.random() * 0.3, 0.6 + Math.random() * 0.2, 1 + Math.random() * 0.3);
+            group.add(stone);
+        }
+        
+        // Logs in center
+        const logMat = this.getMaterial(0x4A3728, { roughness: 0.95 });
+        const logGeo = new THREE.CylinderGeometry(0.15, 0.18, 1.2, 8);
+        
+        for (let i = 0; i < 4; i++) {
+            const log = new THREE.Mesh(logGeo, logMat);
+            const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+            log.position.set(
+                Math.cos(angle) * 0.3,
+                0.15,
+                Math.sin(angle) * 0.3
+            );
+            log.rotation.z = Math.PI / 2;
+            log.rotation.y = angle;
+            group.add(log);
+        }
+        
+        // Charred center
+        const charGeo = new THREE.CylinderGeometry(0.5, 0.6, 0.1, 12);
+        const charMat = this.getMaterial(0x1A1A1A, { roughness: 1 });
+        const char = new THREE.Mesh(charGeo, charMat);
+        char.position.y = 0.05;
+        group.add(char);
+        
+        let fireLight = null;
+        let particles = null;
+        
+        if (isLit) {
+            // Fire glow light
+            fireLight = new THREE.PointLight(0xFF6600, 2, 8);
+            fireLight.position.y = 1;
+            group.add(fireLight);
+            
+            // Flame sprites (using simple cones)
+            const flameMat = new THREE.MeshBasicMaterial({ 
+                color: 0xFF4500, 
+                transparent: true, 
+                opacity: 0.9 
+            });
+            const flameGeo = new THREE.ConeGeometry(0.3, 1.2, 8);
+            
+            for (let i = 0; i < 3; i++) {
+                const flame = new THREE.Mesh(flameGeo, flameMat.clone());
+                flame.material.color.setHex([0xFF4500, 0xFF6600, 0xFFAA00][i]);
+                flame.position.set(
+                    (Math.random() - 0.5) * 0.4,
+                    0.5 + i * 0.15,
+                    (Math.random() - 0.5) * 0.4
+                );
+                flame.scale.set(1 - i * 0.2, 1, 1 - i * 0.2);
+                flame.userData.isFlame = true;
+                flame.userData.baseY = flame.position.y;
+                flame.userData.offset = Math.random() * Math.PI * 2;
+                group.add(flame);
+            }
+            
+            // Ember particles
+            const particleCount = 30;
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 0.8;
+                positions[i * 3 + 1] = Math.random() * 2;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
+                
+                const color = new THREE.Color().setHSL(0.05 + Math.random() * 0.05, 1, 0.5 + Math.random() * 0.3);
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+            }
+            
+            const particleGeo = new THREE.BufferGeometry();
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            const particleMat = new THREE.PointsMaterial({
+                size: 0.08,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending
+            });
+            
+            particles = new THREE.Points(particleGeo, particleMat);
+            particles.userData.isEmbers = true;
+            group.add(particles);
+        }
+        
+        // No collision - players can walk through/near the fire
+        // group.userData.collision = { type: 'cylinder', radius: 1.5, height: 1 };
+        
+        // Interaction zone for warming up
+        group.userData.interactionZone = {
+            type: 'cylinder',
+            radius: 3,
+            message: '🔥 Warm yourself by the fire',
+            emote: 'Sit'
+        };
+        
+        return { mesh: group, light: fireLight, particles };
+    }
+
+    /**
+     * Create a log seat for sitting around campfire
+     * @param {number} rotation - Rotation in radians (facing direction)
+     * @returns {THREE.Group}
+     */
+    createLogSeat(rotation = 0) {
+        const THREE = this.THREE;
+        const group = new THREE.Group();
+        group.name = 'log_seat';
+        
+        const logWidth = 2;
+        const logRadius = 0.35;
+        const seatHeight = 0.5;
+        
+        // Main log (lying on its side)
+        const logMat = this.getMaterial(0x5C4033, { roughness: 0.9 });
+        const logGeo = new THREE.CylinderGeometry(logRadius, logRadius + 0.05, logWidth, 12);
+        const log = new THREE.Mesh(logGeo, logMat);
+        log.rotation.z = Math.PI / 2;
+        log.position.y = logRadius;
+        log.castShadow = true;
+        log.receiveShadow = true;
+        group.add(log);
+        
+        // Bark texture rings
+        const barkMat = this.getMaterial(0x3D2817, { roughness: 1 });
+        for (let i = 0; i < 3; i++) {
+            const ringGeo = new THREE.TorusGeometry(logRadius + 0.02, 0.025, 6, 16);
+            const ring = new THREE.Mesh(ringGeo, barkMat);
+            ring.rotation.y = Math.PI / 2;
+            ring.position.set(-0.7 + i * 0.7, logRadius, 0);
+            group.add(ring);
+        }
+        
+        // End caps (tree rings visible)
+        const endCapGeo = new THREE.CircleGeometry(logRadius, 12);
+        const endCapMat = this.getMaterial(0x8B7355, { roughness: 0.9 });
+        const leftCap = new THREE.Mesh(endCapGeo, endCapMat);
+        leftCap.rotation.y = Math.PI / 2;
+        leftCap.position.set(-logWidth / 2, logRadius, 0);
+        group.add(leftCap);
+        
+        const rightCap = new THREE.Mesh(endCapGeo, endCapMat);
+        rightCap.rotation.y = -Math.PI / 2;
+        rightCap.position.set(logWidth / 2, logRadius, 0);
+        group.add(rightCap);
+        
+        // Light snow dusting on top
+        const snowMat = this.getMaterial(0xFFFFFF, { roughness: 0.8 });
+        const snowGeo = new THREE.BoxGeometry(logWidth * 0.8, 0.05, logRadius * 0.8);
+        const snow = new THREE.Mesh(snowGeo, snowMat);
+        snow.position.y = logRadius * 2 + 0.02;
+        group.add(snow);
+        
+        // Apply rotation to entire group
+        group.rotation.y = rotation;
+        
+        // Collision - allows jumping onto the log
+        group.userData.collision = {
+            type: 'box',
+            size: { x: logWidth + 0.4, y: seatHeight, z: logRadius * 2 + 0.4 },
+            height: seatHeight
+        };
+        
+        // Interaction zone for sitting (matches bench setup)
+        // Players approach from the front (+Z in local space after rotation)
+        group.userData.interactionZone = {
+            type: 'box',
+            position: { x: 0, z: 0.8 },
+            size: { x: logWidth + 1, z: 2 },
+            action: 'sit',
+            message: '🪵 Sit on log',
+            emote: 'Sit',
+            seatHeight: seatHeight,
+            benchDepth: logRadius * 2,
+            // Two seat positions: left and right side of log
+            snapPoints: [
+                { x: -0.5, z: 0 },    // Left seat
+                { x: 0.5, z: 0 }      // Right seat
+            ],
+            maxOccupants: 2,
+            // Store rotation for proper facing direction when seated
+            benchRotation: rotation
+        };
         
         return group;
     }

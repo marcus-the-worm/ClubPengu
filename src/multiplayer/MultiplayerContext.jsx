@@ -165,8 +165,8 @@ export function MultiplayerProvider({ children }) {
                 break;
                 
             case 'player_joined':
-                console.log(`👋 ${message.player.name} joined`, message.player.puffle ? `with ${message.player.puffle.color} puffle` : '(no puffle)', message.player.emote ? `emoting: ${message.player.emote}` : '');
-                // Add to ref immediately with all data including puffle
+                console.log(`👋 ${message.player.name} joined`, message.player.puffle ? `with ${message.player.puffle.color} puffle` : '(no puffle)', message.player.emote ? `emoting: ${message.player.emote}` : '', message.player.isAfk ? '(AFK)' : '');
+                // Add to ref immediately with all data including puffle and AFK status
                 const joinedPlayerData = {
                     id: message.player.id,
                     name: message.player.name,
@@ -178,6 +178,12 @@ export function MultiplayerProvider({ children }) {
                     emote: message.player.emote || null,
                     emoteStartTime: message.player.emote ? Date.now() : null,
                     seatedOnFurniture: message.player.seatedOnFurniture || false,
+                    // AFK state
+                    isAfk: message.player.isAfk || false,
+                    afkMessage: message.player.afkMessage || null,
+                    chatMessage: message.player.isAfk ? message.player.afkMessage : null,
+                    chatTime: message.player.isAfk ? Date.now() : null,
+                    isAfkBubble: message.player.isAfk || false,
                     needsMesh: true
                 };
                 playersDataRef.current.set(message.player.id, joinedPlayerData);

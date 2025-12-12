@@ -235,8 +235,9 @@ const VoxelWorld = ({
                 emoji: '🏠', 
                 description: 'Enter Igloo',
                 targetRoom: 'igloo1',
-                // Igloo 1 at (-35, 20) offset, entrance tunnel extends +5.5 in Z
-                position: { x: -35, z: 25.5 },
+                // Igloo 1 at (-40, 32) offset, rotated 0.7π (entrance faces southeast)
+                // Entrance at: center + 4.2 units in direction of rotation
+                position: { x: -36.5, z: 29.5 },
                 doorRadius: 3
             },
             { 
@@ -245,8 +246,9 @@ const VoxelWorld = ({
                 emoji: '🏠', 
                 description: 'Enter Igloo',
                 targetRoom: 'igloo2',
-                // Igloo 2 at (-25, 30) offset, entrance tunnel extends +5.5 in Z
-                position: { x: -25, z: 35.5 },
+                // Igloo 2 at (-27, 30) offset, rotated 0.6π (entrance faces east-southeast)
+                // Entrance at: center + 4.2 units in direction of rotation  
+                position: { x: -23, z: 28.5 },
                 doorRadius: 3
             },
             { 
@@ -277,10 +279,10 @@ const VoxelWorld = ({
                 emoji: '🚪', 
                 description: 'Return to Town',
                 targetRoom: 'town',
-                position: { x: 0, z: 13.5 }, // Updated for larger room
+                position: { x: 0, z: 13.5 }, // Exit door inside igloo room
                 doorRadius: 3,
-                // Spawn at igloo 1 entrance in town when exiting
-                exitSpawnPos: { x: -35, z: 28 }
+                // Spawn at igloo 1 entrance in town when exiting (outside doorway)
+                exitSpawnPos: { x: -34, z: 27 }
             }
         ],
         igloo2: [
@@ -290,10 +292,10 @@ const VoxelWorld = ({
                 emoji: '🚪', 
                 description: 'Return to Town',
                 targetRoom: 'town',
-                position: { x: 0, z: 13.5 }, // Updated for larger room
+                position: { x: 0, z: 13.5 }, // Exit door inside igloo room
                 doorRadius: 3,
-                // Spawn at igloo 2 entrance in town when exiting
-                exitSpawnPos: { x: -25, z: 38 }
+                // Spawn at igloo 2 entrance in town when exiting (outside doorway)
+                exitSpawnPos: { x: -20, z: 27 }
             }
         ],
         dojo: [
@@ -3170,6 +3172,11 @@ const VoxelWorld = ({
                 });
             }
             
+            // Animate campfire (flames, embers, light flicker)
+            if (townCenterRef.current && roomRef.current === 'town') {
+                townCenterRef.current.update(time, delta);
+            }
+            
             // Animate building door glows (pulse for interactive doors, town only)
             if (roomRef.current === 'town') {
                 portalsRef.current.forEach(building => {
@@ -3604,10 +3611,10 @@ const VoxelWorld = ({
         lastChatIdRef.current = latestMsg.id;
         
         // Don't show bubbles for whispers - they're private
-        if (latestMsg.type === 'whisper') return;
+        if (latestMsg.isWhisper) return;
         
         // Don't show bubbles for system messages
-        if (latestMsg.type === 'system') return;
+        if (latestMsg.isSystem) return;
         
         // Handle AFK messages
         if (latestMsg.text?.toLowerCase().startsWith('/afk') || latestMsg.text?.startsWith('💤')) {

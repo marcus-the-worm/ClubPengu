@@ -93,6 +93,26 @@ const ChatLog = ({ isMobile = false, isOpen = true, onClose }) => {
         resetFadeTimer();
     };
     
+    // Exit chat input when clicking outside chat panel
+    useEffect(() => {
+        const handleGlobalClick = (e) => {
+            // Check if input is focused
+            if (document.activeElement !== inputRef.current) return;
+            
+            // Check if click is outside the chat container
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                inputRef.current?.blur();
+            }
+        };
+        
+        // Use capture phase to catch clicks before other handlers
+        document.addEventListener('click', handleGlobalClick, true);
+        
+        return () => {
+            document.removeEventListener('click', handleGlobalClick, true);
+        };
+    }, []);
+    
     // Handle sending message
     const handleSend = () => {
         if (!inputValue.trim()) return;
@@ -119,6 +139,7 @@ const ChatLog = ({ isMobile = false, isOpen = true, onClose }) => {
             
             setInputValue('');
             resetFadeTimer();
+            inputRef.current?.blur(); // Auto-blur so player can move again
             return;
         }
         
@@ -153,6 +174,7 @@ const ChatLog = ({ isMobile = false, isOpen = true, onClose }) => {
             
             setInputValue('');
             resetFadeTimer();
+            inputRef.current?.blur(); // Auto-blur so player can move again
             return;
         }
         
@@ -160,6 +182,9 @@ const ChatLog = ({ isMobile = false, isOpen = true, onClose }) => {
         sendChat(text);
         setInputValue('');
         resetFadeTimer();
+        
+        // Auto-blur so player can move again
+        inputRef.current?.blur();
     };
     
     // Handle key press
