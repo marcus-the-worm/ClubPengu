@@ -2595,10 +2595,13 @@ const VoxelWorld = ({
             if (['KeyW', 'KeyS', 'KeyA', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                 if (emoteRef.current.type) {
                     emoteRef.current.type = null;
+                    // Notify server that emote ended (important for continuous emotes like Sit/Breakdance)
+                    mpSendEmote(null);
                     if (playerRef.current && playerRef.current.children[0]) {
                         const m = playerRef.current.children[0];
                         m.position.y = 0.8;
                         m.rotation.x = 0;
+                        m.rotation.z = 0; // Reset Z rotation too (for Breakdance)
                     }
                 }
             }
@@ -2734,6 +2737,19 @@ const VoxelWorld = ({
                     bubbleSpriteRef.current = null;
                 }
                 setActiveBubble(null);
+            }
+            
+            // Clear emote when movement is detected (for mobile/joystick users)
+            // Keyboard users are handled in keydown event
+            if (anyMovementInput && emoteRef.current.type && (joystickMagnitude > 0.1 || mobileForward || mobileBack || mobileLeft || mobileRight)) {
+                emoteRef.current.type = null;
+                mpSendEmote(null); // Notify server
+                if (playerRef.current && playerRef.current.children[0]) {
+                    const m = playerRef.current.children[0];
+                    m.position.y = 0.8;
+                    m.rotation.x = 0;
+                    m.rotation.z = 0;
+                }
             }
             
             // If seated on bench/chair, check for movement to stand up
