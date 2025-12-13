@@ -106,19 +106,22 @@ const WagerModal = () => {
     
     return (
         <div 
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in p-3 sm:p-4 overflow-y-auto"
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm animate-fade-in overflow-hidden"
             onClick={handleBackdropClick}
-            onMouseDown={handleModalInteraction}
-            onTouchStart={handleModalInteraction}
         >
+            {/* Scrollable container for mobile */}
             <div 
-                ref={modalRef}
-                className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl border border-white/10 shadow-2xl p-4 sm:p-6 w-full max-w-[340px] my-auto"
-                onClick={handleModalInteraction}
-                onMouseDown={handleModalInteraction}
-                onTouchStart={handleModalInteraction}
-                data-no-camera="true"
+                className="w-full h-full flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+                onClick={handleBackdropClick}
             >
+                <div 
+                    ref={modalRef}
+                    className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl border border-white/10 shadow-2xl p-4 sm:p-6 w-full max-w-[340px] my-4 sm:my-auto flex-shrink-0"
+                    onClick={handleModalInteraction}
+                    onMouseDown={handleModalInteraction}
+                    data-no-camera="true"
+                >
                 {/* Header */}
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                     <h3 className="text-base sm:text-lg font-bold text-white">
@@ -228,6 +231,7 @@ const WagerModal = () => {
                     Winner takes all • 5 min to respond
                 </p>
             </div>
+            </div>{/* Close scrollable container */}
         </div>
     );
 };

@@ -89,23 +89,31 @@ const ProfileMenu = () => {
         e.stopPropagation();
     };
     
+    // Handle touch events to allow scrolling inside menu but not outside
+    const handleTouchMove = (e) => {
+        // Allow scroll if the touch is inside scrollable content
+        e.stopPropagation();
+    };
+    
     return (
         <div 
-            className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none p-4"
-            onMouseDown={handleMenuInteraction}
-            onClick={handleMenuInteraction}
-            onTouchStart={handleMenuInteraction}
-            onTouchEnd={handleMenuInteraction}
+            className="fixed inset-0 z-50 pointer-events-none overflow-hidden"
         >
+            {/* Scrollable container for mobile */}
             <div 
-                ref={menuRef}
-                data-no-camera="true"
-                className="pointer-events-auto bg-gradient-to-br from-gray-900/95 to-gray-800/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-4 sm:p-5 w-full max-w-[280px] sm:max-w-[300px] animate-fade-in relative"
+                className="w-full h-full flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain"
+                style={{ WebkitOverflowScrolling: 'touch' }}
                 onMouseDown={handleMenuInteraction}
                 onClick={handleMenuInteraction}
-                onTouchStart={handleMenuInteraction}
-                onTouchEnd={handleMenuInteraction}
             >
+                <div 
+                    ref={menuRef}
+                    data-no-camera="true"
+                    className="pointer-events-auto bg-gradient-to-br from-gray-900/95 to-gray-800/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-4 sm:p-5 w-full max-w-[300px] sm:max-w-[320px] animate-fade-in relative my-4 sm:my-auto flex-shrink-0"
+                    onMouseDown={handleMenuInteraction}
+                    onClick={handleMenuInteraction}
+                    onTouchMove={handleTouchMove}
+                >
                 {/* Close button */}
                 <button 
                     onClick={clearSelectedPlayer}
@@ -183,27 +191,37 @@ const ProfileMenu = () => {
                         <span className={`transition-transform ${showGameDropdown ? 'rotate-180' : ''}`}>▼</span>
                     </button>
                     
-                    {/* Game Dropdown */}
+                    {/* Game Selection - Inline list for better mobile support */}
                     {showGameDropdown && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800 rounded-xl border border-white/10 overflow-hidden shadow-xl animate-fade-in max-h-48 overflow-y-auto">
-                            {availableGames.map(game => (
-                                <button
-                                    key={game.id}
-                                    onClick={() => game.available && handleGameSelect(game.id)}
-                                    disabled={!game.available}
-                                    className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3 transition-colors ${
-                                        game.available 
-                                            ? 'hover:bg-white/10 active:bg-white/20 text-white'
-                                            : 'text-white/30 cursor-not-allowed'
-                                    }`}
-                                >
-                                    <span className="text-lg sm:text-xl">{game.emoji}</span>
-                                    <span className="flex-1 text-left text-sm sm:text-base">{game.name}</span>
-                                    {!game.available && (
-                                        <span className="text-[10px] sm:text-xs text-white/30">Soon</span>
-                                    )}
-                                </button>
-                            ))}
+                        <div 
+                            className="mt-2 bg-gray-800 rounded-xl border border-white/10 shadow-xl animate-fade-in"
+                            style={{ WebkitOverflowScrolling: 'touch' }}
+                        >
+                            <div className="p-1">
+                                <p className="text-white/50 text-[10px] sm:text-xs px-3 py-1.5 border-b border-white/10">
+                                    Select a game:
+                                </p>
+                                {availableGames.map(game => (
+                                    <button
+                                        key={game.id}
+                                        onClick={() => game.available && handleGameSelect(game.id)}
+                                        disabled={!game.available}
+                                        className={`w-full px-3 sm:px-4 py-3 sm:py-3.5 flex items-center gap-2 sm:gap-3 transition-colors rounded-lg my-0.5 ${
+                                            game.available 
+                                                ? 'hover:bg-white/10 active:bg-white/20 text-white'
+                                                : 'text-white/30 cursor-not-allowed bg-black/20'
+                                        }`}
+                                    >
+                                        <span className="text-xl sm:text-2xl">{game.emoji}</span>
+                                        <span className="flex-1 text-left text-sm sm:text-base font-medium">{game.name}</span>
+                                        {game.available ? (
+                                            <span className="text-green-400 text-sm">▶</span>
+                                        ) : (
+                                            <span className="text-[10px] sm:text-xs bg-gray-700 px-2 py-0.5 rounded text-white/40">Soon</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>
@@ -222,6 +240,7 @@ const ProfileMenu = () => {
                     </div>
                 </div>
             </div>
+            </div>{/* Close scrollable container */}
         </div>
     );
 };

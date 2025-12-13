@@ -130,3 +130,4 @@ const characterRegistry = new CharacterRegistry();
 export default characterRegistry;
 export { CharacterRegistry };
 
+

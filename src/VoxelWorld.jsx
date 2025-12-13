@@ -117,7 +117,7 @@ const VoxelWorld = ({
         ["Pizza time?", "Always pizza time.", "Extra fish topping?", "Gross, but okay."]
     ];
 
-    const AI_EMOTES = ['Wave', 'Dance', 'Laugh', 'Sit'];
+    const AI_EMOTES = ['Wave', 'Dance', 'Laugh', 'Sit', 'Breakdance'];
     
     // Game State
     const [showEmoteWheel, setShowEmoteWheel] = useState(false);
@@ -3169,9 +3169,12 @@ const VoxelWorld = ({
                 
                 // Landing on objects is now handled in the unified ground collision section below
                 
-                // Also check triggers (benches, snowmen, etc.)
-                // Pass Y position so triggers can filter by height (e.g., don't show "sit" prompt when standing ON furniture)
-                townCenterRef.current.checkTriggers(finalX, finalZ, posRef.current.y);
+                // OPTIMIZED: Only check triggers every 3rd frame (still responsive, but 3x faster)
+                if (frameCount % 3 === 0) {
+                    // Also check triggers (benches, snowmen, etc.)
+                    // Pass Y position so triggers can filter by height (e.g., don't show "sit" prompt when standing ON furniture)
+                    townCenterRef.current.checkTriggers(finalX, finalZ, posRef.current.y);
+                }
             }
             
             // Pizza room furniture interactions
@@ -3531,8 +3534,40 @@ const VoxelWorld = ({
                           meshInner.rotation.x = -0.2;
                           meshInner.position.y = 0.8 + Math.abs(Math.sin(eTime * 15)) * 0.1;
                     }
+                    else if (emoteType === 'Breakdance') {
+                        // Breakdance: penguin spins on back with kicking feet (continuous like Sit)
+                        const spinSpeed = eTime * 6; // Spin speed
+                        const kickSpeed = eTime * 10; // Leg kick speed
+                        
+                        // Fully upside down on Z axis (lying on back), spin on Y
+                        meshInner.rotation.x = 0;
+                        meshInner.rotation.z = Math.PI; // Upside down
+                        meshInner.rotation.y = spinSpeed; // Spinning
+                        meshInner.position.y = 1.8 + Math.sin(eTime * 3) * 0.1; // Raised up so head isn't underground
+                        
+                        // Kick feet in circles (bicycle motion)
+                        if(footL) {
+                            footL.rotation.x = Math.sin(kickSpeed) * 1.0;
+                            footL.position.z = 1 + Math.sin(kickSpeed) * 0.5;
+                        }
+                        if(footR) {
+                            footR.rotation.x = Math.sin(kickSpeed + Math.PI) * 1.0;
+                            footR.position.z = 1 + Math.sin(kickSpeed + Math.PI) * 0.5;
+                        }
+                        
+                        // Flippers straight out to sides (T-pose style)
+                        if(flipperL) {
+                            flipperL.rotation.z = Math.PI / 2; // Straight out left
+                            flipperL.rotation.x = 0;
+                        }
+                        if(flipperR) {
+                            flipperR.rotation.z = -Math.PI / 2; // Straight out right
+                            flipperR.rotation.x = 0;
+                        }
+                    }
                     
-                    if (emoteType !== 'Sit' && eTime > 3) {
+                    // Auto-stop non-persistent emotes after 3 seconds (Sit and Breakdance are continuous)
+                    if (emoteType !== 'Sit' && emoteType !== 'Breakdance' && eTime > 3) {
                         if (playerRef.current === meshWrapper) {
                             emoteRef.current.type = null;
                             // Notify server that emote ended
@@ -3600,12 +3635,16 @@ const VoxelWorld = ({
                 }
             }
             
-            // --- AI UPDATE LOOP (OPTIMIZED: skip invisible AIs) ---
+            // --- AI UPDATE LOOP (OPTIMIZED: throttle to every 2nd frame) ---
             const now = Date.now();
             // Using cached values: centerX, centerZ, dojoBxCached, dojoBzCached, dojoHdCached, puffleMap, aiMap
             
+            // OPTIMIZATION: Only run full AI logic every 2nd frame (60fps -> 30fps AI updates)
+            // Visibility updates still happen every frame for smooth enter/exit
+            const runFullAILogic = frameCount % 2 === 0;
+            
             aiAgentsRef.current.forEach(ai => {
-                // Only show AI that are in the same room as the player
+                // Only show AI that are in the same room as the player (every frame for smoothness)
                 const sameRoom = ai.currentRoom === roomRef.current;
                 if (ai.mesh) ai.mesh.visible = sameRoom;
                 
@@ -3615,8 +3654,17 @@ const VoxelWorld = ({
                     aiPuffleEntry.puffle.mesh.visible = sameRoom;
                 }
                 
-                // OPTIMIZATION: Skip full AI logic for AIs in different rooms (just do room transitions)
+                // OPTIMIZATION: Skip full AI logic for AIs in different rooms AND throttle updates
                 let aiMoving = false;
+                
+                // Skip expensive AI logic on odd frames (but still sync mesh positions)
+                if (!runFullAILogic) {
+                    // Just sync mesh position on skipped frames
+                    if (ai.mesh && sameRoom) {
+                        ai.mesh.position.set(ai.pos.x, 0, ai.pos.z);
+                    }
+                    return; // Skip to next AI (forEach continues)
+                }
                 
                 // --- AI Room Transition Logic (use cached values) ---
                 const dojoBx = dojoBxCached;
@@ -3624,41 +3672,88 @@ const VoxelWorld = ({
                 const dojoHd = dojoHdCached;
                 const dojoDoorZ = dojoBz + dojoHd; // Front of dojo (door position)
                 
+                // Pizza Parlor position (from BUILDINGS: { x: 25, z: 5 }, size w:12, d:10)
+                const pizzaBx = centerX + 25;
+                const pizzaBz = centerZ + 5;
+                const pizzaDoorZ = pizzaBz + 5 + 1; // Front of pizza (door)
+                
                 if (ai.currentRoom === 'town') {
                     // Check if AI is at the dojo door
                     const doorWidth = 4;
-                    const atDoor = Math.abs(ai.pos.x - dojoBx) < doorWidth && 
-                                   Math.abs(ai.pos.z - dojoDoorZ) < 3;
+                    const atDojoDoor = Math.abs(ai.pos.x - dojoBx) < doorWidth && 
+                                       Math.abs(ai.pos.z - dojoDoorZ) < 4; // Increased detection zone
                     
-                    // When at door, good chance to enter
-                    if (atDoor && Math.random() < 0.02) { // 2% per frame = enters quickly
+                    // Check if AI is at the pizza door
+                    const atPizzaDoor = Math.abs(ai.pos.x - pizzaBx) < 5 && 
+                                        Math.abs(ai.pos.z - pizzaDoorZ) < 4;
+                    
+                    // When at dojo door, chance to enter (reduced to avoid getting stuck)
+                    if (atDojoDoor && Math.random() < 0.03) { // 3% per frame
                         ai.currentRoom = 'dojo';
-                        // Position AI near entrance inside dojo
                         ai.pos.x = (Math.random() - 0.5) * 10;
-                        ai.pos.z = 12 + Math.random() * 3; // Near the exit/entrance
+                        ai.pos.z = 12 + Math.random() * 3;
                         ai.action = 'idle';
-                        ai.actionTimer = now + 2000;
+                        ai.actionTimer = now + 2000 + Math.random() * 3000;
                         ai.target = null;
-                        // Move puffle too
+                        ai.stuckCounter = 0;
                         if (aiPuffleEntry && aiPuffleEntry.puffle) {
                             aiPuffleEntry.puffle.position.x = ai.pos.x + 1.5;
                             aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;
                         }
                     }
-                } else if (ai.currentRoom === 'dojo') {
-                    // AI in dojo can exit - check if near exit portal (z > 14)
-                    const atExit = ai.pos.z > 13 && Math.abs(ai.pos.x) < 5;
-                    
-                    // When at exit, chance to leave
-                    if (atExit && Math.random() < 0.015) { // 1.5% per frame
-                        ai.currentRoom = 'town';
-                        // Position AI outside dojo door in town
-                        ai.pos.x = dojoBx + (Math.random() - 0.5) * 4;
-                        ai.pos.z = dojoDoorZ + 2 + Math.random() * 2;
+                    // When at pizza door, chance to enter
+                    else if (atPizzaDoor && Math.random() < 0.03) {
+                        ai.currentRoom = 'pizza';
+                        ai.pos.x = (Math.random() - 0.5) * 8;
+                        ai.pos.z = 12 + Math.random() * 2; // Near entrance inside pizza
                         ai.action = 'idle';
-                        ai.actionTimer = now + 2000;
+                        ai.actionTimer = now + 2000 + Math.random() * 3000;
                         ai.target = null;
-                        // Move puffle too
+                        ai.stuckCounter = 0;
+                        if (aiPuffleEntry && aiPuffleEntry.puffle) {
+                            aiPuffleEntry.puffle.position.x = ai.pos.x + 1.5;
+                            aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;
+                        }
+                    }
+                    // If stuck at door too long without entering, move away
+                    else if ((atDojoDoor || atPizzaDoor) && ai.stuckCounter > 60) {
+                        ai.action = 'walk';
+                        ai.target = { 
+                            x: centerX + (Math.random() - 0.5) * 30, 
+                            z: centerZ + (Math.random() - 0.5) * 30 
+                        };
+                        ai.actionTimer = now + 5000;
+                        ai.stuckCounter = 0;
+                    }
+                } else if (ai.currentRoom === 'dojo') {
+                    // AI in dojo can exit
+                    const atExit = ai.pos.z > 13 && Math.abs(ai.pos.x) < 6;
+                    
+                    if (atExit && Math.random() < 0.02) {
+                        ai.currentRoom = 'town';
+                        ai.pos.x = dojoBx + (Math.random() - 0.5) * 6;
+                        ai.pos.z = dojoDoorZ + 3 + Math.random() * 3;
+                        ai.action = 'idle';
+                        ai.actionTimer = now + 2000 + Math.random() * 3000;
+                        ai.target = null;
+                        ai.stuckCounter = 0;
+                        if (aiPuffleEntry && aiPuffleEntry.puffle) {
+                            aiPuffleEntry.puffle.position.x = ai.pos.x + 1.5;
+                            aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;
+                        }
+                    }
+                } else if (ai.currentRoom === 'pizza') {
+                    // AI in pizza can exit - check if near front door (z > 14)
+                    const atExit = ai.pos.z > 13 && Math.abs(ai.pos.x) < 6;
+                    
+                    if (atExit && Math.random() < 0.015) {
+                        ai.currentRoom = 'town';
+                        ai.pos.x = pizzaBx + (Math.random() - 0.5) * 6;
+                        ai.pos.z = pizzaDoorZ + 3 + Math.random() * 3;
+                        ai.action = 'idle';
+                        ai.actionTimer = now + 2000 + Math.random() * 3000;
+                        ai.target = null;
+                        ai.stuckCounter = 0;
                         if (aiPuffleEntry && aiPuffleEntry.puffle) {
                             aiPuffleEntry.puffle.position.x = ai.pos.x + 1.5;
                             aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;
@@ -3746,24 +3841,38 @@ const VoxelWorld = ({
                 }
                 
                 else if (now > ai.actionTimer) {
-                    // Find conversation partner in same room
-                    let foundPartner = null;
-                    if (now > ai.conversationCooldown) {
-                        for(let other of aiAgentsRef.current) {
-                            if (other.id !== ai.id && 
-                                other.action === 'idle' && 
-                                other.currentRoom === ai.currentRoom && // Same room check
-                                now > other.conversationCooldown) {
-                                const dx = other.pos.x - ai.pos.x;
-                                const dz = other.pos.z - ai.pos.z;
-                                const dist = Math.sqrt(dx*dx + dz*dz);
-                                if (dist < 5) {
-                                    foundPartner = other;
-                                    break;
+                    // Clear sitting emote when timer expires
+                    if (ai.action === 'sitting') {
+                        ai.emoteType = null;
+                    }
+                    
+                    // If we have a scheduled walk target from being stuck, use it
+                    if (ai.nextWalkTarget) {
+                        ai.action = 'walk';
+                        ai.target = ai.nextWalkTarget;
+                        ai.nextWalkTarget = null;
+                        ai.emoteType = null;
+                        ai.actionTimer = now + 5000 + Math.random() * 4000;
+                    }
+                    // Find conversation partner in same room (not if sitting nearby)
+                    else {
+                        let foundPartner = null;
+                        if (now > ai.conversationCooldown && ai.action !== 'sitting') {
+                            for(let other of aiAgentsRef.current) {
+                                if (other.id !== ai.id && 
+                                    (other.action === 'idle' || other.action === 'sitting') && 
+                                    other.currentRoom === ai.currentRoom &&
+                                    now > other.conversationCooldown) {
+                                    const dx = other.pos.x - ai.pos.x;
+                                    const dz = other.pos.z - ai.pos.z;
+                                    const dist = Math.sqrt(dx*dx + dz*dz);
+                                    if (dist < 6) { // Slightly larger conversation range
+                                        foundPartner = other;
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
 
                     if (foundPartner) {
                         const scriptIdx = Math.floor(Math.random() * CONVERSATIONS.length);
@@ -3787,12 +3896,21 @@ const VoxelWorld = ({
                     
                     else {
                         const r = Math.random();
-                        if (r < 0.15) {
-                            // Random emote
+                        if (r < 0.10) {
+                            // Random emote (not Sit - that's handled separately)
                             ai.action = 'idle';
-                            ai.emoteType = AI_EMOTES[Math.floor(Math.random() * AI_EMOTES.length)];
+                            const nonSitEmotes = ['Wave', 'Dance', 'Laugh'];
+                            ai.emoteType = nonSitEmotes[Math.floor(Math.random() * nonSitEmotes.length)];
                             ai.emoteStart = now;
-                            ai.actionTimer = now + 4000; 
+                            ai.actionTimer = now + 3000 + Math.random() * 2000;
+                        }
+                        else if (r < 0.20) {
+                            // Sit down for a while (organic rest behavior)
+                            ai.action = 'sitting';
+                            ai.emoteType = 'Sit';
+                            ai.emoteStart = now;
+                            // Sit for 8-20 seconds (longer, more natural)
+                            ai.actionTimer = now + 8000 + Math.random() * 12000;
                         }
                         else if (r < 0.75) {
                             // Walk somewhere
@@ -3800,12 +3918,29 @@ const VoxelWorld = ({
                             ai.emoteType = null;
                             
                             if (ai.currentRoom === 'town') {
-                                // 20% chance to walk towards dojo door
-                                if (Math.random() < 0.20) {
-                                    // Use cached dojo values
+                                const walkChoice = Math.random();
+                                if (walkChoice < 0.15) {
+                                    // Walk towards dojo door
                                     const doorX = dojoBxCached + (Math.random() - 0.5) * 4;
-                                    const doorZ = dojoBzCached + dojoHdCached + 2; // Just outside door
+                                    const doorZ = dojoBzCached + dojoHdCached + 2;
                                     ai.target = { x: doorX, z: doorZ };
+                                } else if (walkChoice < 0.30) {
+                                    // Walk towards pizza door
+                                    const doorX = pizzaBx + (Math.random() - 0.5) * 4;
+                                    const doorZ = pizzaDoorZ + 2;
+                                    ai.target = { x: doorX, z: doorZ };
+                                } else if (walkChoice < 0.40) {
+                                    // Walk to campfire/igloo village area
+                                    ai.target = { 
+                                        x: centerX - 32 + (Math.random() - 0.5) * 12, 
+                                        z: centerZ + 17 + (Math.random() - 0.5) * 10 
+                                    };
+                                } else if (walkChoice < 0.50) {
+                                    // Walk to plaza center (benches)
+                                    ai.target = { 
+                                        x: centerX + (Math.random() - 0.5) * 10, 
+                                        z: centerZ + 3 + Math.random() * 5 
+                                    };
                                 } else {
                                     // Random walk in town - avoid buildings
                                     let tx, tz;
@@ -3813,11 +3948,10 @@ const VoxelWorld = ({
                                     let validTarget = false;
                                     
                                     do {
-                                        tx = centerX + (Math.random()-0.5) * 50;
-                                        tz = centerZ + (Math.random()-0.5) * 50;
+                                        tx = centerX + (Math.random()-0.5) * 55;
+                                        tz = centerZ + (Math.random()-0.5) * 55;
                                         validTarget = true;
                                         
-                                        // Check if target is inside any building
                                         for (const building of BUILDINGS) {
                                             const bx = centerX + building.position.x;
                                             const bz = centerZ + building.position.z;
@@ -3835,25 +3969,45 @@ const VoxelWorld = ({
                                     ai.target = { x: tx, z: tz };
                                 }
                             } else if (ai.currentRoom === 'dojo') {
-                                // 25% chance to walk towards exit
-                                if (Math.random() < 0.25) {
+                                if (Math.random() < 0.30) {
+                                    // Walk towards exit
                                     ai.target = { x: (Math.random() - 0.5) * 6, z: 14 + Math.random() * 2 };
                                 } else {
                                     // Walk around inside dojo
-                                    const tx = (Math.random()-0.5) * 28;
-                                    const tz = (Math.random()-0.5) * 28;
+                                    const tx = (Math.random()-0.5) * 26;
+                                    const tz = (Math.random()-0.5) * 26;
+                                    ai.target = { x: tx, z: tz };
+                                }
+                            } else if (ai.currentRoom === 'pizza') {
+                                if (Math.random() < 0.20) {
+                                    // Walk towards exit
+                                    ai.target = { x: (Math.random() - 0.5) * 6, z: 14 + Math.random() * 2 };
+                                } else if (Math.random() < 0.50) {
+                                    // Walk to a table area
+                                    const tableSpots = [
+                                        { x: -8 + (Math.random()-0.5)*3, z: 2 + (Math.random()-0.5)*2 },
+                                        { x: 8 + (Math.random()-0.5)*3, z: 2 + (Math.random()-0.5)*2 },
+                                        { x: -8 + (Math.random()-0.5)*3, z: 9 + (Math.random()-0.5)*2 },
+                                        { x: 8 + (Math.random()-0.5)*3, z: 9 + (Math.random()-0.5)*2 },
+                                    ];
+                                    ai.target = tableSpots[Math.floor(Math.random() * tableSpots.length)];
+                                } else {
+                                    // Random walk in pizza (avoid counter)
+                                    let tx = (Math.random()-0.5) * 26;
+                                    let tz = -8 + Math.random() * 20; // Avoid back counter
                                     ai.target = { x: tx, z: tz };
                                 }
                             }
-                            ai.actionTimer = now + 4000 + Math.random() * 4000;
+                            ai.actionTimer = now + 5000 + Math.random() * 5000;
                         }
                         else {
-                            // Idle
+                            // Idle - longer, more varied wait times for natural feel
                             ai.action = 'idle';
                             ai.emoteType = null;
-                            ai.actionTimer = now + 2000 + Math.random() * 2000;
+                            ai.actionTimer = now + 3000 + Math.random() * 5000;
                         }
                     }
+                    } // Close the else block for nextWalkTarget check
                 }
                 
                 // --- AI Movement ---
@@ -3945,32 +4099,53 @@ const VoxelWorld = ({
                             ai.pos.x = nextX;
                             ai.pos.z = nextZ;
                             aiMoving = true;
-                            ai.stuckCounter = 0; // Reset stuck counter
+                            ai.stuckCounter = 0;
                         } else {
-                            // AI hit a wall - try to navigate around
+                            // AI hit a wall - improved stuck handling
                             ai.stuckCounter = (ai.stuckCounter || 0) + 1;
                             
-                            if (ai.stuckCounter > 30) {
-                                // Really stuck - pick completely new random target
+                            if (ai.stuckCounter > 20) {
+                                // Stuck too long - take a break then pick new random target away from current position
                                 ai.action = 'idle';
-                                ai.actionTimer = now + 500;
+                                ai.emoteType = null;
+                                ai.actionTimer = now + 1000 + Math.random() * 2000;
                                 ai.target = null;
                                 ai.stuckCounter = 0;
+                                
+                                // Schedule a walk away from current area
+                                ai.nextWalkTarget = {
+                                    x: ai.currentRoom === 'town' 
+                                        ? centerX + (Math.random() - 0.5) * 40 
+                                        : (Math.random() - 0.5) * 20,
+                                    z: ai.currentRoom === 'town' 
+                                        ? centerZ + (Math.random() - 0.5) * 40 
+                                        : (Math.random() - 0.5) * 20
+                                };
+                            } else if (ai.stuckCounter > 10) {
+                                // Try backing up and turning
+                                ai.rot += (Math.random() > 0.5 ? 1 : -1) * Math.PI / 2;
+                                const backDist = 2 + Math.random() * 3;
+                                ai.target = {
+                                    x: ai.pos.x + Math.sin(ai.rot) * backDist,
+                                    z: ai.pos.z + Math.cos(ai.rot) * backDist
+                                };
                             } else {
                                 // Try sliding along the wall
-                                // Rotate target direction by 45-90 degrees
                                 const slideAngle = (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 4 + Math.random() * Math.PI / 4);
                                 ai.rot += slideAngle;
                                 
-                                // Pick new target in the rotated direction
-                                const newDist = 5 + Math.random() * 10;
+                                const newDist = 4 + Math.random() * 6;
                                 if (ai.currentRoom === 'town') {
                                     ai.target = {
-                                        x: ai.pos.x + Math.sin(ai.rot) * newDist,
-                                        z: ai.pos.z + Math.cos(ai.rot) * newDist
+                                        x: Math.max(centerX - 60, Math.min(centerX + 60, ai.pos.x + Math.sin(ai.rot) * newDist)),
+                                        z: Math.max(centerZ - 60, Math.min(centerZ + 60, ai.pos.z + Math.cos(ai.rot) * newDist))
+                                    };
+                                } else if (ai.currentRoom === 'pizza') {
+                                    ai.target = {
+                                        x: Math.max(-14, Math.min(14, ai.pos.x + Math.sin(ai.rot) * newDist)),
+                                        z: Math.max(-10, Math.min(14, ai.pos.z + Math.cos(ai.rot) * newDist))
                                     };
                                 } else {
-                                    // In dojo, stay in bounds
                                     ai.target = {
                                         x: Math.max(-15, Math.min(15, ai.pos.x + Math.sin(ai.rot) * newDist)),
                                         z: Math.max(-15, Math.min(15, ai.pos.z + Math.cos(ai.rot) * newDist))
@@ -5881,14 +6056,45 @@ const VoxelWorld = ({
              {showEmoteWheel && (
                  <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/50 backdrop-blur-sm animate-fade-in">
                      <div className="relative w-64 h-64 rounded-full border-4 border-white/20 bg-black/80 flex items-center justify-center">
-                         <div className="absolute top-4 text-center w-full retro-text text-yellow-400 text-xs">EMOTES</div>
+                         <div className="absolute top-2 text-center w-full retro-text text-yellow-400 text-[10px]">EMOTES</div>
                          
-                         <button className="absolute top-12 hover:scale-110 transition-transform p-3 bg-blue-500 rounded-full border-2 border-white" onClick={() => triggerEmote('Wave')}>👋</button>
-                         <button className="absolute bottom-12 hover:scale-110 transition-transform p-3 bg-green-500 rounded-full border-2 border-white" onClick={() => triggerEmote('Dance')}>💃</button>
-                         <button className="absolute left-4 hover:scale-110 transition-transform p-3 bg-purple-500 rounded-full border-2 border-white" onClick={() => triggerEmote('Sit')}>🧘</button>
-                         <button className="absolute right-4 hover:scale-110 transition-transform p-3 bg-red-500 rounded-full border-2 border-white" onClick={() => triggerEmote('Laugh')}>😂</button>
+                         {/* 5 buttons evenly spaced in a circle (72 degrees apart) */}
+                         {/* Top: Wave */}
+                         <button 
+                             className="absolute hover:scale-110 transition-transform p-3 bg-blue-500 rounded-full border-2 border-white shadow-lg"
+                             style={{ top: '12%', left: '50%', transform: 'translateX(-50%)' }}
+                             onClick={() => triggerEmote('Wave')} 
+                             title="Wave">👋</button>
                          
-                         <div className="text-white text-xs text-center opacity-50 retro-text">Select<br/>Animation</div>
+                         {/* Top-right: Laugh */}
+                         <button 
+                             className="absolute hover:scale-110 transition-transform p-3 bg-red-500 rounded-full border-2 border-white shadow-lg"
+                             style={{ top: '30%', right: '12%' }}
+                             onClick={() => triggerEmote('Laugh')} 
+                             title="Laugh">😂</button>
+                         
+                         {/* Bottom-right: Breakdance */}
+                         <button 
+                             className="absolute hover:scale-110 transition-transform p-3 bg-orange-500 rounded-full border-2 border-white shadow-lg"
+                             style={{ bottom: '18%', right: '18%' }}
+                             onClick={() => triggerEmote('Breakdance')} 
+                             title="Breakdance">🤸</button>
+                         
+                         {/* Bottom-left: Dance */}
+                         <button 
+                             className="absolute hover:scale-110 transition-transform p-3 bg-green-500 rounded-full border-2 border-white shadow-lg"
+                             style={{ bottom: '18%', left: '18%' }}
+                             onClick={() => triggerEmote('Dance')} 
+                             title="Dance">💃</button>
+                         
+                         {/* Top-left: Sit */}
+                         <button 
+                             className="absolute hover:scale-110 transition-transform p-3 bg-purple-500 rounded-full border-2 border-white shadow-lg"
+                             style={{ top: '30%', left: '12%' }}
+                             onClick={() => triggerEmote('Sit')} 
+                             title="Sit">🧘</button>
+                         
+                         <div className="text-white text-[10px] text-center opacity-50 retro-text">Press E<br/>to close</div>
                      </div>
                  </div>
              )}

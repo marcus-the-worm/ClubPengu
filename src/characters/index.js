@@ -49,3 +49,4 @@ characterRegistry.registerCharacter('marcus', {
 export { characterRegistry, MarcusGenerators, MARCUS_PALETTE };
 export default characterRegistry;
 
+

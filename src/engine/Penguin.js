@@ -193,10 +193,37 @@ class Penguin {
                 inner.rotation.x = -0.2;
                 inner.position.y = 1 + Math.abs(Math.sin(eTime * 15)) * 0.1;
                 break;
+                
+            case 'Breakdance':
+                // Breakdance: penguin spins on back with kicking feet (continuous)
+                const spinSpeed2 = eTime * 6;
+                const kickSpeed2 = eTime * 10;
+                
+                inner.rotation.x = 0;
+                inner.rotation.z = Math.PI; // Upside down
+                inner.rotation.y = spinSpeed2; // Spinning
+                inner.position.y = 1.8 + Math.sin(eTime * 3) * 0.1; // Raised up
+                
+                if (footL) {
+                    footL.rotation.x = Math.sin(kickSpeed2) * 1.0;
+                }
+                if (footR) {
+                    footR.rotation.x = Math.sin(kickSpeed2 + Math.PI) * 1.0;
+                }
+                // Flippers straight out to sides
+                if (flipperL) {
+                    flipperL.rotation.z = Math.PI / 2;
+                    flipperL.rotation.x = 0;
+                }
+                if (flipperR) {
+                    flipperR.rotation.z = -Math.PI / 2;
+                    flipperR.rotation.x = 0;
+                }
+                break;
         }
         
-        // Auto-end non-persistent emotes
-        if (this.emote !== 'Sit' && eTime > 3) {
+        // Auto-end non-persistent emotes (Sit and Breakdance are continuous)
+        if (this.emote !== 'Sit' && this.emote !== 'Breakdance' && eTime > 3) {
             this.stopEmote();
         }
     }
@@ -256,6 +283,7 @@ class Penguin {
 }
 
 export default Penguin;
+
 
 
 

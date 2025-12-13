@@ -157,43 +157,41 @@ class TownCenter {
         );
         
         // ==================== LAMP POSTS ====================
-        // Reduced count - strategic placement for atmosphere and night lighting
-        // Key lamps cast shadows, ambient lamps don't (performance)
+        // OPTIMIZED: Only 2 key lamps cast shadows (major performance gain)
+        // All others provide ambient light without shadow cost
         props.push(
-            // Main plaza - key lights (cast shadows)
+            // Main plaza - ONLY these 2 cast shadows (player area)
             { type: 'lamp_post', x: C + 8, z: C + 6, isOn: true, castShadow: true },
             { type: 'lamp_post', x: C - 8, z: C + 6, isOn: true, castShadow: true },
             
-            // Path to dojo - additional lights for navigation
-            { type: 'lamp_post', x: C, z: C - 10, isOn: true, castShadow: true },
-            { type: 'lamp_post', x: C + 5, z: C - 18, isOn: true, castShadow: false },  // Extra dojo path
-            { type: 'lamp_post', x: C - 5, z: C - 18, isOn: true, castShadow: false },  // Extra dojo path
+            // Path to dojo - ambient lights (no shadows)
+            { type: 'lamp_post', x: C, z: C - 10, isOn: true, castShadow: false },
+            { type: 'lamp_post', x: C + 5, z: C - 18, isOn: true, castShadow: false },
+            { type: 'lamp_post', x: C - 5, z: C - 18, isOn: true, castShadow: false },
             
             // Near buildings (ambient, no shadows)
-            { type: 'lamp_post', x: C - 18, z: C - 5, isOn: true, castShadow: false },  // Gift shop
-            { type: 'lamp_post', x: C - 25, z: C - 3, isOn: true, castShadow: false },  // Gift shop side
-            { type: 'lamp_post', x: C + 28, z: C + 8, isOn: true, castShadow: false },  // Pizza
-            { type: 'lamp_post', x: C + 20, z: C + 2, isOn: true, castShadow: false },  // Pizza entrance
+            { type: 'lamp_post', x: C - 18, z: C - 5, isOn: true, castShadow: false },
+            { type: 'lamp_post', x: C - 25, z: C - 3, isOn: true, castShadow: false },
+            { type: 'lamp_post', x: C + 28, z: C + 8, isOn: true, castShadow: false },
+            { type: 'lamp_post', x: C + 20, z: C + 2, isOn: true, castShadow: false },
             
-            // Igloo village - warm lighting
-            { type: 'lamp_post', x: campsiteX + 10, z: campsiteZ - 3, isOn: true, castShadow: true },  // Near campsite
-            { type: 'lamp_post', x: campsiteX - 5, z: campsiteZ + 5, isOn: true, castShadow: false },  // Igloo area
+            // Igloo village - ambient lighting (no shadows)
+            { type: 'lamp_post', x: campsiteX + 10, z: campsiteZ - 3, isOn: true, castShadow: false },
+            { type: 'lamp_post', x: campsiteX - 5, z: campsiteZ + 5, isOn: true, castShadow: false },
         );
         
         // ==================== BUILDING LIGHTS ====================
-        // Wall-mounted warm lights on building entrances for nighttime visibility
+        // OPTIMIZED: Reduced from 6 to 3 key lights (major entrances only)
+        // Each PointLight has performance cost - keep minimal
         props.push(
-            // Gift Shop entrance lights
-            { type: 'building_light', x: C - 22, z: C - 3, color: 0xFFE4B5, intensity: 3.0, distance: 15, height: 4 },
+            // Gift Shop entrance - single light, slightly brighter
+            { type: 'building_light', x: C - 22, z: C - 3, color: 0xFFE4B5, intensity: 3.5, distance: 18, height: 4 },
             
-            // Pizza Parlor entrance lights  
-            { type: 'building_light', x: C + 25, z: C + 10, color: 0xFFAA55, intensity: 3.5, distance: 18, height: 4 },
-            { type: 'building_light', x: C + 28, z: C + 2, color: 0xFFAA55, intensity: 2.5, distance: 12, height: 4 },
+            // Pizza Parlor entrance - single light, covers both areas
+            { type: 'building_light', x: C + 26, z: C + 6, color: 0xFFAA55, intensity: 4.0, distance: 22, height: 4 },
             
-            // Dojo entrance lights (warm torchlight)
-            { type: 'building_light', x: C - 3, z: C - 20, color: 0xFF8844, intensity: 3.0, distance: 15, height: 3 },
-            { type: 'building_light', x: C + 3, z: C - 20, color: 0xFF8844, intensity: 3.0, distance: 15, height: 3 },
-            { type: 'building_light', x: C, z: C - 28, color: 0xFFCC77, intensity: 2.0, distance: 12, height: 5 },  // Rear dojo
+            // Dojo entrance - single centered light
+            { type: 'building_light', x: C, z: C - 20, color: 0xFF8844, intensity: 3.5, distance: 18, height: 3 },
         );
         
         // ==================== BENCHES ====================
