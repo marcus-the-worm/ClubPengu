@@ -189,6 +189,39 @@ const SettingsMenu = ({ isOpen, onClose, settings, onSettingsChange }) => {
                         </div>
                     </div>
                     
+                    {/* Mount Equip Toggle - Equip/Unequip your mount */}
+                    <div className="bg-black/30 rounded-xl p-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex-1 mr-3">
+                                <h3 className="text-white font-medium text-sm">🚣 Mount</h3>
+                                <p className="text-white/50 text-[11px] mt-0.5">
+                                    Equip or unequip your mount
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    handleToggle('mountEnabled');
+                                    // Dispatch event to notify VoxelWorld of mount toggle
+                                    window.dispatchEvent(new CustomEvent('mountToggled', { 
+                                        detail: { enabled: settings.mountEnabled === false } 
+                                    }));
+                                }}
+                                className={`relative w-14 h-8 rounded-full transition-colors duration-200 shrink-0 touch-manipulation select-none ${
+                                    settings.mountEnabled !== false ? 'bg-orange-500' : 'bg-gray-600'
+                                }`}
+                            >
+                                <div 
+                                    className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200 ${
+                                        settings.mountEnabled !== false ? 'translate-x-7' : 'translate-x-1'
+                                    }`}
+                                />
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-orange-400/70 mt-2">
+                            {settings.mountEnabled !== false ? '✓ Mount equipped (visible to all)' : '✗ Mount unequipped'}
+                        </p>
+                    </div>
+                    
                     {/* Master Sound Toggle */}
                     <div className="bg-black/30 rounded-xl p-3">
                         <div className="flex items-center justify-between">

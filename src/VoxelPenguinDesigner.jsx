@@ -33,6 +33,33 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     const [mouth, setMouth] = useState(currentData?.mouth || 'beak');
     const [bodyItem, setBodyItem] = useState(currentData?.bodyItem || 'none');
     
+    // Mount unlock system - BOATCOIN promo code required
+    const [unlockedMounts, setUnlockedMounts] = useState(() => {
+        try {
+            const saved = localStorage.getItem('unlocked_mounts');
+            return saved ? JSON.parse(saved) : ['none'];
+        } catch {
+            return ['none'];
+        }
+    });
+    
+    // Check if current mount is unlocked, reset to none if not
+    const [mount, setMount] = useState(() => {
+        const savedMount = currentData?.mount || 'none';
+        const saved = localStorage.getItem('unlocked_mounts');
+        const unlocked = saved ? JSON.parse(saved) : ['none'];
+        // If mount is not unlocked, reset to none
+        if (savedMount !== 'none' && !unlocked.includes(savedMount)) {
+            return 'none';
+        }
+        return savedMount;
+    });
+    
+    // Check if a mount is unlocked
+    const isMountUnlocked = (mountId) => {
+        return mountId === 'none' || unlockedMounts.includes(mountId);
+    };
+    
     // Save username to localStorage and multiplayer context when it changes
     const handleUsernameChange = (value) => {
         // Limit to 20 characters
@@ -42,22 +69,41 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
         if (setName) setName(trimmed);
     };
     
+    // Mount promo codes (case-sensitive)
+    const MOUNT_PROMO_CODES = {
+        'BOATCOIN': 'minecraftBoat'
+    };
+    
     // Handle promo code submission
     const handlePromoCodeSubmit = () => {
         if (!promoCode.trim()) return;
         
+        // Check character promo codes first
         const result = characterRegistry.redeemPromoCode(promoCode);
         if (result) {
             setPromoMessage({ type: 'success', text: `🎉 Unlocked: ${result.name}!` });
             setCharacterType(result.id);
             localStorage.setItem('character_type', result.id);
             setPromoCode('');
-            // Clear message after 3 seconds
             setTimeout(() => setPromoMessage(null), 3000);
-        } else {
-            setPromoMessage({ type: 'error', text: 'Invalid promo code' });
-            setTimeout(() => setPromoMessage(null), 2000);
+            return;
         }
+        
+        // Check mount promo codes (case-sensitive)
+        const mountId = MOUNT_PROMO_CODES[promoCode.trim()];
+        if (mountId) {
+            const newUnlocked = [...unlockedMounts, mountId];
+            setUnlockedMounts(newUnlocked);
+            localStorage.setItem('unlocked_mounts', JSON.stringify(newUnlocked));
+            setMount(mountId); // Auto-equip the unlocked mount
+            setPromoMessage({ type: 'success', text: `🚣 Unlocked: Minecraft Boat!` });
+            setPromoCode('');
+            setTimeout(() => setPromoMessage(null), 3000);
+            return;
+        }
+        
+        setPromoMessage({ type: 'error', text: 'Invalid promo code' });
+        setTimeout(() => setPromoMessage(null), 2000);
     };
     
     // Handle character type change
@@ -73,8 +119,8 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     const unlockedCharacters = characterRegistry.getAvailableCharacterIds();
     
     useEffect(() => {
-        if(updateData) updateData({skin: skinColor, hat, eyes, mouth, bodyItem, characterType});
-    }, [skinColor, hat, eyes, mouth, bodyItem, characterType, updateData]);
+        if(updateData) updateData({skin: skinColor, hat, eyes, mouth, bodyItem, mount, characterType});
+    }, [skinColor, hat, eyes, mouth, bodyItem, mount, characterType, updateData]);
 
     const sceneRef = useRef(null);
     const penguinRef = useRef(null);
@@ -436,15 +482,107 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
              group.add(light);
              if (mirrorGroup) mirrorGroup.add(light.clone());
         }
+        
+        // --- MOUNT PREVIEW ---
+        if (mount && mount !== 'none' && ASSETS.MOUNTS && ASSETS.MOUNTS[mount]) {
+            const mountData = ASSETS.MOUNTS[mount];
+            const mountGroup = new THREE.Group();
+            mountGroup.name = 'mount';
+            
+            // Build mount hull voxels
+            if (mountData.voxels && mountData.voxels.length > 0) {
+                const geometry = new THREE.BufferGeometry();
+                const positions = [];
+                const colors = [];
+                
+                mountData.voxels.forEach(voxel => {
+                    const s = VOXEL_SIZE;
+                    const x = voxel.x * s;
+                    const y = voxel.y * s;
+                    const z = voxel.z * s;
+                    
+                    // Add cube vertices for each voxel
+                    const cubePositions = [
+                        x, y, z,  x+s, y, z,  x+s, y+s, z,  x, y+s, z,
+                        x, y, z+s,  x+s, y, z+s,  x+s, y+s, z+s,  x, y+s, z+s
+                    ];
+                    
+                    // Simple box faces
+                    const indices = [
+                        0,1,2, 0,2,3, // front
+                        4,6,5, 4,7,6, // back
+                        0,4,5, 0,5,1, // bottom
+                        2,6,7, 2,7,3, // top
+                        0,3,7, 0,7,4, // left
+                        1,5,6, 1,6,2  // right
+                    ];
+                    
+                    const color = new THREE.Color(voxel.c);
+                    indices.forEach(i => {
+                        positions.push(cubePositions[i*3], cubePositions[i*3+1], cubePositions[i*3+2]);
+                        colors.push(color.r, color.g, color.b);
+                    });
+                });
+                
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+                geometry.computeVertexNormals();
+                
+                const material = new THREE.MeshStandardMaterial({ 
+                    vertexColors: true,
+                    roughness: 0.7,
+                    metalness: 0.1
+                });
+                const mountMesh = new THREE.Mesh(geometry, material);
+                mountGroup.add(mountMesh);
+            }
+            
+            // Build left oar
+            if (mountData.leftOar && mountData.leftOar.length > 0) {
+                const oarGroup = new THREE.Group();
+                mountData.leftOar.forEach(voxel => {
+                    const geo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+                    const mat = new THREE.MeshStandardMaterial({ color: voxel.c });
+                    const cube = new THREE.Mesh(geo, mat);
+                    cube.position.set(voxel.x * VOXEL_SIZE, voxel.y * VOXEL_SIZE, voxel.z * VOXEL_SIZE);
+                    oarGroup.add(cube);
+                });
+                oarGroup.name = 'left_oar';
+                mountGroup.add(oarGroup);
+            }
+            
+            // Build right oar
+            if (mountData.rightOar && mountData.rightOar.length > 0) {
+                const oarGroup = new THREE.Group();
+                mountData.rightOar.forEach(voxel => {
+                    const geo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+                    const mat = new THREE.MeshStandardMaterial({ color: voxel.c });
+                    const cube = new THREE.Mesh(geo, mat);
+                    cube.position.set(voxel.x * VOXEL_SIZE, voxel.y * VOXEL_SIZE, voxel.z * VOXEL_SIZE);
+                    oarGroup.add(cube);
+                });
+                oarGroup.name = 'right_oar';
+                mountGroup.add(oarGroup);
+            }
+            
+            mountGroup.position.y = 0; // Mount sits at ground level
+            group.add(mountGroup);
+            
+            // Also lower penguin to sit in the boat
+            if (mountData.seatOffset) {
+                group.position.y = (mountData.seatOffset.y || 0) * VOXEL_SIZE;
+            }
+        }
 
-    }, [scriptsLoaded, skinColor, hat, eyes, mouth, bodyItem, characterType]);
+    }, [scriptsLoaded, skinColor, hat, eyes, mouth, bodyItem, mount, characterType]);
 
     const options = {
         skin: Object.keys(PALETTE).filter(k => !['floorLight','floorDark','wood','rug','glass','beerGold','mirrorFrame','mirrorGlass', 'asphalt', 'roadLine', 'buildingBrickRed', 'buildingBrickYellow', 'buildingBrickBlue', 'windowLight', 'windowDark', 'grass', 'snow', 'water', 'waterDeep', 'butterfly1', 'butterfly2', 'butterfly3'].includes(k) && !k.startsWith('tie') && !k.startsWith('shirt') && !k.startsWith('camo') && !k.startsWith('jeans')),
         head: Object.keys(ASSETS.HATS),
         eyes: Object.keys(ASSETS.EYES),
         mouth: Object.keys(ASSETS.MOUTH),
-        body: Object.keys(ASSETS.BODY)
+        body: Object.keys(ASSETS.BODY),
+        mounts: Object.keys(ASSETS.MOUNTS || {})
     };
     
     const cycle = (current, list, setter, dir) => {
@@ -496,26 +634,54 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                                 { label: `EYES (${options.eyes.length})`, val: eyes, set: setEyes, list: options.eyes },
                                 { label: `MOUTH (${options.mouth.length})`, val: mouth, set: setMouth, list: options.mouth },
                                 { label: `CLOTHING (${options.body.length})`, val: bodyItem, set: setBodyItem, list: options.body },
+                                { label: `MOUNTS (${options.mounts.length})`, val: mount, set: setMount, list: options.mounts, isMount: true },
                             ].map((opt, i) => (
                                 <div key={i} className="flex flex-col gap-1">
-                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{opt.label}</span>
+                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                        {opt.label}
+                                        {opt.isMount && <span className="text-orange-400 ml-1">(PROMO)</span>}
+                                    </span>
                                     <div className="flex items-center justify-between bg-black/30 rounded-lg p-1">
                                         <button 
                                             className="voxel-btn p-2 text-white hover:text-yellow-400"
-                                            onClick={() => cycle(opt.val, opt.list, opt.set, -1)}
+                                            onClick={() => {
+                                                if (opt.isMount) {
+                                                    // Only cycle to unlocked mounts
+                                                    const unlockedList = opt.list.filter(m => isMountUnlocked(m));
+                                                    cycle(opt.val, unlockedList, opt.set, -1);
+                                                } else {
+                                                    cycle(opt.val, opt.list, opt.set, -1);
+                                                }
+                                            }}
                                         >
                                             <IconChevronLeft size={20} />
                                         </button>
-                                        <span className="text-white font-medium text-sm capitalize truncate max-w-[120px] text-center">
-                                            {opt.val.replace(/([A-Z])/g, ' $1').trim()}
+                                        <span className={`font-medium text-sm capitalize truncate max-w-[120px] text-center ${
+                                            opt.isMount && !isMountUnlocked(opt.val) ? 'text-red-400' : 'text-white'
+                                        }`}>
+                                            {opt.isMount && !isMountUnlocked(opt.val) 
+                                                ? `🔒 ${opt.val.replace(/([A-Z])/g, ' $1').trim()}`
+                                                : opt.val.replace(/([A-Z])/g, ' $1').trim()
+                                            }
                                         </span>
                                         <button 
                                             className="voxel-btn p-2 text-white hover:text-yellow-400"
-                                            onClick={() => cycle(opt.val, opt.list, opt.set, 1)}
+                                            onClick={() => {
+                                                if (opt.isMount) {
+                                                    // Only cycle to unlocked mounts
+                                                    const unlockedList = opt.list.filter(m => isMountUnlocked(m));
+                                                    cycle(opt.val, unlockedList, opt.set, 1);
+                                                } else {
+                                                    cycle(opt.val, opt.list, opt.set, 1);
+                                                }
+                                            }}
                                         >
                                             <IconChevronRight size={20} />
                                         </button>
                                     </div>
+                                    {opt.isMount && !isMountUnlocked('minecraftBoat') && (
+                                        <p className="text-[10px] text-orange-400/80 text-center">Enter promo code to unlock mounts</p>
+                                    )}
                                 </div>
                             ))}
                         </>

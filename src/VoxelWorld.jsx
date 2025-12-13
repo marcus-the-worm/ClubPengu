@@ -48,11 +48,44 @@ const VoxelWorld = ({
     const mouseRef = useRef({ x: 0, y: 0 }); // Mouse position for raycasting
     const isInMatchRef = useRef(isInMatch); // Track match state for game loop
     const matchBannersRef = useRef(new Map()); // matchId -> { sprite, canvas, ctx }
+    const wizardTrailRef = useRef(null); // World-space wizard hat particle trail
+    const mountEnabledRef = useRef(true); // Track if mount is equipped/enabled
     
     // Keep isInMatch ref up to date
     useEffect(() => {
         isInMatchRef.current = isInMatch;
     }, [isInMatch]);
+    
+    // Mount toggle - listen for settings changes
+    useEffect(() => {
+        // Initialize from localStorage
+        try {
+            const settings = JSON.parse(localStorage.getItem('game_settings') || '{}');
+            mountEnabledRef.current = settings.mountEnabled !== false;
+        } catch { mountEnabledRef.current = true; }
+        
+        const handleMountToggle = (e) => {
+            const enabled = e.detail?.enabled ?? true;
+            mountEnabledRef.current = enabled;
+            
+            // Toggle mount visibility on current player mesh
+            if (playerRef.current) {
+                const mountGroup = playerRef.current.getObjectByName('mount');
+                if (mountGroup) {
+                    mountGroup.visible = enabled;
+                }
+                // Also toggle mount-related userData
+                if (playerRef.current.userData) {
+                    playerRef.current.userData.mountVisible = enabled;
+                }
+                // Clear cached animation parts so they reset properly
+                playerRef.current._animParts = null;
+            }
+        };
+        
+        window.addEventListener('mountToggled', handleMountToggle);
+        return () => window.removeEventListener('mountToggled', handleMountToggle);
+    }, []);
     
     // Multiplayer - OPTIMIZED: use refs for positions, state only for player list changes
     const {
@@ -551,6 +584,36 @@ const VoxelWorld = ({
         // OPTIMIZATION: Initialize reusable vectors
         tempVec3Ref.current = new THREE.Vector3();
         tempOffsetRef.current = new THREE.Vector3();
+        
+        // Helper function to create wizard hat particle pool for a player
+        // Each player with wizard hat gets their own pool (not shared)
+        const createWizardTrailPool = () => {
+            const trailGroup = new THREE.Group();
+            trailGroup.name = 'wizard_trail_pool';
+            const WIZARD_PARTICLE_COUNT = 50; // Particles per player
+            const colors = [0xFF69B4, 0x9400D3, 0x8A2BE2, 0xFFD700, 0x00CED1, 0xFF1493];
+            for (let i = 0; i < WIZARD_PARTICLE_COUNT; i++) {
+                const size = (0.08 + Math.random() * 0.06);
+                const pGeo = new THREE.SphereGeometry(size, 8, 8);
+                const pMat = new THREE.MeshBasicMaterial({ 
+                    color: colors[Math.floor(Math.random() * colors.length)], 
+                    transparent: true, 
+                    opacity: 0
+                });
+                const pMesh = new THREE.Mesh(pGeo, pMat);
+                pMesh.visible = false;
+                pMesh.userData.active = false;
+                pMesh.userData.birthTime = 0;
+                pMesh.userData.lifespan = 3;
+                trailGroup.add(pMesh);
+            }
+            trailGroup.userData.lastSpawnTime = 0;
+            trailGroup.userData.nextParticleIndex = 0;
+            return trailGroup;
+        };
+        
+        // Store the factory function for later use
+        wizardTrailRef.current = { createPool: createWizardTrailPool, pools: new Map() };
         
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
         cameraRef.current = camera;
@@ -2373,6 +2436,44 @@ const VoxelWorld = ({
                         blades.add(b1, b2);
                         group.add(blades);
                     }
+                    
+                    // Flaming Crown - fire particles like campfire
+                    if (data.hat === 'flamingCrown') {
+                        const fireGroup = new THREE.Group();
+                        fireGroup.name = 'crown_fire';
+                        fireGroup.position.set(0, 12 * VOXEL_SIZE, 0);
+                        
+                        // Create fire particles
+                        const particleCount = 15;
+                        for (let i = 0; i < particleCount; i++) {
+                            const size = (0.3 + Math.random() * 0.3) * VOXEL_SIZE;
+                            const pGeo = new THREE.BoxGeometry(size, size, size);
+                            const colors = [0xFF4500, 0xFF6600, 0xFFAA00, 0xFFFF00];
+                            const pMat = new THREE.MeshBasicMaterial({ 
+                                color: colors[Math.floor(Math.random() * colors.length)], 
+                                transparent: true, 
+                                opacity: 0.9 
+                            });
+                            const pMesh = new THREE.Mesh(pGeo, pMat);
+                            pMesh.position.set(
+                                (Math.random() - 0.5) * 3 * VOXEL_SIZE,
+                                i * 0.3 * VOXEL_SIZE,
+                                (Math.random() - 0.5) * 3 * VOXEL_SIZE
+                            );
+                            pMesh.userData.particleIndex = i;
+                            pMesh.userData.baseY = pMesh.position.y;
+                            pMesh.userData.baseX = pMesh.position.x;
+                            pMesh.userData.baseZ = pMesh.position.z;
+                            fireGroup.add(pMesh);
+                        }
+                        fireGroup.userData.isFireEmitter = true;
+                        group.add(fireGroup);
+                    }
+                    
+                    // Wizard Hat - mark player as having wizard hat (particles are world-space)
+                    if (data.hat === 'wizardHat') {
+                        group.userData.hasWizardHat = true;
+                    }
                 }
                  
                 if (data.eyes && ASSETS.EYES[data.eyes]) {
@@ -2397,6 +2498,48 @@ const VoxelWorld = ({
                         laserGroup.userData.isLaserEyes = true;
                         group.add(laserGroup);
                     }
+                    
+                    // Add fire eye effects for fire eyes
+                    if (data.eyes === 'fire') {
+                        const fireEyesGroup = new THREE.Group();
+                        fireEyesGroup.name = 'fire_eyes';
+                        
+                        // Left eye fire particles
+                        const leftFireGroup = new THREE.Group();
+                        leftFireGroup.position.set(-2 * VOXEL_SIZE, 7 * VOXEL_SIZE, 4.5 * VOXEL_SIZE);
+                        
+                        // Right eye fire particles
+                        const rightFireGroup = new THREE.Group();
+                        rightFireGroup.position.set(2 * VOXEL_SIZE, 7 * VOXEL_SIZE, 4.5 * VOXEL_SIZE);
+                        
+                        [leftFireGroup, rightFireGroup].forEach(eyeGroup => {
+                            for (let i = 0; i < 5; i++) {
+                                const size = 0.2 * VOXEL_SIZE;
+                                const pGeo = new THREE.BoxGeometry(size, size, size);
+                                const colors = [0xFF4500, 0xFF6600, 0xFFAA00];
+                                const pMat = new THREE.MeshBasicMaterial({ 
+                                    color: colors[i % colors.length], 
+                                    transparent: true, 
+                                    opacity: 0.9 
+                                });
+                                const pMesh = new THREE.Mesh(pGeo, pMat);
+                                pMesh.position.y = i * 0.15 * VOXEL_SIZE;
+                                pMesh.userData.particleIndex = i;
+                                pMesh.userData.baseY = pMesh.position.y;
+                                eyeGroup.add(pMesh);
+                            }
+                        });
+                        
+                        // Add point lights for glow
+                        const lightLeft = new THREE.PointLight(0xff4500, 0.8, 5);
+                        lightLeft.position.copy(leftFireGroup.position);
+                        const lightRight = new THREE.PointLight(0xff4500, 0.8, 5);
+                        lightRight.position.copy(rightFireGroup.position);
+                        
+                        fireEyesGroup.add(leftFireGroup, rightFireGroup, lightLeft, lightRight);
+                        fireEyesGroup.userData.isFireEyes = true;
+                        group.add(fireEyesGroup);
+                    }
                 } else if (ASSETS.EYES.normal) {
                     const p = buildPartMerged(ASSETS.EYES.normal, PALETTE);
                     p.name = 'eyes';
@@ -2408,15 +2551,17 @@ const VoxelWorld = ({
                     p.name = 'mouth';
                     group.add(p);
                     
-                    // Add smoke particles for cigarette or pipe
-                    if (data.mouth === 'cigarette' || data.mouth === 'pipe') {
+                    // Add smoke particles for cigarette, pipe, or cigar
+                    if (data.mouth === 'cigarette' || data.mouth === 'pipe' || data.mouth === 'cigar') {
                         const smokeGroup = new THREE.Group();
                         smokeGroup.name = 'smoke_particles';
                         
                         // Position based on mouth type
-                        const tipX = data.mouth === 'pipe' ? 2 * VOXEL_SIZE : 4.5 * VOXEL_SIZE;
+                        const tipX = data.mouth === 'pipe' ? 2 * VOXEL_SIZE : 
+                                     data.mouth === 'cigar' ? 6 * VOXEL_SIZE : 4.5 * VOXEL_SIZE;
                         const tipY = data.mouth === 'pipe' ? 6 * VOXEL_SIZE : 5.5 * VOXEL_SIZE;
-                        const tipZ = data.mouth === 'pipe' ? 6 * VOXEL_SIZE : 5.5 * VOXEL_SIZE;
+                        const tipZ = data.mouth === 'pipe' ? 6 * VOXEL_SIZE : 
+                                     data.mouth === 'cigar' ? 5.6 * VOXEL_SIZE : 5.5 * VOXEL_SIZE;
                         smokeGroup.position.set(tipX, tipY, tipZ);
                         
                         // Create smoke particles
@@ -2439,6 +2584,77 @@ const VoxelWorld = ({
                         smokeGroup.userData.isSmokeEmitter = true;
                         group.add(smokeGroup);
                     }
+                    
+                    // Fire Breath - forward shooting fire particles
+                    if (data.mouth === 'fireBreath') {
+                        const fireGroup = new THREE.Group();
+                        fireGroup.name = 'breath_fire';
+                        fireGroup.position.set(0, 5 * VOXEL_SIZE, 5.5 * VOXEL_SIZE);
+                        
+                        const particleCount = 20;
+                        for (let i = 0; i < particleCount; i++) {
+                            const size = (0.2 + Math.random() * 0.3) * VOXEL_SIZE;
+                            const pGeo = new THREE.BoxGeometry(size, size, size);
+                            const colors = [0xFF4500, 0xFF6600, 0xFFAA00, 0xFFFF00];
+                            const pMat = new THREE.MeshBasicMaterial({ 
+                                color: colors[Math.floor(Math.random() * colors.length)], 
+                                transparent: true, 
+                                opacity: 0.9 
+                            });
+                            const pMesh = new THREE.Mesh(pGeo, pMat);
+                            pMesh.position.z = i * 0.5 * VOXEL_SIZE;
+                            pMesh.userData.particleIndex = i;
+                            pMesh.userData.baseZ = pMesh.position.z;
+                            fireGroup.add(pMesh);
+                        }
+                        fireGroup.userData.isBreathFire = true;
+                        group.add(fireGroup);
+                    }
+                    
+                    // Ice Breath - forward shooting ice particles
+                    if (data.mouth === 'iceBreath') {
+                        const iceGroup = new THREE.Group();
+                        iceGroup.name = 'breath_ice';
+                        iceGroup.position.set(0, 5 * VOXEL_SIZE, 5.5 * VOXEL_SIZE);
+                        
+                        const particleCount = 20;
+                        for (let i = 0; i < particleCount; i++) {
+                            const size = (0.2 + Math.random() * 0.2) * VOXEL_SIZE;
+                            const pGeo = new THREE.BoxGeometry(size, size, size);
+                            const colors = [0x87CEEB, 0xADD8E6, 0xE0FFFF, 0xFFFFFF];
+                            const pMat = new THREE.MeshBasicMaterial({ 
+                                color: colors[Math.floor(Math.random() * colors.length)], 
+                                transparent: true, 
+                                opacity: 0.8 
+                            });
+                            const pMesh = new THREE.Mesh(pGeo, pMat);
+                            pMesh.position.z = i * 0.5 * VOXEL_SIZE;
+                            pMesh.userData.particleIndex = i;
+                            pMesh.userData.baseZ = pMesh.position.z;
+                            iceGroup.add(pMesh);
+                        }
+                        iceGroup.userData.isBreathIce = true;
+                        group.add(iceGroup);
+                    }
+                    
+                    // Bubblegum - animated growing/popping bubble
+                    if (data.mouth === 'bubblegum') {
+                        const bubbleGroup = new THREE.Group();
+                        bubbleGroup.name = 'bubblegum_bubble';
+                        bubbleGroup.position.set(0, 5 * VOXEL_SIZE, 6 * VOXEL_SIZE);
+                        
+                        const bubbleGeo = new THREE.SphereGeometry(0.5 * VOXEL_SIZE, 8, 8);
+                        const bubbleMat = new THREE.MeshBasicMaterial({ 
+                            color: 0xFF69B4, 
+                            transparent: true, 
+                            opacity: 0.7 
+                        });
+                        const bubble = new THREE.Mesh(bubbleGeo, bubbleMat);
+                        bubble.userData.isBubble = true;
+                        bubbleGroup.add(bubble);
+                        bubbleGroup.userData.isBubblegum = true;
+                        group.add(bubbleGroup);
+                    }
                 } else if (ASSETS.MOUTH.beak) {
                     const p = buildPartMerged(ASSETS.MOUTH.beak, PALETTE);
                     p.name = 'mouth';
@@ -2449,6 +2665,98 @@ const VoxelWorld = ({
                      const p = buildPartMerged(ASSETS.BODY[data.bodyItem], PALETTE);
                      p.name = 'accessory';
                      group.add(p);
+                     
+                     // Add wing flapping for angel/demon wings
+                     if (data.bodyItem === 'angelWings' || data.bodyItem === 'demonWings') {
+                         p.userData.isWings = true;
+                         p.userData.wingPhase = Math.random() * Math.PI * 2;
+                     }
+                     
+                     // Fire Aura - animated fire ring (like campfire)
+                     if (data.bodyItem === 'fireAura') {
+                         const fireAuraGroup = new THREE.Group();
+                         fireAuraGroup.name = 'fire_aura';
+                         fireAuraGroup.position.y = 3 * VOXEL_SIZE;
+                         
+                         // Create fire flames in a ring around the player
+                         const flameCount = 8;
+                         for (let i = 0; i < flameCount; i++) {
+                             const angle = (i / flameCount) * Math.PI * 2;
+                             const radius = 6 * VOXEL_SIZE;
+                             
+                             // Cone-shaped flame (like campfire)
+                             const flameGeo = new THREE.ConeGeometry(0.8 * VOXEL_SIZE, 3 * VOXEL_SIZE, 8);
+                             const colors = [0xFF4500, 0xFF6600, 0xFFAA00, 0xFFFF00];
+                             const flameMat = new THREE.MeshBasicMaterial({ 
+                                 color: colors[i % colors.length], 
+                                 transparent: true, 
+                                 opacity: 0.85 
+                             });
+                             const flame = new THREE.Mesh(flameGeo, flameMat);
+                             flame.position.set(
+                                 Math.cos(angle) * radius,
+                                 0,
+                                 Math.sin(angle) * radius
+                             );
+                             flame.userData.isFlame = true;
+                             flame.userData.baseY = 0;
+                             flame.userData.angle = angle;
+                             flame.userData.radius = radius;
+                             flame.userData.offset = Math.random() * Math.PI * 2;
+                             fireAuraGroup.add(flame);
+                         }
+                         
+                         // Add glow light
+                         const fireLight = new THREE.PointLight(0xFF6600, 1.5, 5);
+                         fireLight.position.y = 1.5 * VOXEL_SIZE;
+                         fireAuraGroup.add(fireLight);
+                         fireAuraGroup.userData.fireLight = fireLight;
+                         
+                         fireAuraGroup.userData.isFireAura = true;
+                         group.add(fireAuraGroup);
+                     }
+                     
+                     // Lightning Aura - animated electric bolts
+                     if (data.bodyItem === 'lightningAura') {
+                         const lightningGroup = new THREE.Group();
+                         lightningGroup.name = 'lightning_aura';
+                         lightningGroup.position.y = 3 * VOXEL_SIZE;
+                         
+                         // Create lightning bolts in a ring
+                         const boltCount = 6;
+                         for (let i = 0; i < boltCount; i++) {
+                             const angle = (i / boltCount) * Math.PI * 2;
+                             const radius = 6 * VOXEL_SIZE;
+                             
+                             // Simple bolt shape
+                             const boltGeo = new THREE.CylinderGeometry(0.15 * VOXEL_SIZE, 0.15 * VOXEL_SIZE, 4 * VOXEL_SIZE, 6);
+                             const boltMat = new THREE.MeshBasicMaterial({ 
+                                 color: 0x00FFFF, 
+                                 transparent: true, 
+                                 opacity: 0.9 
+                             });
+                             const bolt = new THREE.Mesh(boltGeo, boltMat);
+                             bolt.position.set(
+                                 Math.cos(angle) * radius,
+                                 0,
+                                 Math.sin(angle) * radius
+                             );
+                             bolt.rotation.z = Math.random() * 0.5 - 0.25;
+                             bolt.userData.angle = angle;
+                             bolt.userData.radius = radius;
+                             bolt.userData.flickerOffset = Math.random() * Math.PI * 2;
+                             lightningGroup.add(bolt);
+                         }
+                         
+                         // Add electric glow
+                         const lightningLight = new THREE.PointLight(0x00FFFF, 1.5, 5);
+                         lightningLight.position.y = 1.5 * VOXEL_SIZE;
+                         lightningGroup.add(lightningLight);
+                         lightningGroup.userData.lightningLight = lightningLight;
+                         
+                         lightningGroup.userData.isLightningAura = true;
+                         group.add(lightningGroup);
+                     }
                  }
                  
                  group.scale.set(0.2, 0.2, 0.2); 
@@ -2457,6 +2765,59 @@ const VoxelWorld = ({
 
              const wrapper = new THREE.Group();
              wrapper.add(group);
+             
+             // --- MOUNT SYSTEM ---
+             if (data.mount && data.mount !== 'none' && ASSETS.MOUNTS && ASSETS.MOUNTS[data.mount]) {
+                 const mountData = ASSETS.MOUNTS[data.mount];
+                 
+                 // Create mount group
+                 const mountGroup = new THREE.Group();
+                 mountGroup.name = 'mount';
+                 
+                 // Build mount hull voxels
+                 if (mountData.voxels && mountData.voxels.length > 0) {
+                     const mountMesh = buildPartMerged(mountData.voxels, PALETTE);
+                     mountMesh.name = 'mount_hull';
+                     mountGroup.add(mountMesh);
+                 }
+                 
+                // Build animated oars (for rowing mounts)
+                if (mountData.leftOar) {
+                     const leftOarMesh = buildPartMerged(mountData.leftOar, PALETTE);
+                     leftOarMesh.name = 'left_oar';
+                     // Create pivot point for oar rotation at oarlock position
+                     const leftOarPivot = new THREE.Group();
+                     leftOarPivot.name = 'left_oar_pivot';
+                     leftOarPivot.position.set(-2.0, 0, 0); // Pivot at oarlock on larger hull
+                     leftOarPivot.add(leftOarMesh);
+                     leftOarMesh.position.set(-0.2, 0, 0); // Oar extends from pivot
+                     mountGroup.add(leftOarPivot);
+                 }
+                 
+                 if (mountData.rightOar) {
+                     const rightOarMesh = buildPartMerged(mountData.rightOar, PALETTE);
+                     rightOarMesh.name = 'right_oar';
+                     const rightOarPivot = new THREE.Group();
+                     rightOarPivot.name = 'right_oar_pivot';
+                     rightOarPivot.position.set(2.0, 0, 0); // Pivot at oarlock on larger hull
+                     rightOarPivot.add(rightOarMesh);
+                     rightOarMesh.position.set(0.2, 0, 0); // Oar extends from pivot
+                     mountGroup.add(rightOarPivot);
+                 }
+                 
+                 mountGroup.scale.set(0.2, 0.2, 0.2);
+                 mountGroup.position.y = 0.4; // Position mount flush with ground
+                 wrapper.add(mountGroup);
+                 
+                // Store mount data on wrapper for animation
+                wrapper.userData.mount = data.mount;
+                wrapper.userData.mountData = mountData;
+                wrapper.userData.isMounted = true;
+                
+                // DON'T manually position feet here - let animateMesh handle it
+                // The animation system will apply the Sit pose when isMounted is true
+            }
+             
              return wrapper;
         };
         
@@ -2467,6 +2828,18 @@ const VoxelWorld = ({
         const playerWrapper = buildPenguinMesh(penguinData);
         playerRef.current = playerWrapper;
         scene.add(playerWrapper);
+        
+        // Check if mount should be hidden based on settings (on initial load)
+        try {
+            const settings = JSON.parse(localStorage.getItem('game_settings') || '{}');
+            if (settings.mountEnabled === false) {
+                mountEnabledRef.current = false;
+                const mountGroup = playerWrapper.getObjectByName('mount');
+                if (mountGroup) {
+                    mountGroup.visible = false;
+                }
+            }
+        } catch (e) { /* ignore */ }
         
         // Spawn position: use custom spawn (from portal exit) or default room spawn
         if (customSpawnPos && room === 'town') {
@@ -3275,9 +3648,9 @@ const VoxelWorld = ({
                 
                 // OPTIMIZED: Only check triggers every 3rd frame (still responsive, but 3x faster)
                 if (frameCount % 3 === 0) {
-                    // Also check triggers (benches, snowmen, etc.)
-                    // Pass Y position so triggers can filter by height (e.g., don't show "sit" prompt when standing ON furniture)
-                    townCenterRef.current.checkTriggers(finalX, finalZ, posRef.current.y);
+                // Also check triggers (benches, snowmen, etc.)
+                // Pass Y position so triggers can filter by height (e.g., don't show "sit" prompt when standing ON furniture)
+                townCenterRef.current.checkTriggers(finalX, finalZ, posRef.current.y);
                 }
             }
             
@@ -3544,9 +3917,9 @@ const VoxelWorld = ({
                 }
             }
             
-            // animateMesh now accepts isSeatedOnFurniture as 5th param, characterType as 6th
+            // animateMesh now accepts isSeatedOnFurniture as 5th param, characterType as 6th, isMounted as 7th
             // OPTIMIZED: Cache part references to avoid getObjectByName every frame
-            const animateMesh = (meshWrapper, isMoving, emoteType, emoteStartTime, isSeatedOnFurniture = false, characterType = 'penguin') => {
+            const animateMesh = (meshWrapper, isMoving, emoteType, emoteStartTime, isSeatedOnFurniture = false, characterType = 'penguin', isMounted = false) => {
                 if (!meshWrapper || !meshWrapper.children[0]) return;
                 const meshInner = meshWrapper.children[0];
                 const isMarcus = characterType === 'marcus';
@@ -3579,6 +3952,25 @@ const VoxelWorld = ({
                 if(hatPart) { hatPart.rotation.x = 0; }
                 if(eyesPart) { eyesPart.rotation.x = 0; }
                 if(mouthPart) { mouthPart.rotation.x = 0; }
+
+                // When mounted, apply sitting animation (same as regular Sit emote)
+                if (isMounted && mountEnabledRef.current) {
+                    // Sitting pose - same as 'Sit' emote
+                    meshInner.position.y = 0.5;
+                    // Penguin feet extend forward (rotation + position so they're visible)
+                    if(footL) {
+                        footL.rotation.x = -Math.PI / 2.5;
+                        footL.position.z = 2.5;
+                    }
+                    if(footR) {
+                        footR.rotation.x = -Math.PI / 2.5;
+                        footR.position.z = 2.5;
+                    }
+                    // Arms/flippers rest on sides
+                    if(flipperL) flipperL.rotation.z = 0.3;
+                    if(flipperR) flipperR.rotation.z = -0.3;
+                    return; // Don't apply other animations when mounted
+                }
 
                 if (emoteType) {
                     const eTime = (Date.now() - emoteStartTime) * 0.001;
@@ -3691,23 +4083,35 @@ const VoxelWorld = ({
             };
 
             if (playerRef.current) {
-                // Pass local player's seatedRef state for furniture sitting and character type
-                animateMesh(playerRef.current, moving, emoteRef.current.type, emoteRef.current.startTime, !!seatedRef.current, penguinData?.characterType || 'penguin');
+                // Pass local player's seatedRef state for furniture sitting, character type, and mounted state
+                // Only consider mounted if mount is enabled in settings
+                const isMounted = !!(playerRef.current.userData?.mount && playerRef.current.userData?.mountData && mountEnabledRef.current);
+                animateMesh(playerRef.current, moving, emoteRef.current.type, emoteRef.current.startTime, !!seatedRef.current, penguinData?.characterType || 'penguin', isMounted);
                 
-                // OPTIMIZED: Only traverse for cosmetic animations if player has special cosmetics
+                // OPTIMIZED: Check if player has animated cosmetics
                 const hasAnimatedCosmetics = penguinData?.hat === 'propeller' || 
+                                              penguinData?.hat === 'flamingCrown' ||
                                               penguinData?.mouth === 'cigarette' || 
                                               penguinData?.mouth === 'pipe' ||
-                                              penguinData?.eyes === 'laser';
+                                              penguinData?.mouth === 'cigar' ||
+                                              penguinData?.mouth === 'fireBreath' ||
+                                              penguinData?.mouth === 'iceBreath' ||
+                                              penguinData?.mouth === 'bubblegum' ||
+                                              penguinData?.eyes === 'laser' ||
+                                              penguinData?.eyes === 'fire' ||
+                                              penguinData?.bodyItem === 'angelWings' ||
+                                              penguinData?.bodyItem === 'demonWings' ||
+                                              penguinData?.bodyItem === 'fireAura' ||
+                                              penguinData?.bodyItem === 'lightningAura';
                 
                 if (hasAnimatedCosmetics) {
-                    // Animate local player's propeller, smoke, and laser eyes
+                    // Animate local player's cosmetics
                     playerRef.current.traverse(child => {
                         if (child.name === 'propeller_blades') {
                             child.rotation.y += delta * 15; // Fast spin
                         }
                         
-                        // Animate smoke particles
+                        // Animate smoke particles (cigarette, pipe, cigar)
                         if (child.userData?.isSmokeEmitter) {
                             child.children.forEach((particle, i) => {
                                 particle.position.y += delta * 2;
@@ -3735,7 +4139,318 @@ const VoxelWorld = ({
                                 }
                             });
                         }
+                        
+                        // Animate fire eyes - flickering flames
+                        if (child.userData?.isFireEyes) {
+                            child.children.forEach(eyeGroup => {
+                                if (eyeGroup.children) {
+                                    eyeGroup.children.forEach((particle, i) => {
+                                        if (particle.isMesh) {
+                                            // Flames flicker up
+                                            particle.position.y = (particle.userData.baseY || 0) + Math.sin(time * 15 + i) * 0.1 * VOXEL_SIZE;
+                                            particle.position.x = Math.sin(time * 12 + i * 2) * 0.05 * VOXEL_SIZE;
+                                            if (particle.material) {
+                                                particle.material.opacity = 0.7 + Math.sin(time * 20 + i) * 0.3;
+                                            }
+                                        }
+                                        if (particle.isPointLight) {
+                                            particle.intensity = 0.5 + Math.sin(time * 15) * 0.3;
+                        }
                     });
+                }
+                            });
+                        }
+                        
+                        // Animate angel/demon wings - butterfly flapping
+                        if (child.userData?.isWings) {
+                            const phase = child.userData.wingPhase || 0;
+                            const flapSpeed = 6; // Flaps per second
+                            const flapAngle = Math.sin(time * flapSpeed + phase) * 0.3; // ±0.3 radians
+                            child.rotation.y = flapAngle;
+                        }
+                        
+                        // Fire Aura - spinning flames like campfire
+                        if (child.userData?.isFireAura) {
+                            // Rotate the entire aura ring
+                            child.rotation.y = time * 2;
+                            
+                            // Animate individual flames
+                            child.children.forEach((flame, i) => {
+                                if (flame.userData?.isFlame) {
+                                    const offset = flame.userData.offset || 0;
+                                    // Flicker height
+                                    flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.3 * VOXEL_SIZE;
+                                    // Flicker scale
+                                    flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.3;
+                                    flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.3;
+                                }
+                            });
+                            
+                            // Flicker light
+                            if (child.userData.fireLight) {
+                                child.userData.fireLight.intensity = 1.5 + Math.sin(time * 12) * 0.5;
+                            }
+                        }
+                        
+                        // Lightning Aura - spinning electric bolts
+                        if (child.userData?.isLightningAura) {
+                            // Rotate the aura ring faster
+                            child.rotation.y = time * 3;
+                            
+                            // Animate individual bolts
+                            child.children.forEach((bolt) => {
+                                if (bolt.userData?.flickerOffset !== undefined) {
+                                    // Random flicker visibility
+                                    const flicker = Math.sin(time * 20 + bolt.userData.flickerOffset);
+                                    bolt.visible = flicker > -0.3;
+                                    if (bolt.material) {
+                                        bolt.material.opacity = 0.5 + flicker * 0.4;
+                                    }
+                                    // Random position jitter
+                                    bolt.position.y = Math.sin(time * 15 + bolt.userData.flickerOffset) * 0.5 * VOXEL_SIZE;
+                                }
+                            });
+                            
+                            // Flicker light
+                            if (child.userData.lightningLight) {
+                                child.userData.lightningLight.intensity = 1 + Math.random() * 1;
+                            }
+                        }
+                        
+                        // Flaming Crown fire particles
+                        if (child.userData?.isFireEmitter) {
+                            child.children.forEach((particle, i) => {
+                                // Fire flickers up and resets
+                                particle.position.y += delta * 3;
+                                particle.position.x = (particle.userData.baseX || 0) + Math.sin(time * 8 + i) * 0.15;
+                                particle.position.z = (particle.userData.baseZ || 0) + Math.cos(time * 6 + i) * 0.15;
+                                
+                                const height = particle.position.y - (particle.userData.baseY || 0);
+                                if (particle.material) {
+                                    particle.material.opacity = Math.max(0, 0.9 - height * 0.15);
+                                }
+                                // Scale down as it rises
+                                const scale = Math.max(0.3, 1 - height * 0.1);
+                                particle.scale.setScalar(scale);
+                                
+                                if (height > 5) {
+                                    particle.position.y = particle.userData.baseY || 0;
+                                    particle.scale.setScalar(1);
+                                    if (particle.material) particle.material.opacity = 0.9;
+                                }
+                            });
+                        }
+                        
+                        
+                        // Fire Breath particles
+                        if (child.userData?.isBreathFire) {
+                            child.children.forEach((particle, i) => {
+                                // Shoot forward
+                                particle.position.z += delta * 15;
+                                particle.position.y += (Math.random() - 0.5) * delta * 2;
+                                particle.position.x += (Math.random() - 0.5) * delta * 2;
+                                
+                                const dist = particle.position.z - (particle.userData.baseZ || 0);
+                                if (particle.material) {
+                                    particle.material.opacity = Math.max(0, 0.9 - dist * 0.1);
+                                }
+                                
+                                if (dist > 8) {
+                                    particle.position.z = particle.userData.baseZ || 0;
+                                    particle.position.y = 0;
+                                    particle.position.x = 0;
+                                    if (particle.material) particle.material.opacity = 0.9;
+                                }
+                            });
+                        }
+                        
+                        // Ice Breath particles
+                        if (child.userData?.isBreathIce) {
+                            child.children.forEach((particle, i) => {
+                                particle.position.z += delta * 12;
+                                particle.position.y += Math.sin(time * 10 + i) * delta;
+                                particle.position.x += Math.cos(time * 8 + i) * delta;
+                                
+                                const dist = particle.position.z - (particle.userData.baseZ || 0);
+                                if (particle.material) {
+                                    particle.material.opacity = Math.max(0, 0.8 - dist * 0.08);
+                                }
+                                
+                                if (dist > 10) {
+                                    particle.position.z = particle.userData.baseZ || 0;
+                                    particle.position.y = 0;
+                                    particle.position.x = 0;
+                                    if (particle.material) particle.material.opacity = 0.8;
+                                }
+                            });
+                        }
+                        
+                        // Bubblegum grow/pop animation
+                        if (child.userData?.isBubblegum) {
+                            const bubble = child.children[0];
+                            if (bubble) {
+                                // Cycle: grow from 0.5 to 2, then pop back to 0.5
+                                const cycleTime = (time % 4) / 4; // 4 second cycle
+                                let scale;
+                                if (cycleTime < 0.8) {
+                                    // Growing phase
+                                    scale = 0.5 + cycleTime * 2;
+                                } else if (cycleTime < 0.85) {
+                                    // Pop! shrink rapidly
+                                    scale = 2.1 - (cycleTime - 0.8) * 30;
+                                } else {
+                                    // Stay small before next cycle
+                                    scale = 0.5;
+                                }
+                                bubble.scale.setScalar(Math.max(0.3, scale));
+                            }
+                        }
+                    });
+                }
+                
+                // --- WIZARD HAT WORLD-SPACE TRAIL (Per-Player Pools) ---
+                // Each player with wizard hat has their own particle pool (works in all rooms)
+                if (penguinData?.hat === 'wizardHat' && wizardTrailRef.current) {
+                    const poolKey = 'localPlayer';
+                    let trailGroup = wizardTrailRef.current.pools.get(poolKey);
+                    
+                    // Create pool if it doesn't exist
+                    if (!trailGroup) {
+                        trailGroup = wizardTrailRef.current.createPool();
+                        wizardTrailRef.current.pools.set(poolKey, trailGroup);
+                        sceneRef.current.add(trailGroup);
+                    }
+                    
+                    const playerWorldPos = playerRef.current.position;
+                    
+                    // Spawn particles when moving - controlled rate (15/sec for 50 particles over 3 seconds)
+                    if (moving) {
+                        const spawnInterval = 1 / 15;
+                        const timeSinceLastSpawn = time - trailGroup.userData.lastSpawnTime;
+                        
+                        if (timeSinceLastSpawn >= spawnInterval) {
+                            let spawned = false;
+                            for (let attempts = 0; attempts < trailGroup.children.length && !spawned; attempts++) {
+                                const idx = (trailGroup.userData.nextParticleIndex + attempts) % trailGroup.children.length;
+                                const particle = trailGroup.children[idx];
+                                
+                                if (!particle.userData.active) {
+                                    particle.position.set(
+                                        playerWorldPos.x + (Math.random() - 0.5) * 0.4,
+                                        playerWorldPos.y + 2.2 + (Math.random() - 0.5) * 0.2,
+                                        playerWorldPos.z + (Math.random() - 0.5) * 0.4
+                                    );
+                                    particle.userData.active = true;
+                                    particle.userData.birthTime = time;
+                                    particle.visible = true;
+                                    particle.material.opacity = 0.9;
+                                    particle.scale.setScalar(0.8 + Math.random() * 0.4);
+                                    
+                                    trailGroup.userData.nextParticleIndex = (idx + 1) % trailGroup.children.length;
+                                    trailGroup.userData.lastSpawnTime = time;
+                                    spawned = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Update all active particles
+                    trailGroup.children.forEach((particle) => {
+                        if (particle.userData.active) {
+                            const age = time - particle.userData.birthTime;
+                            const lifeProgress = age / particle.userData.lifespan;
+                            
+                            if (lifeProgress < 1) {
+                                particle.position.y += delta * 0.05;
+                                let opacity;
+                                if (lifeProgress < 0.7) {
+                                    opacity = 0.9;
+                                } else {
+                                    const fadeProgress = (lifeProgress - 0.7) / 0.3;
+                                    opacity = 0.9 * (1 - fadeProgress * fadeProgress);
+                                }
+                                particle.material.opacity = Math.max(0, opacity);
+                                particle.scale.setScalar(particle.scale.x * (1 + delta * 0.05));
+                            } else {
+                                particle.userData.active = false;
+                                particle.visible = false;
+                            }
+                        }
+                    });
+                }
+                
+                // --- MOUNT ANIMATION ---
+                // Animate mount oars when player is moving (only if mount is enabled)
+                if (playerRef.current.userData?.mount && playerRef.current.userData?.mountData?.animated && mountEnabledRef.current) {
+                    const mountGroup = playerRef.current.getObjectByName('mount');
+                    if (mountGroup) {
+                        const leftOarPivot = mountGroup.getObjectByName('left_oar_pivot');
+                        const rightOarPivot = mountGroup.getObjectByName('right_oar_pivot');
+                        
+                        if (leftOarPivot && rightOarPivot) {
+                            // Check for turning input
+                            const turningLeft = keyLeft || mobileLeft || (joystickInputRef.current.x < -0.3);
+                            const turningRight = keyRight || mobileRight || (joystickInputRef.current.x > 0.3);
+                            
+                            // Check forward/backward direction
+                            const movingForward = keyForward || mobileForward || (joystickInputRef.current.y < -0.1);
+                            const movingBackward = keyBack || mobileBack || (joystickInputRef.current.y > 0.1);
+                            
+                            // Direction multiplier: -1 for forward (pull oars back), +1 for backward (push oars forward)
+                            const directionMult = movingForward ? -1 : 1;
+                            
+                            if (moving) {
+                                const rowSpeed = 8;
+                                const baseRowAngle = Math.sin(time * rowSpeed) * 0.5 * directionMult;
+                                
+                                // Differential rowing for turning
+                                let leftSpeed = 1.0;
+                                let rightSpeed = 1.0;
+                                
+                                if (turningLeft) {
+                                    // Turn left: LEFT oar rows faster
+                                    leftSpeed = 1.5;
+                                    rightSpeed = 0.3;
+                                } else if (turningRight) {
+                                    // Turn right: RIGHT oar rows faster
+                                    leftSpeed = 0.3;
+                                    rightSpeed = 1.5;
+                                }
+                                
+                                // Apply rowing animation - Y rotation for forward/backward motion
+                                leftOarPivot.rotation.y = baseRowAngle * leftSpeed;
+                                rightOarPivot.rotation.y = -baseRowAngle * rightSpeed;
+                                
+                                // Z rotation for oar dip into water
+                                leftOarPivot.rotation.z = Math.sin(time * rowSpeed + Math.PI/2) * 0.15 * leftSpeed * directionMult;
+                                rightOarPivot.rotation.z = -Math.sin(time * rowSpeed + Math.PI/2) * 0.15 * rightSpeed * directionMult;
+                            } else if (turningLeft || turningRight) {
+                                // Stationary turning - only one oar rows
+                                const rowSpeed = 6;
+                                const turnAngle = Math.sin(time * rowSpeed) * 0.4;
+                                
+                                if (turningLeft) {
+                                    // Turn left: left oar rows
+                                    leftOarPivot.rotation.y = turnAngle;
+                                    leftOarPivot.rotation.z = Math.sin(time * rowSpeed + Math.PI/2) * 0.1;
+                                    rightOarPivot.rotation.y *= 0.9;
+                                    rightOarPivot.rotation.z *= 0.9;
+                                } else {
+                                    // Turn right: right oar rows
+                                    rightOarPivot.rotation.y = -turnAngle;
+                                    rightOarPivot.rotation.z = -Math.sin(time * rowSpeed + Math.PI/2) * 0.1;
+                                    leftOarPivot.rotation.y *= 0.9;
+                                    leftOarPivot.rotation.z *= 0.9;
+                                }
+                            } else {
+                                // Rest position when not moving
+                                leftOarPivot.rotation.y *= 0.9;
+                                rightOarPivot.rotation.y *= 0.9;
+                                leftOarPivot.rotation.z *= 0.9;
+                                rightOarPivot.rotation.z *= 0.9;
+                            }
+                        }
+                    }
                 }
             }
             
@@ -3960,23 +4675,23 @@ const VoxelWorld = ({
                     }
                     // Find conversation partner in same room (not if sitting nearby)
                     else {
-                        let foundPartner = null;
+                    let foundPartner = null;
                         if (now > ai.conversationCooldown && ai.action !== 'sitting') {
-                            for(let other of aiAgentsRef.current) {
-                                if (other.id !== ai.id && 
+                        for(let other of aiAgentsRef.current) {
+                            if (other.id !== ai.id && 
                                     (other.action === 'idle' || other.action === 'sitting') && 
                                     other.currentRoom === ai.currentRoom &&
-                                    now > other.conversationCooldown) {
-                                    const dx = other.pos.x - ai.pos.x;
-                                    const dz = other.pos.z - ai.pos.z;
-                                    const dist = Math.sqrt(dx*dx + dz*dz);
+                                now > other.conversationCooldown) {
+                                const dx = other.pos.x - ai.pos.x;
+                                const dz = other.pos.z - ai.pos.z;
+                                const dist = Math.sqrt(dx*dx + dz*dz);
                                     if (dist < 6) { // Slightly larger conversation range
-                                        foundPartner = other;
-                                        break;
-                                    }
+                                    foundPartner = other;
+                                    break;
                                 }
                             }
                         }
+                    }
 
                     if (foundPartner) {
                         const scriptIdx = Math.floor(Math.random() * CONVERSATIONS.length);
@@ -4270,6 +4985,195 @@ const VoxelWorld = ({
                 if (ai.action !== 'chatting') ai.mesh.rotation.y = ai.rot;
                 
                 animateMesh(ai.mesh, aiMoving, ai.emoteType, ai.emoteStart);
+                
+                // --- AI COSMETIC ANIMATIONS ---
+                // Animate propeller, smoke, flames, wings etc. for AI
+                const aiAppearance = ai.aiData;
+                if (aiAppearance) {
+                    const aiHasAnimatedCosmetics = aiAppearance.hat === 'propeller' || 
+                                                   aiAppearance.hat === 'flamingCrown' ||
+                                                   aiAppearance.hat === 'wizardHat' ||
+                                                   aiAppearance.mouth === 'cigarette' || 
+                                                   aiAppearance.mouth === 'pipe' ||
+                                                   aiAppearance.mouth === 'cigar' ||
+                                                   aiAppearance.eyes === 'laser' ||
+                                                   aiAppearance.eyes === 'fire' ||
+                                                   aiAppearance.bodyItem === 'angelWings' ||
+                                                   aiAppearance.bodyItem === 'demonWings' ||
+                                                   aiAppearance.bodyItem === 'fireAura' ||
+                                                   aiAppearance.bodyItem === 'lightningAura';
+                    
+                    if (aiHasAnimatedCosmetics) {
+                        ai.mesh.traverse(child => {
+                            // Propeller spin
+                            if (child.name === 'propeller_blades') {
+                                child.rotation.y += delta * 15;
+                            }
+                            
+                            // Smoke particles
+                            if (child.userData?.isSmokeEmitter) {
+                                child.children.forEach((particle, i) => {
+                                    particle.position.y += delta * 2;
+                                    particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
+                                    const height = particle.position.y - (particle.userData.baseY || 0);
+                                    if (particle.material) {
+                                        particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
+                                    }
+                                    if (height > 2) {
+                                        particle.position.y = particle.userData.baseY || 0;
+                                        particle.position.x = 0;
+                                        if (particle.material) particle.material.opacity = 0.6;
+                                    }
+                                });
+                            }
+                            
+                            // Laser eyes pulse
+                            if (child.userData?.isLaserEyes) {
+                                const intensity = 1 + Math.sin(time * 10) * 0.5;
+                                child.children.forEach(light => {
+                                    if (light.isPointLight) light.intensity = intensity;
+                                });
+                            }
+                            
+                            // Fire eyes flicker
+                            if (child.userData?.isFireEyes) {
+                                child.children.forEach(eyeGroup => {
+                                    if (eyeGroup.children) {
+                                        eyeGroup.children.forEach((particle, i) => {
+                                            if (particle.isMesh) {
+                                                particle.position.y = (particle.userData.baseY || 0) + Math.sin(time * 15 + i) * 0.1 * VOXEL_SIZE;
+                                                if (particle.material) particle.material.opacity = 0.7 + Math.sin(time * 20 + i) * 0.3;
+                                            }
+                                            if (particle.isPointLight) particle.intensity = 0.5 + Math.sin(time * 15) * 0.3;
+                                        });
+                                    }
+                                });
+                            }
+                            
+                            // Flaming crown fire
+                            if (child.userData?.isFireEmitter) {
+                                child.children.forEach((particle, i) => {
+                                    particle.position.y += delta * 3;
+                                    particle.position.x = (particle.userData.baseX || 0) + Math.sin(time * 8 + i) * 0.15;
+                                    particle.position.z = (particle.userData.baseZ || 0) + Math.cos(time * 6 + i) * 0.15;
+                                    const height = particle.position.y - (particle.userData.baseY || 0);
+                                    if (particle.material) particle.material.opacity = Math.max(0, 0.9 - height * 0.15);
+                                    particle.scale.setScalar(Math.max(0.3, 1 - height * 0.1));
+                                    if (height > 5) {
+                                        particle.position.y = particle.userData.baseY || 0;
+                                        particle.scale.setScalar(1);
+                                        if (particle.material) particle.material.opacity = 0.9;
+                                    }
+                                });
+                            }
+                            
+                            // Wing flapping
+                            if (child.userData?.isWings) {
+                                const phase = child.userData.wingPhase || 0;
+                                child.rotation.y = Math.sin(time * 6 + phase) * 0.3;
+                            }
+                            
+                            // Fire Aura - spinning flames
+                            if (child.userData?.isFireAura) {
+                                child.rotation.y = time * 2;
+                                child.children.forEach((flame) => {
+                                    if (flame.userData?.isFlame) {
+                                        const offset = flame.userData.offset || 0;
+                                        flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.3 * VOXEL_SIZE;
+                                        flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.3;
+                                        flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.3;
+                                    }
+                                });
+                                if (child.userData.fireLight) {
+                                    child.userData.fireLight.intensity = 1.5 + Math.sin(time * 12) * 0.5;
+                                }
+                            }
+                            
+                            // Lightning Aura - spinning bolts
+                            if (child.userData?.isLightningAura) {
+                                child.rotation.y = time * 3;
+                                child.children.forEach((bolt) => {
+                                    if (bolt.userData?.flickerOffset !== undefined) {
+                                        const flicker = Math.sin(time * 20 + bolt.userData.flickerOffset);
+                                        bolt.visible = flicker > -0.3;
+                                        if (bolt.material) bolt.material.opacity = 0.5 + flicker * 0.4;
+                                        bolt.position.y = Math.sin(time * 15 + bolt.userData.flickerOffset) * 0.5 * VOXEL_SIZE;
+                                    }
+                                });
+                                if (child.userData.lightningLight) {
+                                    child.userData.lightningLight.intensity = 1 + Math.random() * 1;
+                                }
+                            }
+                        });
+                    }
+                    
+                    // AI Wizard Hat Trail - each AI gets their own particle pool (works in all rooms)
+                    if (aiAppearance.hat === 'wizardHat' && wizardTrailRef.current && sameRoom) {
+                        const poolKey = `ai_${ai.id}`;
+                        let trailGroup = wizardTrailRef.current.pools.get(poolKey);
+                        
+                        // Create pool if it doesn't exist
+                        if (!trailGroup) {
+                            trailGroup = wizardTrailRef.current.createPool();
+                            wizardTrailRef.current.pools.set(poolKey, trailGroup);
+                            sceneRef.current.add(trailGroup);
+                        }
+                        
+                        if (aiMoving) {
+                            const spawnInterval = 1 / 12; // Slightly lower rate for AI
+                            const timeSinceLastSpawn = time - trailGroup.userData.lastSpawnTime;
+                            
+                            if (timeSinceLastSpawn >= spawnInterval) {
+                                let spawned = false;
+                                for (let attempts = 0; attempts < trailGroup.children.length && !spawned; attempts++) {
+                                    const idx = (trailGroup.userData.nextParticleIndex + attempts) % trailGroup.children.length;
+                                    const particle = trailGroup.children[idx];
+                                    
+                                    if (!particle.userData.active) {
+                                        particle.position.set(
+                                            ai.pos.x + (Math.random() - 0.5) * 0.4,
+                                            2.2 + (Math.random() - 0.5) * 0.2,
+                                            ai.pos.z + (Math.random() - 0.5) * 0.4
+                                        );
+                                        particle.userData.active = true;
+                                        particle.userData.birthTime = time;
+                                        particle.visible = true;
+                                        particle.material.opacity = 0.9;
+                                        particle.scale.setScalar(0.8 + Math.random() * 0.4);
+                                        
+                                        trailGroup.userData.nextParticleIndex = (idx + 1) % trailGroup.children.length;
+                                        trailGroup.userData.lastSpawnTime = time;
+                                        spawned = true;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Update AI's particles
+                        trailGroup.children.forEach((particle) => {
+                            if (particle.userData.active) {
+                                const age = time - particle.userData.birthTime;
+                                const lifeProgress = age / particle.userData.lifespan;
+                                
+                                if (lifeProgress < 1) {
+                                    particle.position.y += delta * 0.05;
+                                    let opacity;
+                                    if (lifeProgress < 0.7) {
+                                        opacity = 0.9;
+                                    } else {
+                                        const fadeProgress = (lifeProgress - 0.7) / 0.3;
+                                        opacity = 0.9 * (1 - fadeProgress * fadeProgress);
+                                    }
+                                    particle.material.opacity = Math.max(0, opacity);
+                                    particle.scale.setScalar(particle.scale.x * (1 + delta * 0.05));
+                                } else {
+                                    particle.userData.active = false;
+                                    particle.visible = false;
+                                }
+                            }
+                        });
+                    }
+                }
 
                 // AI puffle follow/animate
                 if (aiPuffleEntry && aiPuffleEntry.puffle && aiPuffleEntry.puffle.mesh) {
@@ -4381,17 +5285,28 @@ const VoxelWorld = ({
                     Math.abs(playerData.position.x - meshData.mesh.position.x) > 0.1 ||
                     Math.abs(playerData.position.z - meshData.mesh.position.z) > 0.1
                 );
-                // Pass each player's seatedOnFurniture state (synced from server) and character type
-                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false, playerData.appearance?.characterType || 'penguin');
+                // Pass each player's seatedOnFurniture state (synced from server), character type, and mounted state
+                const otherPlayerMounted = !!(meshData.mesh.userData?.mount && meshData.mesh.userData?.mountData);
+                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false, playerData.appearance?.characterType || 'penguin', otherPlayerMounted);
                 
                 // OPTIMIZED: Only traverse if this player has animated cosmetics
                 // Cache this check to avoid checking every frame
                 if (meshData.hasAnimatedCosmetics === undefined) {
                     const appearance = playerData.appearance || {};
                     meshData.hasAnimatedCosmetics = appearance.hat === 'propeller' || 
+                                                     appearance.hat === 'flamingCrown' ||
                                                      appearance.mouth === 'cigarette' || 
                                                      appearance.mouth === 'pipe' ||
-                                                     appearance.eyes === 'laser';
+                                                     appearance.mouth === 'cigar' ||
+                                                     appearance.mouth === 'fireBreath' ||
+                                                     appearance.mouth === 'iceBreath' ||
+                                                     appearance.mouth === 'bubblegum' ||
+                                                     appearance.eyes === 'laser' ||
+                                                     appearance.eyes === 'fire' ||
+                                                     appearance.bodyItem === 'angelWings' ||
+                                                     appearance.bodyItem === 'demonWings' ||
+                                                     appearance.bodyItem === 'fireAura' ||
+                                                     appearance.bodyItem === 'lightningAura';
                 }
                 
                 if (meshData.hasAnimatedCosmetics) {
@@ -4400,20 +5315,17 @@ const VoxelWorld = ({
                             child.rotation.y += delta * 15; // Fast spin
                         }
                         
-                        // Animate smoke particles
+                        // Animate smoke particles (cigarette, pipe, cigar)
                         if (child.userData?.isSmokeEmitter) {
                             child.children.forEach((particle, i) => {
-                                // Rise and drift
                                 particle.position.y += delta * 2;
                                 particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
                                 
-                                // Fade out as it rises
                                 const height = particle.position.y - (particle.userData.baseY || 0);
                                 if (particle.material) {
                                     particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
                                 }
                                 
-                                // Reset when too high
                                 if (height > 2) {
                                     particle.position.y = particle.userData.baseY || 0;
                                     particle.position.x = 0;
@@ -4430,6 +5342,245 @@ const VoxelWorld = ({
                                     light.intensity = intensity;
                                 }
                             });
+                        }
+                        
+                        // Fire eyes animation
+                        if (child.userData?.isFireEyes) {
+                            child.children.forEach(eyeGroup => {
+                                if (eyeGroup.children) {
+                                    eyeGroup.children.forEach((particle, i) => {
+                                        if (particle.isMesh) {
+                                            particle.position.y = (particle.userData.baseY || 0) + Math.sin(time * 15 + i) * 0.1 * VOXEL_SIZE;
+                                            particle.position.x = Math.sin(time * 12 + i * 2) * 0.05 * VOXEL_SIZE;
+                                            if (particle.material) {
+                                                particle.material.opacity = 0.7 + Math.sin(time * 20 + i) * 0.3;
+                                            }
+                                        }
+                                        if (particle.isPointLight) {
+                                            particle.intensity = 0.5 + Math.sin(time * 15) * 0.3;
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                        
+                        // Flaming Crown fire particles
+                        if (child.userData?.isFireEmitter) {
+                            child.children.forEach((particle, i) => {
+                                particle.position.y += delta * 3;
+                                particle.position.x = (particle.userData.baseX || 0) + Math.sin(time * 8 + i) * 0.15;
+                                particle.position.z = (particle.userData.baseZ || 0) + Math.cos(time * 6 + i) * 0.15;
+                                
+                                const height = particle.position.y - (particle.userData.baseY || 0);
+                                if (particle.material) {
+                                    particle.material.opacity = Math.max(0, 0.9 - height * 0.15);
+                                }
+                                const scale = Math.max(0.3, 1 - height * 0.1);
+                                particle.scale.setScalar(scale);
+                                
+                                if (height > 5) {
+                                    particle.position.y = particle.userData.baseY || 0;
+                                    particle.scale.setScalar(1);
+                                    if (particle.material) particle.material.opacity = 0.9;
+                                }
+                            });
+                        }
+                        
+                        // Fire Breath particles
+                        if (child.userData?.isBreathFire) {
+                            child.children.forEach((particle, i) => {
+                                particle.position.z += delta * 15;
+                                particle.position.y += (Math.random() - 0.5) * delta * 2;
+                                particle.position.x += (Math.random() - 0.5) * delta * 2;
+                                
+                                const dist = particle.position.z - (particle.userData.baseZ || 0);
+                                if (particle.material) {
+                                    particle.material.opacity = Math.max(0, 0.9 - dist * 0.1);
+                                }
+                                
+                                if (dist > 8) {
+                                    particle.position.z = particle.userData.baseZ || 0;
+                                    particle.position.y = 0;
+                                    particle.position.x = 0;
+                                    if (particle.material) particle.material.opacity = 0.9;
+                                }
+                            });
+                        }
+                        
+                        // Ice Breath particles
+                        if (child.userData?.isBreathIce) {
+                            child.children.forEach((particle, i) => {
+                                particle.position.z += delta * 12;
+                                particle.position.y += Math.sin(time * 10 + i) * delta;
+                                particle.position.x += Math.cos(time * 8 + i) * delta;
+                                
+                                const dist = particle.position.z - (particle.userData.baseZ || 0);
+                                if (particle.material) {
+                                    particle.material.opacity = Math.max(0, 0.8 - dist * 0.08);
+                                }
+                                
+                                if (dist > 10) {
+                                    particle.position.z = particle.userData.baseZ || 0;
+                                    particle.position.y = 0;
+                                    particle.position.x = 0;
+                                    if (particle.material) particle.material.opacity = 0.8;
+                                }
+                            });
+                        }
+                        
+                        // Bubblegum grow/pop animation
+                        if (child.userData?.isBubblegum) {
+                            const bubble = child.children[0];
+                            if (bubble) {
+                                const cycleTime = (time % 4) / 4;
+                                let scale;
+                                if (cycleTime < 0.8) {
+                                    scale = 0.5 + cycleTime * 2;
+                                } else if (cycleTime < 0.85) {
+                                    scale = 2.1 - (cycleTime - 0.8) * 30;
+                                } else {
+                                    scale = 0.5;
+                                }
+                                bubble.scale.setScalar(Math.max(0.3, scale));
+                            }
+                        }
+                        
+                        // Animate angel/demon wings - butterfly flapping
+                        if (child.userData?.isWings) {
+                            const phase = child.userData.wingPhase || 0;
+                            const flapSpeed = 6;
+                            const flapAngle = Math.sin(time * flapSpeed + phase) * 0.3;
+                            child.rotation.y = flapAngle;
+                        }
+                        
+                        // Fire Aura - spinning flames
+                        if (child.userData?.isFireAura) {
+                            child.rotation.y = time * 2;
+                            child.children.forEach((flame) => {
+                                if (flame.userData?.isFlame) {
+                                    const offset = flame.userData.offset || 0;
+                                    flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.3 * VOXEL_SIZE;
+                                    flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.3;
+                                    flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.3;
+                                }
+                            });
+                            if (child.userData.fireLight) {
+                                child.userData.fireLight.intensity = 1.5 + Math.sin(time * 12) * 0.5;
+                            }
+                        }
+                        
+                        // Lightning Aura - spinning bolts
+                        if (child.userData?.isLightningAura) {
+                            child.rotation.y = time * 3;
+                            child.children.forEach((bolt) => {
+                                if (bolt.userData?.flickerOffset !== undefined) {
+                                    const flicker = Math.sin(time * 20 + bolt.userData.flickerOffset);
+                                    bolt.visible = flicker > -0.3;
+                                    if (bolt.material) bolt.material.opacity = 0.5 + flicker * 0.4;
+                                    bolt.position.y = Math.sin(time * 15 + bolt.userData.flickerOffset) * 0.5 * VOXEL_SIZE;
+                                }
+                            });
+                            if (child.userData.lightningLight) {
+                                child.userData.lightningLight.intensity = 1 + Math.random() * 1;
+                            }
+                        }
+                    });
+                }
+
+                // --- MOUNT ANIMATION FOR OTHER PLAYERS ---
+                if (meshData.mesh.userData?.mount && meshData.mesh.userData?.mountData?.animated) {
+                    const mountGroup = meshData.mesh.getObjectByName('mount');
+                    if (mountGroup) {
+                        const leftOarPivot = mountGroup.getObjectByName('left_oar_pivot');
+                        const rightOarPivot = mountGroup.getObjectByName('right_oar_pivot');
+                        
+                        if (leftOarPivot && rightOarPivot) {
+                            if (isMoving) {
+                                // Rowing animation when other player is moving
+                                const rowSpeed = 8;
+                                const rowAngle = Math.sin(time * rowSpeed) * 0.5;
+                                
+                                // Y rotation for forward/backward rowing motion
+                                leftOarPivot.rotation.y = rowAngle;
+                                rightOarPivot.rotation.y = -rowAngle;
+                                // Z rotation for dip into water
+                                leftOarPivot.rotation.z = Math.sin(time * rowSpeed + Math.PI/2) * 0.15;
+                                rightOarPivot.rotation.z = -Math.sin(time * rowSpeed + Math.PI/2) * 0.15;
+                            } else {
+                                // Rest position
+                                leftOarPivot.rotation.y *= 0.9;
+                                rightOarPivot.rotation.y *= 0.9;
+                                leftOarPivot.rotation.z *= 0.9;
+                                rightOarPivot.rotation.z *= 0.9;
+                            }
+                        }
+                    }
+                }
+                
+                // --- WIZARD HAT TRAIL FOR OTHER PLAYERS ---
+                const otherAppearance = playerData.appearance || {};
+                if (otherAppearance.hat === 'wizardHat' && wizardTrailRef.current) {
+                    const poolKey = `player_${id}`;
+                    let trailGroup = wizardTrailRef.current.pools.get(poolKey);
+                    
+                    // Create pool if it doesn't exist
+                    if (!trailGroup) {
+                        trailGroup = wizardTrailRef.current.createPool();
+                        wizardTrailRef.current.pools.set(poolKey, trailGroup);
+                        sceneRef.current.add(trailGroup);
+                    }
+                    
+                    if (isMoving) {
+                        const spawnInterval = 1 / 12;
+                        const timeSinceLastSpawn = time - trailGroup.userData.lastSpawnTime;
+                        
+                        if (timeSinceLastSpawn >= spawnInterval) {
+                            let spawned = false;
+                            for (let attempts = 0; attempts < trailGroup.children.length && !spawned; attempts++) {
+                                const idx = (trailGroup.userData.nextParticleIndex + attempts) % trailGroup.children.length;
+                                const particle = trailGroup.children[idx];
+                                
+                                if (!particle.userData.active) {
+                                    particle.position.set(
+                                        meshData.mesh.position.x + (Math.random() - 0.5) * 0.4,
+                                        meshData.mesh.position.y + 2.2 + (Math.random() - 0.5) * 0.2,
+                                        meshData.mesh.position.z + (Math.random() - 0.5) * 0.4
+                                    );
+                                    particle.userData.active = true;
+                                    particle.userData.birthTime = time;
+                                    particle.visible = true;
+                                    particle.material.opacity = 0.9;
+                                    particle.scale.setScalar(0.8 + Math.random() * 0.4);
+                                    
+                                    trailGroup.userData.nextParticleIndex = (idx + 1) % trailGroup.children.length;
+                                    trailGroup.userData.lastSpawnTime = time;
+                                    spawned = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Update particles
+                    trailGroup.children.forEach((particle) => {
+                        if (particle.userData.active) {
+                            const age = time - particle.userData.birthTime;
+                            const lifeProgress = age / particle.userData.lifespan;
+                            
+                            if (lifeProgress < 1) {
+                                particle.position.y += delta * 0.05;
+                                let opacity;
+                                if (lifeProgress < 0.7) {
+                                    opacity = 0.9;
+                                } else {
+                                    const fadeProgress = (lifeProgress - 0.7) / 0.3;
+                                    opacity = 0.9 * (1 - fadeProgress * fadeProgress);
+                                }
+                                particle.material.opacity = Math.max(0, opacity);
+                                particle.scale.setScalar(particle.scale.x * (1 + delta * 0.05));
+                            } else {
+                                particle.userData.active = false;
+                                particle.visible = false;
+                            }
                         }
                     });
                 }
