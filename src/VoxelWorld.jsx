@@ -1008,7 +1008,7 @@ const VoxelWorld = ({
         // ==================== PIZZA PARLOR INTERIOR ====================
         const generatePizzaRoom = () => {
             const PIZZA_SIZE = 32; // Room dimensions
-            scene.background = new THREE.Color(0x1a0a05); // Warm dark brown
+            scene.background = new THREE.Color(0x0a0502); // Very dark - moody atmosphere
             
             // Simple collision map
             const map = [];
@@ -1038,9 +1038,9 @@ const VoxelWorld = ({
                 }
             }
             
-            // --- WALLS: Warm Italian restaurant style ---
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.7 }); // Saddle brown
-            const wallAccentMat = new THREE.MeshStandardMaterial({ color: 0xCD853F, roughness: 0.6 }); // Peru
+            // --- WALLS: Dark, moody Italian restaurant style ---
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x3d2010, roughness: 0.8 }); // Dark brown
+            const wallAccentMat = new THREE.MeshStandardMaterial({ color: 0x5a3520, roughness: 0.7 }); // Dark accent
             
             // Back wall
             const backWall = new THREE.Mesh(new THREE.BoxGeometry(PIZZA_SIZE, 10, 0.5), wallMat);
@@ -1070,7 +1070,7 @@ const VoxelWorld = ({
             
             // --- CEILING ---
             const ceilingGeo = new THREE.PlaneGeometry(PIZZA_SIZE, PIZZA_SIZE);
-            const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x2d1810, roughness: 0.9 });
+            const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x0a0503, roughness: 0.95 }); // Very dark
             const ceiling = new THREE.Mesh(ceilingGeo, ceilingMat);
             ceiling.rotation.x = Math.PI / 2;
             ceiling.position.set(0, 10, 0);
@@ -1080,31 +1080,33 @@ const VoxelWorld = ({
             const counterMat = new THREE.MeshStandardMaterial({ color: 0x4a2810, roughness: 0.5 });
             const COUNTER_Z = -PIZZA_SIZE/2 + 2.5; // Snug against back wall (-16 + 2.5 = -13.5)
             const COUNTER_DEPTH = 3;
+            const COUNTER_HEIGHT = 2.5; // Lowered to match shorter stools
             const STOOL_Z = COUNTER_Z + COUNTER_DEPTH/2 + 1.5; // In front of counter
             
             // Main counter top
-            const counterTop = new THREE.Mesh(new THREE.BoxGeometry(20, 0.3, COUNTER_DEPTH), counterMat);
-            counterTop.position.set(0, 3.5, COUNTER_Z);
+            const counterTop = new THREE.Mesh(new THREE.BoxGeometry(20, 0.25, COUNTER_DEPTH), counterMat);
+            counterTop.position.set(0, COUNTER_HEIGHT, COUNTER_Z);
             counterTop.castShadow = true;
+            counterTop.receiveShadow = true;
             scene.add(counterTop);
             
             // Counter front panel (customer side)
-            const counterFront = new THREE.Mesh(new THREE.BoxGeometry(20, 3.5, 0.3), wallAccentMat);
-            counterFront.position.set(0, 1.75, COUNTER_Z + COUNTER_DEPTH/2);
+            const counterFront = new THREE.Mesh(new THREE.BoxGeometry(20, COUNTER_HEIGHT, 0.3), wallAccentMat);
+            counterFront.position.set(0, COUNTER_HEIGHT / 2, COUNTER_Z + COUNTER_DEPTH/2);
             scene.add(counterFront);
             
             // Counter back panel (against wall)
-            const counterBack = new THREE.Mesh(new THREE.BoxGeometry(20, 3.5, 0.3), wallAccentMat);
-            counterBack.position.set(0, 1.75, COUNTER_Z - COUNTER_DEPTH/2);
+            const counterBack = new THREE.Mesh(new THREE.BoxGeometry(20, COUNTER_HEIGHT, 0.3), wallAccentMat);
+            counterBack.position.set(0, COUNTER_HEIGHT / 2, COUNTER_Z - COUNTER_DEPTH/2);
             scene.add(counterBack);
             
             // Counter sides
-            const counterSideL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.5, COUNTER_DEPTH), wallAccentMat);
-            counterSideL.position.set(-10, 1.75, COUNTER_Z);
+            const counterSideL = new THREE.Mesh(new THREE.BoxGeometry(0.3, COUNTER_HEIGHT, COUNTER_DEPTH), wallAccentMat);
+            counterSideL.position.set(-10, COUNTER_HEIGHT / 2, COUNTER_Z);
             scene.add(counterSideL);
             
-            const counterSideR = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.5, COUNTER_DEPTH), wallAccentMat);
-            counterSideR.position.set(10, 1.75, COUNTER_Z);
+            const counterSideR = new THREE.Mesh(new THREE.BoxGeometry(0.3, COUNTER_HEIGHT, COUNTER_DEPTH), wallAccentMat);
+            counterSideR.position.set(10, COUNTER_HEIGHT / 2, COUNTER_Z);
             scene.add(counterSideR);
             
             // --- PIZZA OVEN (on back wall, behind counter) ---
@@ -1122,38 +1124,48 @@ const VoxelWorld = ({
             ovenOpening.position.set(-5, 2, -PIZZA_SIZE/2 + 2.1);
             scene.add(ovenOpening);
             
-            // Oven fire glow
-            const ovenGlow = new THREE.PointLight(0xff4400, 2, 8);
+            // Oven fire glow - warm but not too bright
+            const ovenGlow = new THREE.PointLight(0xff3300, 2.5, 8);
             ovenGlow.position.set(-5, 2, -PIZZA_SIZE/2 + 1.5);
+            ovenGlow.castShadow = true;
+            ovenGlow.shadow.mapSize.width = 256;
+            ovenGlow.shadow.mapSize.height = 256;
             scene.add(ovenGlow);
+            
+            // Inner oven embers glow
+            const emberGlow = new THREE.PointLight(0xff5500, 1.0, 3);
+            emberGlow.position.set(-5, 1.5, -PIZZA_SIZE/2 + 1);
+            scene.add(emberGlow);
             
             // --- BAR STOOLS (along counter) ---
             const barStoolPositions = [-7, -4, -1, 2, 5, 8];
+            const STOOL_SEAT_HEIGHT = 1.8; // Lowered so players can jump on them
             const createBarStool = (x, z, faceDirection = 0) => {
                 const stoolGroup = new THREE.Group();
                 const metalMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.3 });
                 const seatMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.5 });
                 
                 // Base (wider for stability)
-                const base = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 0.1, 12), metalMat);
+                const base = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.1, 12), metalMat);
                 base.position.y = 0.05;
                 stoolGroup.add(base);
                 
-                // Stool leg (taller for bar height)
-                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.15, 2.6, 8), metalMat);
-                leg.position.y = 1.3;
+                // Stool leg (shorter for jumpable height)
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, STOOL_SEAT_HEIGHT - 0.2, 8), metalMat);
+                leg.position.y = (STOOL_SEAT_HEIGHT - 0.2) / 2;
                 stoolGroup.add(leg);
                 
                 // Foot rest ring
-                const footRest = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.05, 8, 16), metalMat);
+                const footRest = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.04, 8, 16), metalMat);
                 footRest.rotation.x = Math.PI / 2;
-                footRest.position.y = 0.7;
+                footRest.position.y = 0.5;
                 stoolGroup.add(footRest);
                 
-                // Seat (padded) - raised to be proper bar height
-                const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.45, 0.3, 16), seatMat);
-                seat.position.y = 2.8; // Raised from 2.15 for proper bar height
+                // Seat (padded) - jumpable height
+                const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.45, 0.25, 16), seatMat);
+                seat.position.y = STOOL_SEAT_HEIGHT;
                 seat.castShadow = true;
+                seat.receiveShadow = true;
                 stoolGroup.add(seat);
                 
                 stoolGroup.position.set(x, 0, z);
@@ -1269,14 +1281,14 @@ const VoxelWorld = ({
             
             // --- DECORATIONS ---
             
-            // Hanging pendant lights
-            const createPendantLight = (x, z) => {
+            // Hanging pendant lights - moody, focused lighting
+            const createPendantLight = (x, z, intensity = 2.5, distance = 10, castShadow = false) => {
                 const lightGroup = new THREE.Group();
                 
                 // Cord
                 const cord = new THREE.Mesh(
                     new THREE.CylinderGeometry(0.02, 0.02, 3, 8),
-                    new THREE.MeshBasicMaterial({ color: 0x333333 })
+                    new THREE.MeshBasicMaterial({ color: 0x222222 })
                 );
                 cord.position.y = 8.5;
                 lightGroup.add(cord);
@@ -1285,38 +1297,93 @@ const VoxelWorld = ({
                 const shade = new THREE.Mesh(
                     new THREE.ConeGeometry(0.8, 1, 16, 1, true),
                     new THREE.MeshStandardMaterial({ 
-                        color: 0xcc2222, 
+                        color: 0x8B0000, // Darker red
                         side: THREE.DoubleSide,
-                        roughness: 0.7
+                        roughness: 0.8,
+                        emissive: 0x220000,
+                        emissiveIntensity: 0.2
                     })
                 );
                 shade.position.y = 7.5;
-                // No rotation - cone tip up, wide base down (natural lamp shade)
                 lightGroup.add(shade);
                 
-                // Light bulb glow (inside the shade)
+                // Light bulb glow (warm, inside the shade)
                 const bulb = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.2, 8, 8),
-                    new THREE.MeshBasicMaterial({ color: 0xffffcc })
+                    new THREE.SphereGeometry(0.15, 8, 8),
+                    new THREE.MeshBasicMaterial({ color: 0xffaa55 })
                 );
-                bulb.position.y = 7.0; // Lower to be inside shade
+                bulb.position.y = 7.0;
                 lightGroup.add(bulb);
                 
-                // Point light
-                const light = new THREE.PointLight(0xffcc88, 1.5, 12);
+                // Point light - warm focused pool of light
+                const light = new THREE.PointLight(0xff9944, intensity, distance);
                 light.position.y = 7;
+                light.castShadow = castShadow;
+                if (castShadow) {
+                    light.shadow.mapSize.width = 512;
+                    light.shadow.mapSize.height = 512;
+                }
                 lightGroup.add(light);
                 
                 lightGroup.position.set(x, 0, z);
                 return lightGroup;
             };
             
-            // Lights over tables
-            scene.add(createPendantLight(-8, 2));
-            scene.add(createPendantLight(8, 2));
-            scene.add(createPendantLight(-8, 9));
-            scene.add(createPendantLight(8, 9));
-            scene.add(createPendantLight(0, STOOL_Z)); // Over counter/bar area
+            // Lights over tables - dim pools of warm light in the darkness
+            scene.add(createPendantLight(-8, 2, 2.0, 8, true));   // Table 1 - casts shadows
+            scene.add(createPendantLight(8, 2, 2.0, 8));          // Table 2
+            scene.add(createPendantLight(-8, 9, 2.0, 8));         // Table 3
+            scene.add(createPendantLight(8, 9, 2.0, 8, true));    // Table 4 - casts shadows
+            
+            // --- BAR LIGHTING ---
+            // Pendant lights above the bar counter with cords
+            const barLightGroup = new THREE.Group();
+            
+            // Multiple pendant lights along the bar
+            for (let i = 0; i < 3; i++) {
+                const barX = -6 + i * 6;
+                
+                // Cord from ceiling to fixture
+                const cord = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.015, 0.015, 3.5, 6),
+                    new THREE.MeshBasicMaterial({ color: 0x111111 })
+                );
+                cord.position.set(barX, 8.25, COUNTER_Z);
+                barLightGroup.add(cord);
+                
+                // Small pendant fixture (shade)
+                const fixture = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.25, 0.4, 0.35, 8),
+                    new THREE.MeshStandardMaterial({ 
+                        color: 0x1a0a05, 
+                        metalness: 0.7, 
+                        roughness: 0.3,
+                        emissive: 0x0a0200,
+                        emissiveIntensity: 0.2
+                    })
+                );
+                fixture.position.set(barX, 6.5, COUNTER_Z);
+                barLightGroup.add(fixture);
+                
+                // Warm bar light - dimmer for moody atmosphere
+                const barLight = new THREE.PointLight(0xff9933, 1.8, 7);
+                barLight.position.set(barX, 6, COUNTER_Z);
+                barLight.castShadow = i === 1; // Middle one casts shadows
+                if (i === 1) {
+                    barLight.shadow.mapSize.width = 512;
+                    barLight.shadow.mapSize.height = 512;
+                }
+                barLightGroup.add(barLight);
+                
+                // Bulb glow (dimmer)
+                const barBulb = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.1, 8, 8),
+                    new THREE.MeshBasicMaterial({ color: 0xffaa55 })
+                );
+                barBulb.position.set(barX, 6.25, COUNTER_Z);
+                barLightGroup.add(barBulb);
+            }
+            scene.add(barLightGroup);
             
             // --- WALL DECORATIONS ---
             
@@ -1339,10 +1406,18 @@ const VoxelWorld = ({
             signBack.position.set(5, 7, -PIZZA_SIZE/2 + 0.3);
             scene.add(signBack);
             
-            // Neon glow
-            const neonLight = new THREE.PointLight(0xff6600, 2, 8);
+            // Neon "PIZZA" sign glow - dim, moody
+            const neonLight = new THREE.PointLight(0xff4400, 0.8, 5);
             neonLight.position.set(5, 7, -PIZZA_SIZE/2 + 1);
             scene.add(neonLight);
+            
+            // Neon sign emissive letters (dimmer glow)
+            const neonLetters = new THREE.Mesh(
+                new THREE.BoxGeometry(6, 1, 0.1),
+                new THREE.MeshBasicMaterial({ color: 0xcc4400 })
+            );
+            neonLetters.position.set(5, 7, -PIZZA_SIZE/2 + 0.45);
+            scene.add(neonLetters);
             
             // Menu boards on side walls
             const menuMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
@@ -1437,7 +1512,7 @@ const VoxelWorld = ({
                 cap.position.y = 0.87;
                 bottleGroup.add(cap);
                 
-                bottleGroup.position.set(-7 + i * 2, 3.6, COUNTER_Z - COUNTER_DEPTH/2 + 0.5);
+                bottleGroup.position.set(-7 + i * 2, COUNTER_HEIGHT + 0.1, COUNTER_Z - COUNTER_DEPTH/2 + 0.5);
                 barDecorations.add(bottleGroup);
             }
             
@@ -1447,7 +1522,7 @@ const VoxelWorld = ({
                     color: 0xffffff, transparent: true, opacity: 0.5, roughness: 0.05 
                 });
                 const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.35, 8), glassMat);
-                glass.position.set(-5 + i * 3.5, 3.77, COUNTER_Z + 0.3);
+                glass.position.set(-5 + i * 3.5, COUNTER_HEIGHT + 0.27, COUNTER_Z + 0.3);
                 barDecorations.add(glass);
             }
             
@@ -1455,29 +1530,42 @@ const VoxelWorld = ({
             const boxMat = new THREE.MeshStandardMaterial({ color: 0xf5deb3, roughness: 0.8 });
             for (let i = 0; i < 3; i++) {
                 const box = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.8), boxMat);
-                box.position.set(8.5, 3.65 + i * 0.11, COUNTER_Z);
+                box.position.set(8.5, COUNTER_HEIGHT + 0.15 + i * 0.11, COUNTER_Z);
                 box.rotation.y = i * 0.1;
                 barDecorations.add(box);
             }
             
             scene.add(barDecorations);
             
-            // --- AMBIENT LIGHTING ---
-            const ambientFill = new THREE.AmbientLight(0xffeedd, 0.3);
+            // --- VERY MOODY AMBIENT LIGHTING ---
+            // Extremely dim ambient - almost all light from fixtures only
+            const ambientFill = new THREE.AmbientLight(0x0a0500, 0.08);
             scene.add(ambientFill);
             
-            // Exit sign light
-            const exitLight = new THREE.PointLight(0x00ff00, 0.5, 5);
+            // Minimal fill light - deep shadows
+            const fillLight = new THREE.HemisphereLight(0x0a0400, 0x000000, 0.05);
+            scene.add(fillLight);
+            
+            // Exit sign light (dim green glow)
+            const exitLight = new THREE.PointLight(0x00ff00, 0.3, 4);
             exitLight.position.set(0, 9, PIZZA_SIZE/2 - 1);
             scene.add(exitLight);
             
+            // Exit sign mesh
+            const exitSign = new THREE.Mesh(
+                new THREE.BoxGeometry(2, 0.5, 0.1),
+                new THREE.MeshBasicMaterial({ color: 0x005500 })
+            );
+            exitSign.position.set(0, 9.2, PIZZA_SIZE/2 - 0.3);
+            scene.add(exitSign);
+            
             // Build furniture sitting data (bar stools + chairs)
             const furnitureData = [
-                // Bar stools (facing counter) - tall bar stools with seat at y=2.8
+                // Bar stools (facing counter) - jumpable height stools
                 ...barStoolPositions.map(x => ({
                     type: 'stool',
                     position: { x, z: STOOL_Z },
-                    seatHeight: 2.9, // Stool seat mesh at y=2.8, penguin sits at 2.9+0.5=3.4
+                    seatHeight: STOOL_SEAT_HEIGHT + 0.1, // Stool seat at STOOL_SEAT_HEIGHT
                     faceAngle: Math.PI, // Facing counter (north)
                     radius: 0.5,
                     dismountBack: true // Flag to dismount backwards (away from counter)
@@ -1506,10 +1594,10 @@ const VoxelWorld = ({
                         type: 'circle', x: t.x, z: t.z, radius: 2.2, height: 2.75 
                     })),
                     // Counter top (can jump on) - snug against back wall
-                    { type: 'box', minX: -10, maxX: 10, minZ: COUNTER_Z - COUNTER_DEPTH/2, maxZ: COUNTER_Z + COUNTER_DEPTH/2, height: 3.6 },
-                    // Bar stool seats (can jump on) - raised to match new stool height
+                    { type: 'box', minX: -10, maxX: 10, minZ: COUNTER_Z - COUNTER_DEPTH/2, maxZ: COUNTER_Z + COUNTER_DEPTH/2, height: COUNTER_HEIGHT + 0.1 },
+                    // Bar stool seats (can jump on) - jumpable height
                     ...barStoolPositions.map(x => ({ 
-                        type: 'circle', x, z: STOOL_Z, radius: 0.55, height: 2.95 
+                        type: 'circle', x, z: STOOL_Z, radius: 0.6, height: STOOL_SEAT_HEIGHT + 0.05 
                     })),
                     // Chair seats (can jump on) - raised to match tall chairs
                     ...chairData.map(c => ({ 
@@ -2884,8 +2972,8 @@ const VoxelWorld = ({
                     const c = roomData.counter;
                     if (finalX > c.minX - playerRadius && finalX < c.maxX + playerRadius &&
                         finalZ > c.minZ - playerRadius && finalZ < c.maxZ + playerRadius) {
-                        // Only block if player is below counter top height (3.6)
-                        if (playerY < 3.5) {
+                        // Only block if player is below counter top height (2.5)
+                        if (playerY < 2.4) {
                             const fromLeft = finalX - (c.minX - playerRadius);
                             const fromRight = (c.maxX + playerRadius) - finalX;
                             const fromFront = finalZ - (c.minZ - playerRadius);
