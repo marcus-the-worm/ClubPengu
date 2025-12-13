@@ -518,8 +518,8 @@ class TownCenter {
                 // Add step collision for dojo entrance (3 steps)
                 const d = building.size.d;
                 for (let i = 0; i < 3; i++) {
-                    const stepWidth = 3.2 + (2 - i) * 0.4;
-                    const stepY = 0.84 - i * 0.28;
+                    const stepWidth = 4 - i * 0.4; // Same as PropsFactory
+                    const stepY = 0.28 + i * 0.28; // Same as PropsFactory (fixed)
                     const stepZ = bz + d / 2 + 1.5 + (2 - i) * 0.95;
                     this.collisionSystem.addCollider(
                         bx,
@@ -535,6 +535,63 @@ class TownCenter {
                         stepY
                     );
                 }
+            }
+            
+            // Add roof collision for gift shop (peaked roof - walkable at edges)
+            if (building.id === 'market') {
+                const w = building.size.w; // 10
+                const h = building.size.h; // 6
+                const d = building.size.d; // 10
+                const roofOverhang = 1;
+                const roofHeight = 2.5;
+                
+                // Lower roof edges (where it meets the walls) - easier to land on
+                const roofEdgeY = h + 0.5 + 0.5; // Just above wall top
+                
+                // Left side roof slope landing zone
+                this.collisionSystem.addCollider(
+                    bx - w/4,
+                    bz,
+                    {
+                        type: 'box',
+                        size: { x: w/2 + roofOverhang, y: 0.3, z: d + roofOverhang * 2 },
+                        height: 0.3
+                    },
+                    CollisionSystem.TYPES.SOLID,
+                    { name: 'gift_shop_roof_left', isRoof: true },
+                    0,
+                    roofEdgeY + 0.8 // Mid-slope height
+                );
+                
+                // Right side roof slope landing zone
+                this.collisionSystem.addCollider(
+                    bx + w/4,
+                    bz,
+                    {
+                        type: 'box',
+                        size: { x: w/2 + roofOverhang, y: 0.3, z: d + roofOverhang * 2 },
+                        height: 0.3
+                    },
+                    CollisionSystem.TYPES.SOLID,
+                    { name: 'gift_shop_roof_right', isRoof: true },
+                    0,
+                    roofEdgeY + 0.8 // Mid-slope height
+                );
+                
+                // Roof ridge (peak) - can stand on top
+                this.collisionSystem.addCollider(
+                    bx,
+                    bz,
+                    {
+                        type: 'box',
+                        size: { x: 1, y: 0.4, z: d + roofOverhang * 2 + 0.4 },
+                        height: 0.4
+                    },
+                    CollisionSystem.TYPES.SOLID,
+                    { name: 'gift_shop_roof_ridge', isRoof: true },
+                    0,
+                    h + 0.5 + roofHeight // Peak height
+                );
             }
         });
         
@@ -639,57 +696,80 @@ class TownCenter {
 
     /**
      * Update animated elements (call every frame)
+     * OPTIMIZED: Cache references to animated props, throttle updates
      * @param {number} time - Current time in seconds
      * @param {number} delta - Delta time since last frame
      */
     update(time, delta) {
-        // Animate campfire flames and embers
-        this.propMeshes.forEach(mesh => {
-            if (mesh.name === 'campfire') {
-                // Animate flames
-                mesh.traverse(child => {
-                    if (child.userData.isFlame) {
-                        const offset = child.userData.offset || 0;
-                        child.position.y = child.userData.baseY + Math.sin(time * 8 + offset) * 0.1;
-                        child.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.2;
-                        child.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.2;
-                        child.rotation.y = time * 2 + offset;
-                    }
-                });
-                
-                // Animate ember particles
-                const particles = mesh.userData.particles;
-                if (particles) {
-                    const positions = particles.geometry.attributes.position.array;
-                    for (let i = 0; i < positions.length / 3; i++) {
-                        // Rise upward
-                        positions[i * 3 + 1] += delta * (1 + Math.random());
-                        // Slight drift
-                        positions[i * 3] += (Math.random() - 0.5) * delta * 0.5;
-                        positions[i * 3 + 2] += (Math.random() - 0.5) * delta * 0.5;
-                        
-                        // Reset if too high
-                        if (positions[i * 3 + 1] > 3) {
-                            positions[i * 3] = (Math.random() - 0.5) * 0.8;
-                            positions[i * 3 + 1] = 0.2;
-                            positions[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
-                        }
-                    }
-                    particles.geometry.attributes.position.needsUpdate = true;
+        // OPTIMIZATION: Build cache on first call (avoid iterating ALL props every frame)
+        if (!this._animatedCache) {
+            this._animatedCache = {
+                campfires: [],
+                christmasTrees: [],
+                frameCounter: 0
+            };
+            this.propMeshes.forEach(mesh => {
+                if (mesh.name === 'campfire') {
+                    // Pre-cache flame children to avoid traverse() every frame
+                    const flames = [];
+                    mesh.traverse(child => {
+                        if (child.userData.isFlame) flames.push(child);
+                    });
+                    this._animatedCache.campfires.push({
+                        flames,
+                        particles: mesh.userData.particles,
+                        light: mesh.userData.fireLight
+                    });
                 }
-                
-                // Flicker light
-                const light = mesh.userData.fireLight;
-                if (light) {
-                    light.intensity = 1.5 + Math.sin(time * 15) * 0.3 + Math.random() * 0.2;
+                if (mesh.name === 'christmas_tree' && mesh.userData.treeUpdate) {
+                    this._animatedCache.christmasTrees.push(mesh);
                 }
+            });
+        }
+        
+        this._animatedCache.frameCounter++;
+        const frame = this._animatedCache.frameCounter;
+        
+        // Animate campfires
+        this._animatedCache.campfires.forEach(({ flames, particles, light }) => {
+            // Flames: every frame (visible motion)
+            flames.forEach(flame => {
+                const offset = flame.userData.offset || 0;
+                flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.1;
+                flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.2;
+                flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.2;
+                flame.rotation.y = time * 2 + offset;
+            });
+            
+            // Embers: every 2nd frame (subtle effect)
+            if (particles && frame % 2 === 0) {
+                const positions = particles.geometry.attributes.position.array;
+                const delta2 = delta * 2;
+                for (let i = 0; i < positions.length / 3; i++) {
+                    positions[i * 3 + 1] += delta2 * (1 + Math.random() * 0.5);
+                    positions[i * 3] += (Math.random() - 0.5) * delta2 * 0.5;
+                    positions[i * 3 + 2] += (Math.random() - 0.5) * delta2 * 0.5;
+                    if (positions[i * 3 + 1] > 3) {
+                        positions[i * 3] = (Math.random() - 0.5) * 0.8;
+                        positions[i * 3 + 1] = 0.2;
+                        positions[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
+                    }
+                }
+                particles.geometry.attributes.position.needsUpdate = true;
             }
             
-            // Animate Christmas tree twinkling lights
-            if (mesh.name === 'christmas_tree' && mesh.userData.treeUpdate) {
-                mesh.userData.treeUpdate(time);
+            // Light flicker: every 3rd frame
+            if (light && frame % 3 === 0) {
+                light.intensity = 1.5 + Math.sin(time * 15) * 0.3 + Math.random() * 0.2;
             }
         });
+        
+        // Christmas tree: every 4th frame (twinkling is subtle)
+        if (frame % 4 === 0) {
+            this._animatedCache.christmasTrees.forEach(mesh => {
+                if (mesh.userData.treeUpdate) mesh.userData.treeUpdate(time);
+            });
+        }
     }
 
     /**
@@ -716,6 +796,7 @@ class TownCenter {
         this.propMeshes = [];
         this.lights = [];
         this.collisionSystem.clear();
+        this._animatedCache = null; // Clear animation cache for rebuild
     }
 
     /**

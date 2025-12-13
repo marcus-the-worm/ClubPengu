@@ -84,6 +84,10 @@ const VoxelWorld = ({
     const lastPositionSentRef = useRef({ x: 0, y: 0, z: 0, rot: 0, time: 0 });
     const buildPenguinMeshRef = useRef(null); // Will be set in useEffect
     
+    // OPTIMIZATION: Reusable vectors to avoid GC pressure in update loop
+    const tempVec3Ref = useRef(null);
+    const tempOffsetRef = useRef(null);
+    
     // Player State
     const posRef = useRef({ x: 0, y: 0, z: 0 });
     const velRef = useRef({ x: 0, y: 0, z: 0 }); // Added y for jump velocity
@@ -544,14 +548,21 @@ const VoxelWorld = ({
         // Arctic sky - deeper blue to match icy ground
         scene.background = new THREE.Color('#6AA8C8'); // Icy arctic sky
         
+        // OPTIMIZATION: Initialize reusable vectors
+        tempVec3Ref.current = new THREE.Vector3();
+        tempOffsetRef.current = new THREE.Vector3();
+        
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
         cameraRef.current = camera;
         camera.position.set(0, 15, -15);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        // OPTIMIZED: Cap pixel ratio at 2 to prevent performance issues on high DPI screens
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // OPTIMIZED: Use BasicShadowMap instead of PCFSoftShadowMap (faster, slightly harder edges)
+        renderer.shadowMap.type = THREE.PCFShadowMap;
         mountRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
         
@@ -580,17 +591,19 @@ const VoxelWorld = ({
         const sunLight = new THREE.DirectionalLight(0xF8F8FF, 1.0); // Cold bright sun
         sunLight.position.set(80, 100, 60);
         sunLight.castShadow = true;
-        sunLight.shadow.mapSize.set(2048, 2048);
+        // OPTIMIZED: Reduced shadow map from 2048 to 1024 (still high quality, much faster)
+        sunLight.shadow.mapSize.set(1024, 1024);
         sunLight.shadow.camera.left = -100;
         sunLight.shadow.camera.right = 100;
         sunLight.shadow.camera.top = 100;
         sunLight.shadow.camera.bottom = -100;
+        sunLight.shadow.bias = -0.0005; // Reduce shadow acne
         scene.add(sunLight);
         sunLightRef.current = sunLight;
         
         // ==================== SNOWFALL PARTICLE SYSTEM ====================
         const createSnowfall = () => {
-            const particleCount = 2500; // Optimized count
+            const particleCount = 1500; // OPTIMIZED: Reduced from 2500 (still looks great)
             const positions = new Float32Array(particleCount * 3);
             const velocities = new Float32Array(particleCount * 3);
             const sizes = new Float32Array(particleCount);
@@ -1247,7 +1260,7 @@ const VoxelWorld = ({
                     chairData.push({
                         type: 'chair',
                         position: { x: chairX, z: chairZ },
-                        seatHeight: 1.8, // Chair seat mesh at y=2.8, penguin body centered on seat
+                        seatHeight: 2.9, // Chair seat mesh at y=2.8, penguin sits at 2.9+0.5=3.4
                         faceAngle: faceAngle,
                         radius: 0.7
                     });
@@ -1341,6 +1354,114 @@ const VoxelWorld = ({
             menuRight.position.set(PIZZA_SIZE/2 - 0.3, 6, -5);
             scene.add(menuRight);
             
+            // --- TABLE DECORATIONS (cards, drinks) ---
+            const createTableDecorations = (tableX, tableZ, tableTopY) => {
+                const decorGroup = new THREE.Group();
+                
+                // Playing cards (scattered stack)
+                const cardMat = new THREE.MeshStandardMaterial({ color: 0xf8f8ff, roughness: 0.4 });
+                const cardBackMat = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.4 });
+                
+                for (let i = 0; i < 5; i++) {
+                    const card = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.6), i % 2 === 0 ? cardMat : cardBackMat);
+                    card.position.set(
+                        0.4 + Math.random() * 0.3 - 0.15,
+                        tableTopY + 0.02 + i * 0.015,
+                        -0.3 + Math.random() * 0.2 - 0.1
+                    );
+                    card.rotation.y = Math.random() * 0.3 - 0.15;
+                    decorGroup.add(card);
+                }
+                
+                // Soda glasses
+                const glassMat = new THREE.MeshStandardMaterial({ 
+                    color: 0x88ccff, transparent: true, opacity: 0.6, roughness: 0.1 
+                });
+                const liquidMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.3 });
+                
+                for (let i = 0; i < 2; i++) {
+                    const glassGroup = new THREE.Group();
+                    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.12, 0.5, 8), glassMat);
+                    glass.position.y = 0.25;
+                    glassGroup.add(glass);
+                    
+                    // Liquid inside
+                    const liquid = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.10, 0.35, 8), liquidMat);
+                    liquid.position.y = 0.2;
+                    glassGroup.add(liquid);
+                    
+                    glassGroup.position.set(
+                        -0.6 + i * 1.2,
+                        tableTopY,
+                        0.5 - i * 0.3
+                    );
+                    decorGroup.add(glassGroup);
+                }
+                
+                decorGroup.position.set(tableX, 0, tableZ);
+                return decorGroup;
+            };
+            
+            // Add decorations to each table
+            tablePositions.forEach(table => {
+                const tableDecorations = createTableDecorations(table.x, table.z, 2.78);
+                scene.add(tableDecorations);
+            });
+            
+            // --- BAR COUNTER DECORATIONS (bottles, glasses) ---
+            const barDecorations = new THREE.Group();
+            
+            // Row of bottles behind bar (on counter)
+            const bottleColors = [0x2d5c1e, 0x8B4513, 0x1a3d1a, 0x4a2c2a, 0x2a4a3a];
+            for (let i = 0; i < 8; i++) {
+                const bottleGroup = new THREE.Group();
+                const bottleMat = new THREE.MeshStandardMaterial({ 
+                    color: bottleColors[i % bottleColors.length], 
+                    transparent: true, opacity: 0.85, 
+                    roughness: 0.2 
+                });
+                
+                // Bottle body
+                const body = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 0.6, 8), bottleMat);
+                body.position.y = 0.3;
+                bottleGroup.add(body);
+                
+                // Bottle neck
+                const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 0.25, 6), bottleMat);
+                neck.position.y = 0.72;
+                bottleGroup.add(neck);
+                
+                // Cap
+                const capMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.8, roughness: 0.3 });
+                const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 6), capMat);
+                cap.position.y = 0.87;
+                bottleGroup.add(cap);
+                
+                bottleGroup.position.set(-7 + i * 2, 3.6, COUNTER_Z - COUNTER_DEPTH/2 + 0.5);
+                barDecorations.add(bottleGroup);
+            }
+            
+            // Glasses on counter (in front)
+            for (let i = 0; i < 4; i++) {
+                const glassMat = new THREE.MeshStandardMaterial({ 
+                    color: 0xffffff, transparent: true, opacity: 0.5, roughness: 0.05 
+                });
+                const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.35, 8), glassMat);
+                glass.position.set(-5 + i * 3.5, 3.77, COUNTER_Z + 0.3);
+                barDecorations.add(glass);
+            }
+            
+            // Pizza boxes stacked on one end
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0xf5deb3, roughness: 0.8 });
+            for (let i = 0; i < 3; i++) {
+                const box = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.8), boxMat);
+                box.position.set(8.5, 3.65 + i * 0.11, COUNTER_Z);
+                box.rotation.y = i * 0.1;
+                barDecorations.add(box);
+            }
+            
+            scene.add(barDecorations);
+            
             // --- AMBIENT LIGHTING ---
             const ambientFill = new THREE.AmbientLight(0xffeedd, 0.3);
             scene.add(ambientFill);
@@ -1356,7 +1477,7 @@ const VoxelWorld = ({
                 ...barStoolPositions.map(x => ({
                     type: 'stool',
                     position: { x, z: STOOL_Z },
-                    seatHeight: 1.8, // Stool seat mesh at y=2.8, penguin body centered on seat
+                    seatHeight: 2.9, // Stool seat mesh at y=2.8, penguin sits at 2.9+0.5=3.4
                     faceAngle: Math.PI, // Facing counter (north)
                     radius: 0.5,
                     dismountBack: true // Flag to dismount backwards (away from counter)
@@ -2124,7 +2245,7 @@ const VoxelWorld = ({
                  
                  // Same scale and position as penguin
                  group.scale.set(0.18, 0.18, 0.18);
-                 group.position.y = 1.4;
+                 group.position.y = 0.8;
              } else {
                  // Build standard Penguin character
                  const skin = data.skin || 'blue';
@@ -2243,9 +2364,9 @@ const VoxelWorld = ({
                  }
                  
                  group.scale.set(0.2, 0.2, 0.2); 
-                 group.position.y = 1.4;
+                 group.position.y = 0.8;
              }
-             
+
              const wrapper = new THREE.Group();
              wrapper.add(group);
              return wrapper;
@@ -2476,7 +2597,7 @@ const VoxelWorld = ({
                     emoteRef.current.type = null;
                     if (playerRef.current && playerRef.current.children[0]) {
                         const m = playerRef.current.children[0];
-                        m.position.y = 1;
+                        m.position.y = 0.8;
                         m.rotation.x = 0;
                     }
                 }
@@ -2494,12 +2615,15 @@ const VoxelWorld = ({
                 setShowEmoteWheel(true);
             }
             if(e.code === 'F3') {
-                // F3 toggles debug position panel (like Minecraft)
+                // F3 toggles debug position panel (like Minecraft) - DEV ONLY
                 e.preventDefault();
-                setShowDebugPosition(prev => {
-                    showDebugPositionRef.current = !prev;
-                    return !prev;
-                });
+                // Only allow in development mode
+                if (process.env.NODE_ENV !== 'production') {
+                    setShowDebugPosition(prev => {
+                        showDebugPositionRef.current = !prev;
+                        return !prev;
+                    });
+                }
             }
             if(e.code === 'Enter') {
                  const input = document.getElementById('chat-input-field');
@@ -2658,7 +2782,7 @@ const VoxelWorld = ({
                     // Reset penguin mesh position (inner body)
                     if (playerRef.current && playerRef.current.children[0]) {
                         const m = playerRef.current.children[0];
-                        m.position.y = 1;
+                        m.position.y = 0.8;
                         m.rotation.x = 0;
                     }
                 }
@@ -3314,22 +3438,31 @@ const VoxelWorld = ({
             }
             
             // animateMesh now accepts isSeatedOnFurniture as 5th param, characterType as 6th
+            // OPTIMIZED: Cache part references to avoid getObjectByName every frame
             const animateMesh = (meshWrapper, isMoving, emoteType, emoteStartTime, isSeatedOnFurniture = false, characterType = 'penguin') => {
                 if (!meshWrapper || !meshWrapper.children[0]) return;
                 const meshInner = meshWrapper.children[0];
                 const isMarcus = characterType === 'marcus';
-                const flipperL = meshInner.getObjectByName('flipper_l');
-                const flipperR = meshInner.getObjectByName('flipper_r');
-                const head = meshInner.getObjectByName('head');
-                const hatPart = meshInner.getObjectByName('hat');
-                const eyesPart = meshInner.getObjectByName('eyes');
-                const mouthPart = meshInner.getObjectByName('mouth');
-                const footL = meshInner.getObjectByName('foot_l');
-                const footR = meshInner.getObjectByName('foot_r');
+                
+                // Use cached parts if available, otherwise look up and cache
+                if (!meshWrapper._animParts) {
+                    meshWrapper._animParts = {
+                        flipperL: meshInner.getObjectByName('flipper_l'),
+                        flipperR: meshInner.getObjectByName('flipper_r'),
+                        head: meshInner.getObjectByName('head'),
+                        hatPart: meshInner.getObjectByName('hat'),
+                        eyesPart: meshInner.getObjectByName('eyes'),
+                        mouthPart: meshInner.getObjectByName('mouth'),
+                        footL: meshInner.getObjectByName('foot_l'),
+                        footR: meshInner.getObjectByName('foot_r')
+                    };
+                }
+                const { flipperL, flipperR, head, hatPart, eyesPart, mouthPart, footL, footR } = meshWrapper._animParts;
                 
                 if(flipperL) { flipperL.rotation.set(0,0,0); }
                 if(flipperR) { flipperR.rotation.set(0,0,0); }
-                meshInner.position.y = 1;
+                // Position penguin so feet touch ground
+                meshInner.position.y = 0.8;
                 meshInner.rotation.z = 0;
                 meshInner.rotation.y = 0;
                 meshInner.rotation.x = 0;
@@ -3351,20 +3484,18 @@ const VoxelWorld = ({
                     } 
                     else if (emoteType === 'Dance') {
                         meshInner.rotation.y = eTime * 6; 
-                        meshInner.position.y = 1 + Math.abs(Math.sin(eTime * 5)) * 1; 
+                        meshInner.position.y = 0.8 + Math.abs(Math.sin(eTime * 5)) * 1;
                         if(flipperL) flipperL.rotation.z = Math.sin(eTime * 10) * 1;
                         if(flipperR) flipperR.rotation.z = -Math.sin(eTime * 10) * 1;
                     }
                     else if (emoteType === 'Sit') {
-                        // Use passed isSeatedOnFurniture flag (per-player, not global)
-                        // Adjust positions based on character type
+                        // SIMPLIFIED SITTING SYSTEM:
+                        // seatHeight = Y position of seat surface (where butt goes)
+                        // meshInner offset is SAME for ground and furniture sitting
+                        // This means seatHeight alone determines elevation
                         if (isMarcus) {
-                            // Marcus sitting - lower body more due to longer legs
-                            if (isSeatedOnFurniture) {
-                                meshInner.position.y = 0.8; // Lower for Marcus on furniture
-                            } else {
-                                meshInner.position.y = -0.2; // Much lower for ground sitting
-                            }
+                            // Marcus sitting - same offset for ground and furniture
+                            meshInner.position.y = -0.2;
                             // Marcus legs extend forward
                             if(footL) {
                                 footL.rotation.x = -Math.PI / 3;
@@ -3375,12 +3506,8 @@ const VoxelWorld = ({
                                 footR.position.z = 1.5;
                             }
                         } else {
-                            // Penguin sitting
-                            if (isSeatedOnFurniture) {
-                                meshInner.position.y = 1.6;
-                            } else {
-                                meshInner.position.y = 0.5;
-                            }
+                            // Penguin sitting - same offset for ground and furniture
+                            meshInner.position.y = 0.5;
                             // Penguin feet extend forward
                             if(footL) {
                                 footL.rotation.x = -Math.PI / 2.5;
@@ -3402,7 +3529,7 @@ const VoxelWorld = ({
                           if(eyesPart) eyesPart.rotation.x = laughRot;
                           if(mouthPart) mouthPart.rotation.x = laughRot;
                           meshInner.rotation.x = -0.2;
-                          meshInner.position.y = 1 + Math.abs(Math.sin(eTime * 15)) * 0.1;
+                          meshInner.position.y = 0.8 + Math.abs(Math.sin(eTime * 15)) * 0.1;
                     }
                     
                     if (emoteType !== 'Sit' && eTime > 3) {
@@ -3428,50 +3555,56 @@ const VoxelWorld = ({
                 // Pass local player's seatedRef state for furniture sitting and character type
                 animateMesh(playerRef.current, moving, emoteRef.current.type, emoteRef.current.startTime, !!seatedRef.current, penguinData?.characterType || 'penguin');
                 
-                // Animate local player's propeller, smoke, and laser eyes
-                playerRef.current.traverse(child => {
-                    if (child.name === 'propeller_blades') {
-                        child.rotation.y += delta * 15; // Fast spin
-                    }
-                    
-                    // Animate smoke particles
-                    if (child.userData?.isSmokeEmitter) {
-                        child.children.forEach((particle, i) => {
-                            particle.position.y += delta * 2;
-                            particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
-                            
-                            const height = particle.position.y - (particle.userData.baseY || 0);
-                            if (particle.material) {
-                                particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
-                            }
-                            
-                            if (height > 2) {
-                                particle.position.y = particle.userData.baseY || 0;
-                                particle.position.x = 0;
-                                if (particle.material) particle.material.opacity = 0.6;
-                            }
-                        });
-                    }
-                    
-                    // Animate laser eyes - pulsing intensity
-                    if (child.userData?.isLaserEyes) {
-                        const intensity = 1 + Math.sin(time * 10) * 0.5;
-                        child.children.forEach(light => {
-                            if (light.isPointLight) {
-                                light.intensity = intensity;
-                            }
-                        });
-                    }
-                });
+                // OPTIMIZED: Only traverse for cosmetic animations if player has special cosmetics
+                const hasAnimatedCosmetics = penguinData?.hat === 'propeller' || 
+                                              penguinData?.mouth === 'cigarette' || 
+                                              penguinData?.mouth === 'pipe' ||
+                                              penguinData?.eyes === 'laser';
+                
+                if (hasAnimatedCosmetics) {
+                    // Animate local player's propeller, smoke, and laser eyes
+                    playerRef.current.traverse(child => {
+                        if (child.name === 'propeller_blades') {
+                            child.rotation.y += delta * 15; // Fast spin
+                        }
+                        
+                        // Animate smoke particles
+                        if (child.userData?.isSmokeEmitter) {
+                            child.children.forEach((particle, i) => {
+                                particle.position.y += delta * 2;
+                                particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
+                                
+                                const height = particle.position.y - (particle.userData.baseY || 0);
+                                if (particle.material) {
+                                    particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
+                                }
+                                
+                                if (height > 2) {
+                                    particle.position.y = particle.userData.baseY || 0;
+                                    particle.position.x = 0;
+                                    if (particle.material) particle.material.opacity = 0.6;
+                                }
+                            });
+                        }
+                        
+                        // Animate laser eyes - pulsing intensity
+                        if (child.userData?.isLaserEyes) {
+                            const intensity = 1 + Math.sin(time * 10) * 0.5;
+                            child.children.forEach(light => {
+                                if (light.isPointLight) {
+                                    light.intensity = intensity;
+                                }
+                            });
+                        }
+                    });
+                }
             }
             
-            // --- AI UPDATE LOOP (runs always, AI have their own room state) ---
+            // --- AI UPDATE LOOP (OPTIMIZED: skip invisible AIs) ---
             const now = Date.now();
             // Using cached values: centerX, centerZ, dojoBxCached, dojoBzCached, dojoHdCached, puffleMap, aiMap
             
             aiAgentsRef.current.forEach(ai => {
-                let aiMoving = false;
-                
                 // Only show AI that are in the same room as the player
                 const sameRoom = ai.currentRoom === roomRef.current;
                 if (ai.mesh) ai.mesh.visible = sameRoom;
@@ -3481,6 +3614,9 @@ const VoxelWorld = ({
                 if (aiPuffleEntry && aiPuffleEntry.puffle && aiPuffleEntry.puffle.mesh) {
                     aiPuffleEntry.puffle.mesh.visible = sameRoom;
                 }
+                
+                // OPTIMIZATION: Skip full AI logic for AIs in different rooms (just do room transitions)
+                let aiMoving = false;
                 
                 // --- AI Room Transition Logic (use cached values) ---
                 const dojoBx = dojoBxCached;
@@ -3848,6 +3984,9 @@ const VoxelWorld = ({
                     }
                 }
                 
+                // OPTIMIZATION: Skip expensive mesh updates for invisible AIs
+                if (!sameRoom) return; // Early exit - AI not visible
+                
                 ai.mesh.position.set(ai.pos.x, 0, ai.pos.z);
                 if (ai.action !== 'chatting') ai.mesh.rotation.y = ai.rot;
                 
@@ -3965,44 +4104,55 @@ const VoxelWorld = ({
                 // Pass each player's seatedOnFurniture state (synced from server) and character type
                 animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false, playerData.appearance?.characterType || 'penguin');
                 
-                // Animate propeller hat, smoke, and laser eyes if present
-                meshData.mesh.traverse(child => {
-                    if (child.name === 'propeller_blades') {
-                        child.rotation.y += delta * 15; // Fast spin
-                    }
-                    
-                    // Animate smoke particles
-                    if (child.userData?.isSmokeEmitter) {
-                        child.children.forEach((particle, i) => {
-                            // Rise and drift
-                            particle.position.y += delta * 2;
-                            particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
-                            
-                            // Fade out as it rises
-                            const height = particle.position.y - (particle.userData.baseY || 0);
-                            if (particle.material) {
-                                particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
-                            }
-                            
-                            // Reset when too high
-                            if (height > 2) {
-                                particle.position.y = particle.userData.baseY || 0;
-                                particle.position.x = 0;
-                                if (particle.material) particle.material.opacity = 0.6;
-                            }
-                        });
-                    }
-                    
-                    // Animate laser eyes - pulsing intensity
-                    if (child.userData?.isLaserEyes) {
-                        const intensity = 1 + Math.sin(time * 10) * 0.5;
-                        child.children.forEach(light => {
-                            if (light.isPointLight) {
-                                light.intensity = intensity;
-                            }
-                        });
-                    }
-                });
+                // OPTIMIZED: Only traverse if this player has animated cosmetics
+                // Cache this check to avoid checking every frame
+                if (meshData.hasAnimatedCosmetics === undefined) {
+                    const appearance = playerData.appearance || {};
+                    meshData.hasAnimatedCosmetics = appearance.hat === 'propeller' || 
+                                                     appearance.mouth === 'cigarette' || 
+                                                     appearance.mouth === 'pipe' ||
+                                                     appearance.eyes === 'laser';
+                }
+                
+                if (meshData.hasAnimatedCosmetics) {
+                    meshData.mesh.traverse(child => {
+                        if (child.name === 'propeller_blades') {
+                            child.rotation.y += delta * 15; // Fast spin
+                        }
+                        
+                        // Animate smoke particles
+                        if (child.userData?.isSmokeEmitter) {
+                            child.children.forEach((particle, i) => {
+                                // Rise and drift
+                                particle.position.y += delta * 2;
+                                particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
+                                
+                                // Fade out as it rises
+                                const height = particle.position.y - (particle.userData.baseY || 0);
+                                if (particle.material) {
+                                    particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
+                                }
+                                
+                                // Reset when too high
+                                if (height > 2) {
+                                    particle.position.y = particle.userData.baseY || 0;
+                                    particle.position.x = 0;
+                                    if (particle.material) particle.material.opacity = 0.6;
+                                }
+                            });
+                        }
+                        
+                        // Animate laser eyes - pulsing intensity
+                        if (child.userData?.isLaserEyes) {
+                            const intensity = 1 + Math.sin(time * 10) * 0.5;
+                            child.children.forEach(light => {
+                                if (light.isPointLight) {
+                                    light.intensity = intensity;
+                                }
+                            });
+                        }
+                    });
+                }
                 
                 // Handle chat bubbles
                 if (playerData.chatMessage && playerData.chatTime) {
@@ -4081,137 +4231,151 @@ const VoxelWorld = ({
                 }
             }
 
-            const offset = camera.position.clone().sub(controls.target);
+            // OPTIMIZED: Reuse vectors instead of creating new ones every frame
+            const offset = tempOffsetRef.current.copy(camera.position).sub(controls.target);
             // Follow player's actual Y position (add slight offset for eye level)
             const playerY = posRef.current.y + 1.2;
-            const targetPos = new THREE.Vector3(posRef.current.x, playerY, posRef.current.z);
+            const targetPos = tempVec3Ref.current.set(posRef.current.x, playerY, posRef.current.z);
             camera.position.copy(targetPos).add(offset);
             controls.target.copy(targetPos);
             controls.update();
             
             // ==================== DAY/NIGHT CYCLE (Town only, Server-synchronized) ====================
-            if (room === 'town' && sunLightRef.current && ambientLightRef.current) {
+            // OPTIMIZED: Only update lighting every 3rd frame (still smooth at 60fps = 20 updates/sec)
+            if (room === 'town' && sunLightRef.current && ambientLightRef.current && frameCount % 3 === 0) {
                 // Use server-synchronized time (or local time for debug override)
                 const serverTime = serverWorldTimeRef?.current ?? 0.35;
-                const t = daySpeedRef.current === 0 ? dayTimeRef.current : serverTime; // Allow local override when paused
+                const t = daySpeedRef.current === 0 ? dayTimeRef.current : serverTime;
                 
                 // Calculate sun position (arc across sky)
-                const sunAngle = t * Math.PI * 2 - Math.PI / 2; // Full rotation
+                const sunAngle = t * Math.PI * 2 - Math.PI / 2;
                 const sunHeight = Math.sin(sunAngle);
                 const sunX = Math.cos(sunAngle) * 100;
-                const sunY = Math.max(5, sunHeight * 100 + 50); // Never go below horizon completely
+                const sunY = Math.max(5, sunHeight * 100 + 50);
                 
                 sunLightRef.current.position.set(sunX, sunY, 60);
                 
-                // Day/night colors based on time
-                // 0.0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset
-                let sunIntensity, ambientIntensity, sunColor, ambientColor, skyColor;
+                // Day/night colors - OPTIMIZED: Reuse color objects, avoid creating new ones
+                let sunIntensity, ambientIntensity;
+                const sunColor = sunLightRef.current.color;
+                const ambientColor = ambientLightRef.current.color;
                 
                 if (t < 0.2) {
-                    // Night (0.0 - 0.2) - Keep ambient higher for navigation
+                    // Night
                     const nightT = t / 0.2;
-                    sunIntensity = 0.05 + nightT * 0.1; // Very dim moonlight
-                    ambientIntensity = 0.25 + nightT * 0.1; // Higher ambient for visibility
-                    sunColor = new THREE.Color(0x4466aa); // Moonlight blue
-                    ambientColor = new THREE.Color(0x2a3a5a); // Dark blue but not too dark
-                    skyColor = new THREE.Color().lerpColors(new THREE.Color(0x0a1525), new THREE.Color(0x1a3050), nightT);
+                    sunIntensity = 0.05 + nightT * 0.1;
+                    ambientIntensity = 0.25 + nightT * 0.1;
+                    sunColor.setHex(0x4466aa);
+                    ambientColor.setHex(0x2a3a5a);
+                    scene.background.lerpColors(scene.background.setHex(0x0a1525), ambientColor, nightT * 0.5);
                 } else if (t < 0.3) {
-                    // Sunrise (0.2 - 0.3)
+                    // Sunrise
                     const sunriseT = (t - 0.2) / 0.1;
                     sunIntensity = 0.15 + sunriseT * 0.45;
                     ambientIntensity = 0.35 + sunriseT * 0.15;
-                    sunColor = new THREE.Color().lerpColors(new THREE.Color(0x4466aa), new THREE.Color(0xffaa66), sunriseT);
-                    ambientColor = new THREE.Color().lerpColors(new THREE.Color(0x2a3a5a), new THREE.Color(0x8090a0), sunriseT);
-                    skyColor = new THREE.Color().lerpColors(new THREE.Color(0x1a3050), new THREE.Color(0xffcc88), sunriseT);
+                    sunColor.setRGB(0.27 + sunriseT * 0.73, 0.4 + sunriseT * 0.27, 0.67 - sunriseT * 0.27);
+                    ambientColor.setRGB(0.16 + sunriseT * 0.34, 0.23 + sunriseT * 0.33, 0.35 + sunriseT * 0.28);
+                    scene.background.setRGB(0.1 + sunriseT * 0.9, 0.19 + sunriseT * 0.61, 0.31 + sunriseT * 0.22);
                 } else if (t < 0.7) {
-                    // Day (0.3 - 0.7) - Reduced peak intensity to prevent glare
+                    // Day
                     const dayT = (t - 0.3) / 0.4;
-                    const middayT = 1 - Math.abs(dayT - 0.5) * 2; // Peak at 0.5
-                    sunIntensity = 0.6 + middayT * 0.3; // Reduced from 0.8-1.2 to 0.6-0.9
-                    ambientIntensity = 0.4 + middayT * 0.1; // Reduced slightly
-                    sunColor = new THREE.Color(0xF8F8FF); // Bright white
-                    ambientColor = new THREE.Color(0xC0E0F0); // Icy blue
-                    skyColor = new THREE.Color(0x87CEEB); // Sky blue
+                    const middayT = 1 - Math.abs(dayT - 0.5) * 2;
+                    sunIntensity = 0.6 + middayT * 0.3;
+                    ambientIntensity = 0.4 + middayT * 0.1;
+                    sunColor.setHex(0xF8F8FF);
+                    ambientColor.setHex(0xC0E0F0);
+                    scene.background.setHex(0x87CEEB);
                 } else if (t < 0.8) {
-                    // Sunset (0.7 - 0.8) - Golden hour
+                    // Sunset
                     const sunsetT = (t - 0.7) / 0.1;
-                    sunIntensity = 0.6 - sunsetT * 0.4; // Fade out sun
-                    ambientIntensity = 0.45 - sunsetT * 0.1; // Keep ambient reasonable
-                    sunColor = new THREE.Color().lerpColors(new THREE.Color(0xF8F8FF), new THREE.Color(0xff6644), sunsetT);
-                    ambientColor = new THREE.Color().lerpColors(new THREE.Color(0xC0E0F0), new THREE.Color(0x4a4060), sunsetT);
-                    skyColor = new THREE.Color().lerpColors(new THREE.Color(0x87CEEB), new THREE.Color(0xff7755), sunsetT);
+                    sunIntensity = 0.6 - sunsetT * 0.4;
+                    ambientIntensity = 0.45 - sunsetT * 0.1;
+                    sunColor.setRGB(0.97 - sunsetT * 0.03, 0.97 - sunsetT * 0.57, 1 - sunsetT * 0.73);
+                    ambientColor.setRGB(0.75 - sunsetT * 0.46, 0.88 - sunsetT * 0.63, 0.94 - sunsetT * 0.56);
+                    scene.background.setRGB(0.53 + sunsetT * 0.47, 0.81 - sunsetT * 0.34, 0.92 - sunsetT * 0.59);
                 } else {
-                    // Night (0.8 - 1.0) - Maintain navigable visibility
+                    // Night
                     const nightT = (t - 0.8) / 0.2;
-                    sunIntensity = 0.2 - nightT * 0.15; // Very dim
-                    ambientIntensity = 0.35 - nightT * 0.1; // Keep ambient for navigation
-                    sunColor = new THREE.Color().lerpColors(new THREE.Color(0xff6644), new THREE.Color(0x4466aa), nightT);
-                    ambientColor = new THREE.Color().lerpColors(new THREE.Color(0x4a4060), new THREE.Color(0x2a3a5a), nightT);
-                    skyColor = new THREE.Color().lerpColors(new THREE.Color(0xff7755), new THREE.Color(0x0a1525), nightT);
+                    sunIntensity = 0.2 - nightT * 0.15;
+                    ambientIntensity = 0.35 - nightT * 0.1;
+                    sunColor.setRGB(1 - nightT * 0.73, 0.4 + nightT * 0, 0.27 + nightT * 0.4);
+                    ambientColor.setRGB(0.29 - nightT * 0.13, 0.25 - nightT * 0.02, 0.38 - nightT * 0.03);
+                    scene.background.setRGB(1 - nightT * 0.96, 0.47 - nightT * 0.39, 0.33 - nightT * 0.19);
                 }
                 
                 sunLightRef.current.intensity = sunIntensity;
-                sunLightRef.current.color.copy(sunColor);
                 ambientLightRef.current.intensity = ambientIntensity;
-                ambientLightRef.current.color.copy(ambientColor);
                 
-                // Update sky/fog color
-                scene.background = skyColor;
-                if (scene.fog) scene.fog.color.copy(skyColor);
+                // Update fog color to match sky
+                if (scene.fog) scene.fog.color.copy(scene.background);
                 
-                // Update state for UI (throttled) - show server time unless debug override
+                // Update state for UI (throttled)
                 if (frameCount % 30 === 0) {
                     setDayTime(daySpeedRef.current === 0 ? dayTimeRef.current : serverTime);
                 }
             }
             
             // ==================== SNOWFALL UPDATE ====================
+            // Update snow every frame to prevent flickering
             if (room === 'town' && snowParticlesRef.current && gameSettingsRef.current.snowEnabled !== false) {
                 const snow = snowParticlesRef.current;
                 const positions = snow.particles.geometry.attributes.position.array;
                 const velocities = snow.velocities;
+                const particleCount = positions.length / 3;
                 
                 // Smoothly change intensity over time (random fluctuations)
-                if (frameCount % 300 === 0) { // Every ~5 seconds
-                    snowTargetIntensityRef.current = 0.2 + Math.random() * 0.5; // 0.2 to 0.7 (never blizzard)
+                if (frameCount % 300 === 0) {
+                    snowTargetIntensityRef.current = 0.2 + Math.random() * 0.5;
                 }
-                snowIntensityRef.current += (snowTargetIntensityRef.current - snowIntensityRef.current) * delta * 0.5;
+                snowIntensityRef.current += (snowTargetIntensityRef.current - snowIntensityRef.current) * delta;
                 
                 const intensity = snowIntensityRef.current;
-                const windX = Math.sin(time * 0.3) * intensity * 2; // Gentle wind sway
+                // OPTIMIZED: Pre-calculate wind and delta multiplier once
+                const windX = Math.sin(time * 0.3) * intensity * 2;
                 const windZ = Math.cos(time * 0.2) * intensity;
+                const deltaIntensity = delta * intensity * 3;
                 
                 // Get player position in world space
                 const playerX = posRef.current.x;
                 const playerZ = posRef.current.z;
+                // OPTIMIZED: Pre-calculate spread bounds
+                const spreadX06 = snow.spreadX * 0.6;
+                const spreadZ06 = snow.spreadZ * 0.6;
+                const halfSpreadX = snow.spreadX * 0.5;
+                const halfSpreadZ = snow.spreadZ * 0.5;
                 
-                // Update particle positions (all in world space)
-                for (let i = 0; i < positions.length / 3; i++) {
+                // OPTIMIZED: Update particle positions with direct index access
+                for (let i = 0; i < particleCount; i++) {
+                    const idx = i * 3;
+                    const idx1 = idx + 1;
+                    const idx2 = idx + 2;
+                    
                     // Apply velocity with wind
-                    positions[i * 3] += (velocities[i * 3] + windX) * delta * intensity * 3;
-                    positions[i * 3 + 1] += velocities[i * 3 + 1] * delta * intensity * 3;
-                    positions[i * 3 + 2] += (velocities[i * 3 + 2] + windZ) * delta * intensity * 3;
+                    positions[idx] += (velocities[idx] + windX) * deltaIntensity;
+                    positions[idx1] += velocities[idx1] * deltaIntensity;
+                    positions[idx2] += (velocities[idx2] + windZ) * deltaIntensity;
                     
                     // Reset particles that fall below ground or drift too far from player
-                    const distX = positions[i * 3] - playerX;
-                    const distZ = positions[i * 3 + 2] - playerZ;
-                    const tooFar = Math.abs(distX) > snow.spreadX * 0.6 || Math.abs(distZ) > snow.spreadZ * 0.6;
+                    const distX = positions[idx] - playerX;
+                    const distZ = positions[idx2] - playerZ;
                     
-                    if (positions[i * 3 + 1] < -2 || tooFar) {
+                    if (positions[idx1] < -2 || Math.abs(distX) > spreadX06 || Math.abs(distZ) > spreadZ06) {
                         // Reset to new position around player (in world space)
-                        positions[i * 3] = playerX + (Math.random() - 0.5) * snow.spreadX;
-                        positions[i * 3 + 1] = snow.height + Math.random() * 10;
-                        positions[i * 3 + 2] = playerZ + (Math.random() - 0.5) * snow.spreadZ;
+                        positions[idx] = playerX + (Math.random() - 0.5) * snow.spreadX;
+                        positions[idx1] = snow.height + Math.random() * 10;
+                        positions[idx2] = playerZ + (Math.random() - 0.5) * snow.spreadZ;
                     }
                 }
                 
                 snow.particles.geometry.attributes.position.needsUpdate = true;
                 
-                // Adjust snow visibility based on time of day (more visible at night)
-                const serverTime = serverWorldTimeRef?.current ?? 0.35;
-                const isNight = serverTime < 0.25 || serverTime > 0.75;
-                const nightBoost = isNight ? 0.15 : 0;
-                snow.particles.material.opacity = 0.6 + intensity * 0.3 + nightBoost;
+                // OPTIMIZED: Only update opacity every 10 frames
+                if (frameCount % 10 === 0) {
+                    const serverTime = serverWorldTimeRef?.current ?? 0.35;
+                    const isNight = serverTime < 0.25 || serverTime > 0.75;
+                    const nightBoost = isNight ? 0.15 : 0;
+                    snow.particles.material.opacity = 0.6 + intensity * 0.3 + nightBoost;
+                }
                 snow.particles.visible = true;
             } else if (snowParticlesRef.current) {
                 snowParticlesRef.current.particles.visible = false;
@@ -5608,8 +5772,8 @@ const VoxelWorld = ({
                  </div>
              </div>
              
-             {/* Debug Position Panel - Press F3 to toggle */}
-             {showDebugPosition && (
+             {/* Debug Position Panel - Press F3 to toggle (DEV ONLY) */}
+             {process.env.NODE_ENV !== 'production' && showDebugPosition && (
                  <div className="absolute top-4 right-4 bg-black/80 border border-green-500/50 rounded-lg p-3 z-50 pointer-events-auto font-mono text-xs">
                      <div className="text-green-400 font-bold mb-2 flex items-center gap-2">
                          📍 DEBUG POSITION

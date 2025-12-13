@@ -1984,30 +1984,17 @@ class PropsFactory {
                 group.add(bulb);
                 ornamentMeshes.push(bulb);
                 
-                // Bright point light for every other bulb
-                if (i % 2 === 0) {
-                    const bulbLight = new THREE.PointLight(color, 0.4, 3);
+                // OPTIMIZED: Point light for every 4th bulb (reduces from 36 to 18 lights)
+                if (i % 4 === 0) {
+                    const bulbLight = new THREE.PointLight(color, 0.6, 4); // Slightly brighter/larger to compensate
                     bulbLight.position.set(ox, oy, oz);
-                    bulbLight.userData.baseIntensity = 0.4;
+                    bulbLight.userData.baseIntensity = 0.6;
                     bulbLight.userData.phaseOffset = bulb.userData.phaseOffset;
                     bulbLight.userData.speed = bulb.userData.speed;
                     group.add(bulbLight);
                     ornamentLights.push(bulbLight);
                 }
             }
-        });
-
-        // Gold and silver tinsel garlands
-        const tinselColors = [0xFFD700, 0xC0C0C0, 0xFFD700];
-        tinselColors.forEach((color, i) => {
-            const tinselMat = this.getMaterial(color, { metalness: 0.7, roughness: 0.3 });
-            const tinselY = trunkHeight + 1 + i * 2.5;
-            const tinselRadius = 2.5 * (1 - i * 0.12);
-            const tinselGeo = new THREE.TorusGeometry(tinselRadius, 0.06, 8, 32);
-            const tinsel = new THREE.Mesh(tinselGeo, tinselMat);
-            tinsel.rotation.x = Math.PI / 2 + (Math.random() - 0.5) * 0.1;
-            tinsel.position.y = tinselY;
-            group.add(tinsel);
         });
 
         // Large ornament balls (bigger decorative baubles)
@@ -2179,32 +2166,42 @@ class PropsFactory {
             group.add(bump);
         }
 
-        // Update function for twinkling lights
+        // OPTIMIZED: Update function for twinkling lights
+        // Uses batched updates - only updates a subset each call
+        let updateBatch = 0;
+        const BATCH_SIZE = 12; // Update 12 items per call instead of all 72+
+        const totalMeshes = ornamentMeshes.length;
+        const totalLights = ornamentLights.length;
+        
         const update = (time) => {
-            // Twinkle lights with varied speeds and phases
-            ornamentLights.forEach((light) => {
-                const phase = light.userData.phaseOffset;
-                const speed = light.userData.speed;
-                const twinkle = Math.sin(time * speed + phase) * 0.5 + 0.5;
-                light.intensity = light.userData.baseIntensity * (0.3 + twinkle * 1.4);
-            });
-            
-            // Twinkle ornament emissive (lights flicker on and off)
-            ornamentMeshes.forEach((mesh) => {
-                const phase = mesh.userData.phaseOffset;
-                const speed = mesh.userData.speed;
-                const twinkle = Math.sin(time * speed + phase);
-                // Create on/off effect
+            // Batch update ornament meshes (cycle through in batches)
+            const meshStart = (updateBatch * BATCH_SIZE) % totalMeshes;
+            const meshEnd = Math.min(meshStart + BATCH_SIZE, totalMeshes);
+            for (let i = meshStart; i < meshEnd; i++) {
+                const mesh = ornamentMeshes[i];
+                const twinkle = Math.sin(time * mesh.userData.speed + mesh.userData.phaseOffset);
                 const brightness = twinkle > 0 ? 1.2 : 0.3;
                 if (mesh.material.emissiveIntensity !== undefined) {
                     mesh.material.emissiveIntensity = mesh.userData.baseEmissive * brightness;
                 }
-            });
+            }
             
-            // Star gentle golden pulse
+            // Batch update lights (cycle through in smaller batches)
+            const lightBatchSize = 6;
+            const lightStart = (updateBatch * lightBatchSize) % totalLights;
+            const lightEnd = Math.min(lightStart + lightBatchSize, totalLights);
+            for (let i = lightStart; i < lightEnd; i++) {
+                const light = ornamentLights[i];
+                const twinkle = Math.sin(time * light.userData.speed + light.userData.phaseOffset) * 0.5 + 0.5;
+                light.intensity = light.userData.baseIntensity * (0.3 + twinkle * 1.4);
+            }
+            
+            // Star pulse (always update - only 2 lights)
             const starPulse = Math.sin(time * 1.5) * 0.2 + 0.8;
             starLight.intensity = 2.5 * starPulse;
             starGlow.intensity = 1.5 * (1.1 - starPulse * 0.3);
+            
+            updateBatch++;
         };
 
         return { mesh: group, lights: ornamentLights, update };
@@ -2239,16 +2236,17 @@ class PropsFactory {
         foundation.receiveShadow = true;
         group.add(foundation);
 
-        // Steps at front - bottom step is widest, top step is narrowest
-        // Step 0 = farthest from door (ground level), Step 2 = closest to door (highest)
+        // Steps at front - stairs leading UP to the door
+        // Step 0 = farthest from door (ground level, widest), Step 2 = closest to door (highest, narrowest)
         for (let i = 0; i < 3; i++) {
-            // Width increases as steps go DOWN (away from building)
-            const stepWidth = 3.2 + (2 - i) * 0.4; // i=0: 4, i=1: 3.6, i=2: 3.2
+            // Width decreases as steps get closer to door (go up)
+            const stepWidth = 4 - i * 0.4; // i=0: 4 (widest), i=1: 3.6, i=2: 3.2 (narrowest)
             const stepGeo = new THREE.BoxGeometry(stepWidth, 0.28, 0.9);
             const step = new THREE.Mesh(stepGeo, foundationMat);
-            // i=0 is highest (closest to door), i=2 is lowest (farthest from door)
-            const stepY = 0.84 - i * 0.28; // i=0: 0.84, i=1: 0.56, i=2: 0.28
-            const stepZ = d / 2 + 1.5 + (2 - i) * 0.95; // i=0: closest, i=2: farthest
+            // Height increases as we approach door: i=0 is lowest, i=2 is highest
+            const stepY = 0.28 + i * 0.28; // i=0: 0.28, i=1: 0.56, i=2: 0.84
+            // Z decreases as we approach door: i=0 is farthest, i=2 is closest
+            const stepZ = d / 2 + 1.5 + (2 - i) * 0.95; // i=0: farthest, i=2: closest
             step.position.set(0, stepY, stepZ);
             step.receiveShadow = true;
             step.name = `dojo_step_${i}`;
@@ -2749,6 +2747,22 @@ class PropsFactory {
         const interiorLight = new THREE.PointLight(0xFFF8DC, 0.8, 12);
         interiorLight.position.set(0, h / 2, 0);
         group.add(interiorLight);
+
+        // Collision data - includes roof as landing surface
+        group.userData.collision = {
+            type: 'box',
+            size: { x: w + 1, y: h + roofHeight + 1, z: d + 1 },
+            height: h + roofHeight,
+            // Roof landing surfaces for parkour/exploration
+            landingSurfaces: [
+                // Left roof panel (sloped - simplified as flat at mid-height)
+                { type: 'box', minX: -w/2 - roofOverhang, maxX: 0, minZ: -d/2 - roofOverhang, maxZ: d/2 + roofOverhang, height: h + 0.5 + roofHeight * 0.6 },
+                // Right roof panel (sloped - simplified as flat at mid-height)
+                { type: 'box', minX: 0, maxX: w/2 + roofOverhang, minZ: -d/2 - roofOverhang, maxZ: d/2 + roofOverhang, height: h + 0.5 + roofHeight * 0.6 },
+                // Ridge at peak
+                { type: 'box', minX: -0.5, maxX: 0.5, minZ: -d/2 - roofOverhang, maxZ: d/2 + roofOverhang, height: h + 0.5 + roofHeight }
+            ]
+        };
 
         return group;
     }
