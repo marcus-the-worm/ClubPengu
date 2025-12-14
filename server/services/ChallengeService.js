@@ -24,6 +24,8 @@ class ChallengeService {
 
     /**
      * Create a new challenge
+     * NOTE: Coin validation is handled by server/index.js BEFORE this is called.
+     * Server uses the playerCoins Map which is properly synced with client localStorage.
      */
     createChallenge(challenger, target, gameType, wagerAmount) {
         // Validation
@@ -39,25 +41,8 @@ class ChallengeService {
             return { error: 'INVALID_WAGER', message: 'Wager must be greater than 0' };
         }
 
-        // Check CURRENT coin balance from statsService (not cached)
-        const challengerStats = this.statsService.getStats(challenger.id);
-        const challengerCoins = challengerStats?.coins ?? 0;
-        if (challengerCoins < wagerAmount) {
-            return { 
-                error: 'INSUFFICIENT_FUNDS', 
-                message: `You need ${wagerAmount} coins to wager (you have ${challengerCoins})` 
-            };
-        }
-
-        // Also check target's balance so they can accept
-        const targetStats = this.statsService.getStats(target.id);
-        const targetCoins = targetStats?.coins ?? 0;
-        if (targetCoins < wagerAmount) {
-            return { 
-                error: 'TARGET_INSUFFICIENT_FUNDS', 
-                message: `${target.name} doesn't have enough coins to accept this wager` 
-            };
-        }
+        // NOTE: Coin balance checks removed - server/index.js handles this with playerCoins Map
+        // The statsService doesn't track coin balances, only game statistics.
 
         // Check proximity
         if (!this._checkProximity(challenger.position, target.position)) {
@@ -132,26 +117,8 @@ class ChallengeService {
             return { error: 'EXPIRED', message: 'Challenge has expired' };
         }
 
-        // Re-validate CURRENT balances before accepting (balances may have changed)
-        const accepterStats = this.statsService.getStats(acceptingPlayerId);
-        const accepterCoins = accepterStats?.coins ?? 0;
-        if (accepterCoins < challenge.wagerAmount) {
-            return { 
-                error: 'INSUFFICIENT_FUNDS', 
-                message: `You need ${challenge.wagerAmount} coins to accept (you have ${accepterCoins})` 
-            };
-        }
-
-        const challengerStats = this.statsService.getStats(challenge.challengerId);
-        const challengerCoins = challengerStats?.coins ?? 0;
-        if (challengerCoins < challenge.wagerAmount) {
-            challenge.status = 'cancelled';
-            this.inboxService.deleteByChallengeId(acceptingPlayerId, challengeId);
-            return { 
-                error: 'CHALLENGER_INSUFFICIENT_FUNDS', 
-                message: `${challenge.challengerName} no longer has enough coins for this wager` 
-            };
-        }
+        // NOTE: Coin balance re-validation removed - server/index.js handles this with playerCoins Map
+        // The statsService doesn't track coin balances, only game statistics.
 
         challenge.status = 'accepted';
         

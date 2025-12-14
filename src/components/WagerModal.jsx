@@ -18,14 +18,16 @@ const WagerModal = () => {
     
     const [wagerAmount, setWagerAmount] = useState('');
     const [error, setError] = useState('');
+    const [playerCoins, setPlayerCoins] = useState(0);
     const inputRef = useRef(null);
     const modalRef = useRef(null);
     
-    const playerCoins = GameManager.getInstance().getCoins();
-    
-    // Focus input on open (skip on mobile to prevent keyboard popup)
+    // Refresh coin balance from localStorage/GameManager whenever modal opens
     useEffect(() => {
         if (showWagerModal) {
+            // Always get fresh balance when modal opens
+            const currentCoins = GameManager.getInstance().getCoins();
+            setPlayerCoins(currentCoins);
             setWagerAmount('');
             setError('');
             // Only auto-focus on desktop
@@ -35,6 +37,15 @@ const WagerModal = () => {
             }
         }
     }, [showWagerModal]);
+    
+    // Also listen for coin changes while modal is open
+    useEffect(() => {
+        const gm = GameManager.getInstance();
+        const unsubscribe = gm.on('coinsChanged', (data) => {
+            setPlayerCoins(data.coins);
+        });
+        return () => unsubscribe();
+    }, []);
     
     // Handle escape key
     useEffect(() => {

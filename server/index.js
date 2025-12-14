@@ -1014,6 +1014,19 @@ function handleMessage(playerId, message) {
                     break;
                 }
                 
+                // Re-check challenger's coins (they may have spent coins since sending challenge)
+                const challengerCoins = getPlayerCoins(challenge.challengerId);
+                if (challengerCoins < challenge.wagerAmount) {
+                    sendToPlayer(playerId, {
+                        type: 'challenge_error',
+                        error: 'CHALLENGER_INSUFFICIENT_FUNDS',
+                        message: `${challenge.challengerName} no longer has enough coins for this wager`
+                    });
+                    // Delete the challenge from inbox
+                    inboxService.deleteByChallengeId(playerId, message.challengeId);
+                    break;
+                }
+                
                 // Check if either player is already in a match
                 if (matchService.isPlayerInMatch(playerId) || matchService.isPlayerInMatch(challenge.challengerId)) {
                     sendToPlayer(playerId, {

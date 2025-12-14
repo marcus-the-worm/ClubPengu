@@ -3284,6 +3284,13 @@ const VoxelWorld = ({
             posRef.current = { x: townCenterX + 0.4, y: 0, z: townCenterZ - 27.2 };
             rotRef.current = 0; // Face north
         }
+        
+        // CRITICAL: Sync mesh position with posRef IMMEDIATELY after spawn logic
+        // This ensures first-time players don't spawn at (0,0,0) before game loop runs
+        if (playerRef.current) {
+            playerRef.current.position.set(posRef.current.x, posRef.current.y, posRef.current.z);
+            playerRef.current.rotation.y = rotRef.current;
+        }
 
         // Spawn player puffle if equipped (ensure it's a Puffle instance)
         if (puffle) {
