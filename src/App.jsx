@@ -333,6 +333,24 @@ const Styles = () => (
             50% { box-shadow: 0 0 40px rgba(255,215,0,0.8); }
         }
         .animate-pulse-glow { animation: pulse-glow 1.5s ease-in-out infinite; }
+        
+        @keyframes bounce-hud {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+        .animate-bounce-hud { animation: bounce-hud 1s ease-in-out infinite; }
+        
+        @keyframes pulse-slow {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.05); }
+        }
+        .animate-pulse-slow { animation: pulse-slow 4s ease-in-out infinite; }
+        
+        @keyframes bounce-slow {
+            0%, 100% { transform: translateY(0) rotate(-5deg); }
+            50% { transform: translateY(-8px) rotate(5deg); }
+        }
+        .animate-bounce-slow { animation: bounce-slow 3s ease-in-out infinite; }
     `}</style>
 );
 

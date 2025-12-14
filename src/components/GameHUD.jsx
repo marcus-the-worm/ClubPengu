@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import GameManager from '../engine/GameManager';
 import InboxButton from './InboxButton';
+import TokenomicsModal from './TokenomicsModal';
 
 /**
  * GameHUD - Heads Up Display showing coins, stats, and quick actions
@@ -9,6 +10,7 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
     const [coins, setCoins] = useState(0);
     const [showStats, setShowStats] = useState(false);
     const [recentReward, setRecentReward] = useState(null);
+    const [showTokenomics, setShowTokenomics] = useState(false);
     
     useEffect(() => {
         const gm = GameManager.getInstance();
@@ -34,6 +36,28 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
         <>
             {/* HUD Bar - Top Right */}
             <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 sm:gap-2">
+                {/* Tokenomics Button - Animated Exclamation */}
+                <button
+                    onClick={() => setShowTokenomics(true)}
+                    className="relative bg-gradient-to-r from-purple-600/80 to-pink-600/80 hover:from-purple-500 hover:to-pink-500 active:from-purple-700 active:to-pink-700 backdrop-blur-sm text-white w-9 h-9 sm:px-3 sm:py-2 sm:w-auto sm:h-auto rounded-lg retro-text text-sm transition-colors flex items-center justify-center animate-bounce-hud group"
+                    title="$CPw3 Tokenomics"
+                >
+                    <span className="group-hover:scale-125 transition-transform">❗</span>
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-yellow-400 rounded-full animate-ping" />
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-yellow-400 rounded-full" />
+                </button>
+                
+                {/* Chart Button - DEX Screener Link */}
+                <a
+                    href="https://dexscreener.com/solana/5yfmefzrompokc2r9j8b1mzqututhywr9vrqmsxhzd3r"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-gradient-to-r from-green-600/80 to-emerald-600/80 hover:from-green-500 hover:to-emerald-500 active:from-green-700 active:to-emerald-700 backdrop-blur-sm text-white w-9 h-9 sm:px-3 sm:py-2 sm:w-auto sm:h-auto rounded-lg retro-text text-sm transition-colors flex items-center justify-center hover:scale-105 active:scale-95"
+                    title="View Chart on DEX Screener"
+                >
+                    📈
+                </a>
+                
                 {/* Settings Button */}
                 {onOpenSettings && (
                     <button
@@ -117,6 +141,12 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                     </button>
                 </div>
             )}
+            
+            {/* Tokenomics Modal */}
+            <TokenomicsModal 
+                isOpen={showTokenomics} 
+                onClose={() => setShowTokenomics(false)} 
+            />
         </>
     );
 };
