@@ -1128,8 +1128,12 @@ const VoxelWorld = ({
         }
         
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFShadowMap;
+        // Mac: Use BasicShadowMap (much faster on Metal), Others: PCFShadowMap
+        renderer.shadowMap.type = isMac ? THREE.BasicShadowMap : THREE.PCFShadowMap;
         mountRef.current.appendChild(renderer.domElement);
+        
+        // Store isMac for use in game loop
+        renderer.userData.isMac = isMac;
         rendererRef.current = renderer;
         
         // Initialize raycaster for player click detection
@@ -1157,8 +1161,9 @@ const VoxelWorld = ({
         const sunLight = new THREE.DirectionalLight(0xF8F8FF, 1.0); // Cold bright sun
         sunLight.position.set(80, 100, 60);
         sunLight.castShadow = true;
-        // OPTIMIZED: Reduced shadow map from 2048 to 1024 (still high quality, much faster)
-        sunLight.shadow.mapSize.set(1024, 1024);
+        // Mac: 512 shadow map (faster), Others: 1024 (better quality)
+        const shadowMapSize = isMac ? 512 : 1024;
+        sunLight.shadow.mapSize.set(shadowMapSize, shadowMapSize);
         sunLight.shadow.camera.left = -100;
         sunLight.shadow.camera.right = 100;
         sunLight.shadow.camera.top = 100;
@@ -1169,7 +1174,8 @@ const VoxelWorld = ({
         
         // ==================== SNOWFALL PARTICLE SYSTEM ====================
         const createSnowfall = () => {
-            const particleCount = 1500; // OPTIMIZED: Reduced from 2500 (still looks great)
+            // Mac: fewer particles (400), Others: 800
+            const particleCount = isMac ? 400 : 800;
             const positions = new Float32Array(particleCount * 3);
             const velocities = new Float32Array(particleCount * 3);
             const sizes = new Float32Array(particleCount);
@@ -1694,11 +1700,10 @@ const VoxelWorld = ({
             scene.add(ovenOpening);
             
             // Oven fire glow - warm but not too bright
+            // OPTIMIZED: Disabled shadow casting (point light shadows are expensive)
             const ovenGlow = new THREE.PointLight(0xff3300, 2.5, 8);
             ovenGlow.position.set(-5, 2, -PIZZA_SIZE/2 + 1.5);
-            ovenGlow.castShadow = true;
-            ovenGlow.shadow.mapSize.width = 256;
-            ovenGlow.shadow.mapSize.height = 256;
+            ovenGlow.castShadow = false;
             scene.add(ovenGlow);
             
             // Inner oven embers glow
@@ -3431,9 +3436,200 @@ const VoxelWorld = ({
         // Store buildPenguinMesh for multiplayer to use
         buildPenguinMeshRef.current = buildPenguinMesh;
         
+        // OPTIMIZATION: Cache animated cosmetic parts to avoid traverse() every frame
+        // This function should be called once after building a mesh
+        const cacheAnimatedParts = (mesh) => {
+            if (!mesh) return null;
+            
+            const cache = {
+                propellerBlades: null,
+                smokeEmitter: null,
+                laserEyes: null,
+                fireEyes: null,
+                wings: [],
+                fireAura: null,
+                lightningAura: null,
+                fireEmitter: null,
+                breathFire: null,
+                breathIce: null,
+                bubblegum: null
+            };
+            
+            mesh.traverse(child => {
+                if (child.name === 'propeller_blades') cache.propellerBlades = child;
+                if (child.userData?.isSmokeEmitter) cache.smokeEmitter = child;
+                if (child.userData?.isLaserEyes) cache.laserEyes = child;
+                if (child.userData?.isFireEyes) cache.fireEyes = child;
+                if (child.userData?.isWings) cache.wings.push(child);
+                if (child.userData?.isFireAura) cache.fireAura = child;
+                if (child.userData?.isLightningAura) cache.lightningAura = child;
+                if (child.userData?.isFireEmitter) cache.fireEmitter = child;
+                if (child.userData?.isBreathFire) cache.breathFire = child;
+                if (child.userData?.isBreathIce) cache.breathIce = child;
+                if (child.userData?.isBubblegum) cache.bubblegum = child;
+            });
+            
+            return cache;
+        };
+        
+        // OPTIMIZATION: Animate cosmetics using cached references instead of traverse
+        const animateCosmeticsFromCache = (cache, time, delta) => {
+            if (!cache) return;
+            
+            // Propeller blades
+            if (cache.propellerBlades) {
+                cache.propellerBlades.rotation.y += delta * 15;
+            }
+            
+            // Smoke emitter (cigarette, pipe, cigar)
+            if (cache.smokeEmitter) {
+                cache.smokeEmitter.children.forEach((particle, i) => {
+                    particle.position.y += delta * 2;
+                    particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
+                    const height = particle.position.y - (particle.userData.baseY || 0);
+                    if (particle.material) {
+                        particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
+                    }
+                    if (height > 2) {
+                        particle.position.y = particle.userData.baseY || 0;
+                        particle.position.x = 0;
+                        if (particle.material) particle.material.opacity = 0.6;
+                    }
+                });
+            }
+            
+            // Laser eyes
+            if (cache.laserEyes) {
+                const intensity = 1 + Math.sin(time * 10) * 0.5;
+                cache.laserEyes.children.forEach(light => {
+                    if (light.isPointLight) light.intensity = intensity;
+                });
+            }
+            
+            // Fire eyes
+            if (cache.fireEyes) {
+                cache.fireEyes.children.forEach(eyeGroup => {
+                    if (eyeGroup.children) {
+                        eyeGroup.children.forEach((particle, i) => {
+                            if (particle.isMesh) {
+                                particle.position.y = (particle.userData.baseY || 0) + Math.sin(time * 15 + i) * 0.1 * VOXEL_SIZE;
+                                particle.position.x = Math.sin(time * 12 + i * 2) * 0.05 * VOXEL_SIZE;
+                                if (particle.material) particle.material.opacity = 0.7 + Math.sin(time * 20 + i) * 0.3;
+                            }
+                            if (particle.isPointLight) particle.intensity = 0.5 + Math.sin(time * 15) * 0.3;
+                        });
+                    }
+                });
+            }
+            
+            // Wings (angel/demon)
+            cache.wings.forEach(child => {
+                const phase = child.userData.wingPhase || 0;
+                child.rotation.y = Math.sin(time * 6 + phase) * 0.3;
+            });
+            
+            // Fire Aura
+            if (cache.fireAura) {
+                cache.fireAura.rotation.y = time * 2;
+                cache.fireAura.children.forEach(flame => {
+                    if (flame.userData?.isFlame) {
+                        const offset = flame.userData.offset || 0;
+                        flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.3 * VOXEL_SIZE;
+                        flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.3;
+                        flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.3;
+                    }
+                });
+                if (cache.fireAura.userData.fireLight) {
+                    cache.fireAura.userData.fireLight.intensity = 1.5 + Math.sin(time * 12) * 0.5;
+                }
+            }
+            
+            // Lightning Aura
+            if (cache.lightningAura) {
+                cache.lightningAura.rotation.y = time * 3;
+                cache.lightningAura.children.forEach(bolt => {
+                    if (bolt.userData?.flickerOffset !== undefined) {
+                        const flicker = Math.sin(time * 20 + bolt.userData.flickerOffset);
+                        bolt.visible = flicker > -0.3;
+                        if (bolt.material) bolt.material.opacity = 0.5 + flicker * 0.4;
+                        bolt.position.y = Math.sin(time * 15 + bolt.userData.flickerOffset) * 0.5 * VOXEL_SIZE;
+                    }
+                });
+                if (cache.lightningAura.userData.lightningLight) {
+                    cache.lightningAura.userData.lightningLight.intensity = 1 + Math.random() * 1;
+                }
+            }
+            
+            // Fire Emitter (flaming crown)
+            if (cache.fireEmitter) {
+                cache.fireEmitter.children.forEach((particle, i) => {
+                    particle.position.y += delta * 3;
+                    particle.position.x = (particle.userData.baseX || 0) + Math.sin(time * 8 + i) * 0.15;
+                    particle.position.z = (particle.userData.baseZ || 0) + Math.cos(time * 6 + i) * 0.15;
+                    const height = particle.position.y - (particle.userData.baseY || 0);
+                    if (particle.material) particle.material.opacity = Math.max(0, 0.9 - height * 0.15);
+                    particle.scale.setScalar(Math.max(0.3, 1 - height * 0.1));
+                    if (height > 5) {
+                        particle.position.y = particle.userData.baseY || 0;
+                        particle.scale.setScalar(1);
+                        if (particle.material) particle.material.opacity = 0.9;
+                    }
+                });
+            }
+            
+            // Fire breath
+            if (cache.breathFire) {
+                cache.breathFire.children.forEach(particle => {
+                    particle.position.z += delta * 15;
+                    particle.position.y += (Math.random() - 0.5) * delta * 2;
+                    particle.position.x += (Math.random() - 0.5) * delta * 2;
+                    const dist = particle.position.z - (particle.userData.baseZ || 0);
+                    if (particle.material) particle.material.opacity = Math.max(0, 0.9 - dist * 0.1);
+                    if (dist > 8) {
+                        particle.position.z = particle.userData.baseZ || 0;
+                        particle.position.y = 0;
+                        particle.position.x = 0;
+                        if (particle.material) particle.material.opacity = 0.9;
+                    }
+                });
+            }
+            
+            // Ice breath
+            if (cache.breathIce) {
+                cache.breathIce.children.forEach((particle, i) => {
+                    particle.position.z += delta * 12;
+                    particle.position.y += Math.sin(time * 10 + i) * delta;
+                    particle.position.x += Math.cos(time * 8 + i) * delta;
+                    const dist = particle.position.z - (particle.userData.baseZ || 0);
+                    if (particle.material) particle.material.opacity = Math.max(0, 0.8 - dist * 0.08);
+                    if (dist > 10) {
+                        particle.position.z = particle.userData.baseZ || 0;
+                        particle.position.y = 0;
+                        particle.position.x = 0;
+                        if (particle.material) particle.material.opacity = 0.8;
+                    }
+                });
+            }
+            
+            // Bubblegum
+            if (cache.bubblegum) {
+                const bubble = cache.bubblegum.children[0];
+                if (bubble) {
+                    const cycleTime = (time % 4) / 4;
+                    let scale;
+                    if (cycleTime < 0.8) scale = 0.5 + cycleTime * 2;
+                    else if (cycleTime < 0.85) scale = 2.1 - (cycleTime - 0.8) * 30;
+                    else scale = 0.5;
+                    bubble.scale.setScalar(Math.max(0.3, scale));
+                }
+            }
+        };
+        
         // --- BUILD PLAYER ---
         const playerWrapper = buildPenguinMesh(penguinData);
         playerRef.current = playerWrapper;
+        // OPTIMIZATION: Cache animated parts for local player
+        playerWrapper.userData._animatedPartsCache = cacheAnimatedParts(playerWrapper);
         scene.add(playerWrapper);
         
         // Check if mount should be hidden based on settings (on initial load)
@@ -3744,6 +3940,7 @@ const VoxelWorld = ({
         
         // --- GAME LOOP ---
         let frameCount = 0;
+        const isMacDevice = renderer.userData.isMac;
         const update = () => {
             reqRef.current = requestAnimationFrame(update);
             frameCount++;
@@ -4453,8 +4650,9 @@ const VoxelWorld = ({
                 
                 // Landing on objects is now handled in the unified ground collision section below
                 
-                // OPTIMIZED: Only check triggers every 3rd frame (still responsive, but 3x faster)
-                if (frameCount % 3 === 0) {
+                // OPTIMIZED: Check triggers less frequently (Mac: every 5th, Others: every 3rd)
+                const triggerThrottle = isMacDevice ? 5 : 3;
+                if (frameCount % triggerThrottle === 0) {
                 // Also check triggers (benches, snowmen, etc.)
                 // Pass Y position so triggers can filter by height (e.g., don't show "sit" prompt when standing ON furniture)
                 townCenterRef.current.checkTriggers(finalX, finalZ, posRef.current.y);
@@ -5048,224 +5246,11 @@ const VoxelWorld = ({
                 const isMounted = !!(playerRef.current.userData?.mount && playerRef.current.userData?.mountData && mountEnabledRef.current);
                 animateMesh(playerRef.current, moving, emoteRef.current.type, emoteRef.current.startTime, !!seatedRef.current, penguinData?.characterType || 'penguin', isMounted);
                 
-                // OPTIMIZED: Check if player has animated cosmetics
-                const hasAnimatedCosmetics = penguinData?.hat === 'propeller' || 
-                                              penguinData?.hat === 'flamingCrown' ||
-                                              penguinData?.mouth === 'cigarette' || 
-                                              penguinData?.mouth === 'pipe' ||
-                                              penguinData?.mouth === 'cigar' ||
-                                              penguinData?.mouth === 'fireBreath' ||
-                                              penguinData?.mouth === 'iceBreath' ||
-                                              penguinData?.mouth === 'bubblegum' ||
-                                              penguinData?.eyes === 'laser' ||
-                                              penguinData?.eyes === 'fire' ||
-                                              penguinData?.bodyItem === 'angelWings' ||
-                                              penguinData?.bodyItem === 'demonWings' ||
-                                              penguinData?.bodyItem === 'fireAura' ||
-                                              penguinData?.bodyItem === 'lightningAura';
-                
-                if (hasAnimatedCosmetics) {
-                    // Animate local player's cosmetics
-                    playerRef.current.traverse(child => {
-                        if (child.name === 'propeller_blades') {
-                            child.rotation.y += delta * 15; // Fast spin
-                        }
-                        
-                        // Animate smoke particles (cigarette, pipe, cigar)
-                        if (child.userData?.isSmokeEmitter) {
-                            child.children.forEach((particle, i) => {
-                                particle.position.y += delta * 2;
-                                particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
-                                
-                                const height = particle.position.y - (particle.userData.baseY || 0);
-                                if (particle.material) {
-                                    particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
-                                }
-                                
-                                if (height > 2) {
-                                    particle.position.y = particle.userData.baseY || 0;
-                                    particle.position.x = 0;
-                                    if (particle.material) particle.material.opacity = 0.6;
-                                }
-                            });
-                        }
-                        
-                        // Animate laser eyes - pulsing intensity
-                        if (child.userData?.isLaserEyes) {
-                            const intensity = 1 + Math.sin(time * 10) * 0.5;
-                            child.children.forEach(light => {
-                                if (light.isPointLight) {
-                                    light.intensity = intensity;
-                                }
-                            });
-                        }
-                        
-                        // Animate fire eyes - flickering flames
-                        if (child.userData?.isFireEyes) {
-                            child.children.forEach(eyeGroup => {
-                                if (eyeGroup.children) {
-                                    eyeGroup.children.forEach((particle, i) => {
-                                        if (particle.isMesh) {
-                                            // Flames flicker up
-                                            particle.position.y = (particle.userData.baseY || 0) + Math.sin(time * 15 + i) * 0.1 * VOXEL_SIZE;
-                                            particle.position.x = Math.sin(time * 12 + i * 2) * 0.05 * VOXEL_SIZE;
-                                            if (particle.material) {
-                                                particle.material.opacity = 0.7 + Math.sin(time * 20 + i) * 0.3;
-                                            }
-                                        }
-                                        if (particle.isPointLight) {
-                                            particle.intensity = 0.5 + Math.sin(time * 15) * 0.3;
-                        }
-                    });
-                }
-                            });
-            }
-            
-                        // Animate angel/demon wings - butterfly flapping
-                        if (child.userData?.isWings) {
-                            const phase = child.userData.wingPhase || 0;
-                            const flapSpeed = 6; // Flaps per second
-                            const flapAngle = Math.sin(time * flapSpeed + phase) * 0.3; // ±0.3 radians
-                            child.rotation.y = flapAngle;
-                        }
-                        
-                        // Fire Aura - spinning flames like campfire
-                        if (child.userData?.isFireAura) {
-                            // Rotate the entire aura ring
-                            child.rotation.y = time * 2;
-                            
-                            // Animate individual flames
-                            child.children.forEach((flame, i) => {
-                                if (flame.userData?.isFlame) {
-                                    const offset = flame.userData.offset || 0;
-                                    // Flicker height
-                                    flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.3 * VOXEL_SIZE;
-                                    // Flicker scale
-                                    flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.3;
-                                    flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.3;
-                                }
-                            });
-                            
-                            // Flicker light
-                            if (child.userData.fireLight) {
-                                child.userData.fireLight.intensity = 1.5 + Math.sin(time * 12) * 0.5;
-                            }
-                        }
-                        
-                        // Lightning Aura - spinning electric bolts
-                        if (child.userData?.isLightningAura) {
-                            // Rotate the aura ring faster
-                            child.rotation.y = time * 3;
-                            
-                            // Animate individual bolts
-                            child.children.forEach((bolt) => {
-                                if (bolt.userData?.flickerOffset !== undefined) {
-                                    // Random flicker visibility
-                                    const flicker = Math.sin(time * 20 + bolt.userData.flickerOffset);
-                                    bolt.visible = flicker > -0.3;
-                                    if (bolt.material) {
-                                        bolt.material.opacity = 0.5 + flicker * 0.4;
-                                    }
-                                    // Random position jitter
-                                    bolt.position.y = Math.sin(time * 15 + bolt.userData.flickerOffset) * 0.5 * VOXEL_SIZE;
-                                }
-                            });
-                            
-                            // Flicker light
-                            if (child.userData.lightningLight) {
-                                child.userData.lightningLight.intensity = 1 + Math.random() * 1;
-                            }
-                        }
-                        
-                        // Flaming Crown fire particles
-                        if (child.userData?.isFireEmitter) {
-                            child.children.forEach((particle, i) => {
-                                // Fire flickers up and resets
-                                particle.position.y += delta * 3;
-                                particle.position.x = (particle.userData.baseX || 0) + Math.sin(time * 8 + i) * 0.15;
-                                particle.position.z = (particle.userData.baseZ || 0) + Math.cos(time * 6 + i) * 0.15;
-                                
-                                const height = particle.position.y - (particle.userData.baseY || 0);
-                                if (particle.material) {
-                                    particle.material.opacity = Math.max(0, 0.9 - height * 0.15);
-                                }
-                                // Scale down as it rises
-                                const scale = Math.max(0.3, 1 - height * 0.1);
-                                particle.scale.setScalar(scale);
-                                
-                                if (height > 5) {
-                                    particle.position.y = particle.userData.baseY || 0;
-                                    particle.scale.setScalar(1);
-                                    if (particle.material) particle.material.opacity = 0.9;
-                                }
-                            });
-                        }
-                        
-                        
-                        // Fire Breath particles
-                        if (child.userData?.isBreathFire) {
-                            child.children.forEach((particle, i) => {
-                                // Shoot forward
-                                particle.position.z += delta * 15;
-                                particle.position.y += (Math.random() - 0.5) * delta * 2;
-                                particle.position.x += (Math.random() - 0.5) * delta * 2;
-                                
-                                const dist = particle.position.z - (particle.userData.baseZ || 0);
-                                if (particle.material) {
-                                    particle.material.opacity = Math.max(0, 0.9 - dist * 0.1);
-                                }
-                                
-                                if (dist > 8) {
-                                    particle.position.z = particle.userData.baseZ || 0;
-                                    particle.position.y = 0;
-                                    particle.position.x = 0;
-                                    if (particle.material) particle.material.opacity = 0.9;
-                                }
-                            });
-                        }
-                        
-                        // Ice Breath particles
-                        if (child.userData?.isBreathIce) {
-                            child.children.forEach((particle, i) => {
-                                particle.position.z += delta * 12;
-                                particle.position.y += Math.sin(time * 10 + i) * delta;
-                                particle.position.x += Math.cos(time * 8 + i) * delta;
-                                
-                                const dist = particle.position.z - (particle.userData.baseZ || 0);
-                                if (particle.material) {
-                                    particle.material.opacity = Math.max(0, 0.8 - dist * 0.08);
-                                }
-                                
-                                if (dist > 10) {
-                                    particle.position.z = particle.userData.baseZ || 0;
-                                    particle.position.y = 0;
-                                    particle.position.x = 0;
-                                    if (particle.material) particle.material.opacity = 0.8;
-                                }
-                            });
-                        }
-                        
-                        // Bubblegum grow/pop animation
-                        if (child.userData?.isBubblegum) {
-                            const bubble = child.children[0];
-                            if (bubble) {
-                                // Cycle: grow from 0.5 to 2, then pop back to 0.5
-                                const cycleTime = (time % 4) / 4; // 4 second cycle
-                                let scale;
-                                if (cycleTime < 0.8) {
-                                    // Growing phase
-                                    scale = 0.5 + cycleTime * 2;
-                                } else if (cycleTime < 0.85) {
-                                    // Pop! shrink rapidly
-                                    scale = 2.1 - (cycleTime - 0.8) * 30;
-                                } else {
-                                    // Stay small before next cycle
-                                    scale = 0.5;
-                                }
-                                bubble.scale.setScalar(Math.max(0.3, scale));
-                            }
-                        }
-                    });
+                // OPTIMIZATION: Use cached animated parts instead of traverse() every frame
+                // Cache is built once when mesh is created, avoiding expensive tree traversal
+                const animCache = playerRef.current.userData._animatedPartsCache;
+                if (animCache) {
+                    animateCosmeticsFromCache(animCache, time, delta);
                 }
                 
                 // --- WIZARD HAT WORLD-SPACE TRAIL (Per-Player Pools) ---
@@ -5418,9 +5403,10 @@ const VoxelWorld = ({
             const now = Date.now();
             // Using cached values: centerX, centerZ, dojoBxCached, dojoBzCached, dojoHdCached, puffleMap, aiMap
             
-            // OPTIMIZATION: Only run full AI logic every 2nd frame (60fps -> 30fps AI updates)
-            // Visibility updates still happen every frame for smooth enter/exit
-            const runFullAILogic = frameCount % 2 === 0;
+            // OPTIMIZATION: Run full AI logic less frequently
+            // Mac: every 3rd frame (20fps AI), Others: every 2nd frame (30fps AI)
+            const aiThrottle = isMacDevice ? 3 : 2;
+            const runFullAILogic = frameCount % aiThrottle === 0;
             
             aiAgentsRef.current.forEach(ai => {
                 // Only show AI that are in the same room as the player (every frame for smoothness)
@@ -5455,6 +5441,10 @@ const VoxelWorld = ({
                 const pizzaBx = centerX + 25;
                 const pizzaBz = centerZ + 5;
                 const pizzaDoorZ = pizzaBz + 5 + 1; // Front of pizza (door)
+                
+                // Nightclub position (portal at { x: 0, z: -60 })
+                const nightclubDoorX = centerX;
+                const nightclubDoorZ = centerZ - 60;
                 
                 if (ai.currentRoom === 'town') {
                     // Check if AI is at the dojo door
@@ -5494,8 +5484,27 @@ const VoxelWorld = ({
                             aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;
                         }
                     }
+                    // Check if AI is at the nightclub door
+                    const atNightclubDoor = Math.abs(ai.pos.x - nightclubDoorX) < 5 && 
+                                            Math.abs(ai.pos.z - nightclubDoorZ) < 5;
+                    
+                    // When at nightclub door, chance to enter
+                    if (atNightclubDoor && Math.random() < 0.04) { // 4% per frame - nightclub is popular!
+                        ai.currentRoom = 'nightclub';
+                        // Spawn near entrance (exit door is at x:2, z:30 so entrance area is around z:30)
+                        ai.pos.x = 20 + (Math.random() - 0.5) * 6; // Center of room width (40/2 = 20)
+                        ai.pos.z = 28 + Math.random() * 4; // Near entrance
+                        ai.action = 'idle';
+                        ai.actionTimer = now + 1000 + Math.random() * 2000; // Quick to start dancing
+                        ai.target = null;
+                        ai.stuckCounter = 0;
+                        if (aiPuffleEntry && aiPuffleEntry.puffle) {
+                            aiPuffleEntry.puffle.position.x = ai.pos.x + 1.5;
+                            aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;
+                        }
+                    }
                     // If stuck at door too long without entering, move away
-                    else if ((atDojoDoor || atPizzaDoor) && ai.stuckCounter > 60) {
+                    else if ((atDojoDoor || atPizzaDoor || atNightclubDoor) && ai.stuckCounter > 60) {
                         ai.action = 'walk';
                         ai.target = { 
                             x: centerX + (Math.random() - 0.5) * 30, 
@@ -5533,6 +5542,24 @@ const VoxelWorld = ({
                         ai.actionTimer = now + 2000 + Math.random() * 3000;
                         ai.target = null;
                         ai.stuckCounter = 0;
+                        if (aiPuffleEntry && aiPuffleEntry.puffle) {
+                            aiPuffleEntry.puffle.position.x = ai.pos.x + 1.5;
+                            aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;
+                        }
+                    }
+                } else if (ai.currentRoom === 'nightclub') {
+                    // AI in nightclub can exit - check if near exit door (x around 2, z around 30)
+                    const atExit = ai.pos.z > 28 && ai.pos.x < 8;
+                    
+                    if (atExit && Math.random() < 0.01) { // 1% - nightclub is fun, they stay longer
+                        ai.currentRoom = 'town';
+                        ai.pos.x = nightclubDoorX + (Math.random() - 0.5) * 6;
+                        ai.pos.z = nightclubDoorZ + 5 + Math.random() * 3; // South of door
+                        ai.action = 'idle';
+                        ai.actionTimer = now + 2000 + Math.random() * 3000;
+                        ai.target = null;
+                        ai.stuckCounter = 0;
+                        ai.emoteType = null; // Stop dancing when leaving
                         if (aiPuffleEntry && aiPuffleEntry.puffle) {
                             aiPuffleEntry.puffle.position.x = ai.pos.x + 1.5;
                             aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;
@@ -5698,17 +5725,23 @@ const VoxelWorld = ({
                             
                             if (ai.currentRoom === 'town') {
                                 const walkChoice = Math.random();
-                                if (walkChoice < 0.12) {
+                                if (walkChoice < 0.10) {
                                     // Walk towards dojo door
                                     const doorX = dojoBxCached + (Math.random() - 0.5) * 4;
                                     const doorZ = dojoBzCached + dojoHdCached + 2;
                                     ai.target = { x: doorX, z: doorZ };
-                                } else if (walkChoice < 0.24) {
+                                } else if (walkChoice < 0.18) {
                                     // Walk towards pizza door
                                     const doorX = pizzaBx + (Math.random() - 0.5) * 4;
                                     const doorZ = pizzaDoorZ + 2;
                                     ai.target = { x: doorX, z: doorZ };
-                                } else if (walkChoice < 0.35) {
+                                } else if (walkChoice < 0.30) {
+                                    // Walk towards nightclub door (popular destination!)
+                                    ai.target = { 
+                                        x: nightclubDoorX + (Math.random() - 0.5) * 6, 
+                                        z: nightclubDoorZ + 3 + Math.random() * 3 
+                                    };
+                                } else if (walkChoice < 0.40) {
                                     // Walk to campfire area (center of T intersection)
                                     ai.target = { 
                                         x: centerX + (Math.random() - 0.5) * 15, 
@@ -5824,6 +5857,38 @@ const VoxelWorld = ({
                                     let tz = -8 + Math.random() * 20; // Avoid back counter
                                     ai.target = { x: tx, z: tz };
                                 }
+                            } else if (ai.currentRoom === 'nightclub') {
+                                // Nightclub room: 40 wide (X: 0-40), 35 deep (Z: 0-35)
+                                // Dance floor at center (around X:12-28, Z:14-26)
+                                const DANCE_FLOOR = { minX: 12, maxX: 28, minZ: 14, maxZ: 26 };
+                                
+                                // Check if AI is currently on the dance floor
+                                const onDanceFloor = ai.pos.x > DANCE_FLOOR.minX && ai.pos.x < DANCE_FLOOR.maxX &&
+                                                     ai.pos.z > DANCE_FLOOR.minZ && ai.pos.z < DANCE_FLOOR.maxZ;
+                                
+                                if (onDanceFloor && Math.random() < 0.70) {
+                                    // HIGH CHANCE to dance when on the dance floor!
+                                    ai.action = 'idle';
+                                    ai.emoteType = Math.random() < 0.7 ? 'Dance' : 'Breakdance';
+                                    ai.emoteStart = now;
+                                    ai.actionTimer = now + 4000 + Math.random() * 8000; // Dance for 4-12 seconds
+                                } else if (Math.random() < 0.08) {
+                                    // Walk towards exit
+                                    ai.target = { x: 4 + Math.random() * 4, z: 28 + Math.random() * 4 };
+                                } else if (Math.random() < 0.60) {
+                                    // Walk to the dance floor! (main attraction)
+                                    ai.target = { 
+                                        x: DANCE_FLOOR.minX + Math.random() * (DANCE_FLOOR.maxX - DANCE_FLOOR.minX), 
+                                        z: DANCE_FLOOR.minZ + Math.random() * (DANCE_FLOOR.maxZ - DANCE_FLOOR.minZ) 
+                                    };
+                                } else if (Math.random() < 0.30) {
+                                    // Walk to DJ booth area (front of room)
+                                    ai.target = { x: 20 + (Math.random() - 0.5) * 8, z: 6 + Math.random() * 4 };
+                                } else {
+                                    // Walk to sides (near speakers/bar area)
+                                    const side = Math.random() > 0.5 ? 5 : 35; // Left or right side
+                                    ai.target = { x: side + (Math.random() - 0.5) * 6, z: 10 + Math.random() * 18 };
+                                }
                             }
                             ai.actionTimer = now + 5000 + Math.random() * 5000;
                         }
@@ -5919,6 +5984,21 @@ const VoxelWorld = ({
                             if (nextZ < -12 && nextZ > -16 && Math.abs(nextX) < 10) {
                                 collided = true;
                             }
+                        } else if (ai.currentRoom === 'nightclub') {
+                            // Nightclub bounds: 40 wide (X: 0-40), 35 deep (Z: 0-35)
+                            const NC_MARGIN = 2;
+                            if (nextX < NC_MARGIN || nextX > 40 - NC_MARGIN || 
+                                nextZ < NC_MARGIN || nextZ > 35 - NC_MARGIN) {
+                                collided = true;
+                            }
+                            // Avoid DJ booth platform area (X: 14-26, Z: 0-7)
+                            if (nextX > 14 && nextX < 26 && nextZ < 7) {
+                                collided = true;
+                            }
+                            // Avoid speaker areas (corners)
+                            if ((nextX < 6 || nextX > 34) && nextZ < 10) {
+                                collided = true;
+                            }
                         }
 
                         if (!collided) {
@@ -5938,17 +6018,26 @@ const VoxelWorld = ({
                                 ai.target = null;
                                 ai.stuckCounter = 0;
                                 
-                                // Schedule a walk away from current area (larger map)
+                                // Schedule a walk away from current area (room-specific)
                                 const mapMargin = 15;
                                 const maxCoord = CITY_SIZE * BUILDING_SCALE - mapMargin;
-                                ai.nextWalkTarget = {
-                                    x: ai.currentRoom === 'town' 
-                                        ? Math.max(mapMargin, Math.min(maxCoord, centerX + (Math.random() - 0.5) * 100))
-                                        : (Math.random() - 0.5) * 20,
-                                    z: ai.currentRoom === 'town' 
-                                        ? Math.max(mapMargin, Math.min(maxCoord, centerZ + (Math.random() - 0.5) * 100))
-                                        : (Math.random() - 0.5) * 20
-                                };
+                                if (ai.currentRoom === 'town') {
+                                    ai.nextWalkTarget = {
+                                        x: Math.max(mapMargin, Math.min(maxCoord, centerX + (Math.random() - 0.5) * 100)),
+                                        z: Math.max(mapMargin, Math.min(maxCoord, centerZ + (Math.random() - 0.5) * 100))
+                                    };
+                                } else if (ai.currentRoom === 'nightclub') {
+                                    // Move to dance floor (safe center area)
+                                    ai.nextWalkTarget = {
+                                        x: 12 + Math.random() * 16, // Dance floor X range
+                                        z: 14 + Math.random() * 12  // Dance floor Z range
+                                    };
+                                } else {
+                                    ai.nextWalkTarget = {
+                                        x: (Math.random() - 0.5) * 20,
+                                        z: (Math.random() - 0.5) * 20
+                                    };
+                                }
                             } else if (ai.stuckCounter > 10) {
                                 // Try backing up and turning
                                 ai.rot += (Math.random() > 0.5 ? 1 : -1) * Math.PI / 2;
@@ -5975,6 +6064,12 @@ const VoxelWorld = ({
                                         x: Math.max(-14, Math.min(14, ai.pos.x + Math.sin(ai.rot) * newDist)),
                                         z: Math.max(-10, Math.min(14, ai.pos.z + Math.cos(ai.rot) * newDist))
                                     };
+                                } else if (ai.currentRoom === 'nightclub') {
+                                    // Nightclub: 0-40 X, 0-35 Z, stay away from walls/booth
+                                    ai.target = {
+                                        x: Math.max(4, Math.min(36, ai.pos.x + Math.sin(ai.rot) * newDist)),
+                                        z: Math.max(8, Math.min(32, ai.pos.z + Math.cos(ai.rot) * newDist))
+                                    };
                                 } else {
                                     ai.target = {
                                         x: Math.max(-15, Math.min(15, ai.pos.x + Math.sin(ai.rot) * newDist)),
@@ -5997,11 +6092,13 @@ const VoxelWorld = ({
                 
                 animateMesh(ai.mesh, aiMoving, ai.emoteType, ai.emoteStart);
                 
-                // --- AI COSMETIC ANIMATIONS ---
-                // Animate propeller, smoke, flames, wings etc. for AI
+                // --- AI COSMETIC ANIMATIONS (OPTIMIZED) ---
+                // Use cached animated parts instead of traverse() every frame
                 const aiAppearance = ai.aiData;
                 if (aiAppearance) {
-                    const aiHasAnimatedCosmetics = aiAppearance.hat === 'propeller' || 
+                    // Check and cache animated cosmetics flag once
+                    if (ai._hasAnimatedCosmetics === undefined) {
+                        ai._hasAnimatedCosmetics = aiAppearance.hat === 'propeller' || 
                                                    aiAppearance.hat === 'flamingCrown' ||
                                                    aiAppearance.hat === 'wizardHat' ||
                                                    aiAppearance.mouth === 'cigarette' || 
@@ -6013,109 +6110,14 @@ const VoxelWorld = ({
                                                    aiAppearance.bodyItem === 'demonWings' ||
                                                    aiAppearance.bodyItem === 'fireAura' ||
                                                    aiAppearance.bodyItem === 'lightningAura';
+                    }
                     
-                    if (aiHasAnimatedCosmetics) {
-                        ai.mesh.traverse(child => {
-                            // Propeller spin
-                            if (child.name === 'propeller_blades') {
-                                child.rotation.y += delta * 15;
-                            }
-                            
-                            // Smoke particles
-                            if (child.userData?.isSmokeEmitter) {
-                                child.children.forEach((particle, i) => {
-                                    particle.position.y += delta * 2;
-                                    particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
-                                    const height = particle.position.y - (particle.userData.baseY || 0);
-                                    if (particle.material) {
-                                        particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
-                                    }
-                                    if (height > 2) {
-                                        particle.position.y = particle.userData.baseY || 0;
-                                        particle.position.x = 0;
-                                        if (particle.material) particle.material.opacity = 0.6;
-                                    }
-                                });
-                            }
-                            
-                            // Laser eyes pulse
-                            if (child.userData?.isLaserEyes) {
-                                const intensity = 1 + Math.sin(time * 10) * 0.5;
-                                child.children.forEach(light => {
-                                    if (light.isPointLight) light.intensity = intensity;
-                                });
-                            }
-                            
-                            // Fire eyes flicker
-                            if (child.userData?.isFireEyes) {
-                                child.children.forEach(eyeGroup => {
-                                    if (eyeGroup.children) {
-                                        eyeGroup.children.forEach((particle, i) => {
-                                            if (particle.isMesh) {
-                                                particle.position.y = (particle.userData.baseY || 0) + Math.sin(time * 15 + i) * 0.1 * VOXEL_SIZE;
-                                                if (particle.material) particle.material.opacity = 0.7 + Math.sin(time * 20 + i) * 0.3;
-                                            }
-                                            if (particle.isPointLight) particle.intensity = 0.5 + Math.sin(time * 15) * 0.3;
-                                        });
-                                    }
-                                });
-                            }
-                            
-                            // Flaming crown fire
-                            if (child.userData?.isFireEmitter) {
-                                child.children.forEach((particle, i) => {
-                                    particle.position.y += delta * 3;
-                                    particle.position.x = (particle.userData.baseX || 0) + Math.sin(time * 8 + i) * 0.15;
-                                    particle.position.z = (particle.userData.baseZ || 0) + Math.cos(time * 6 + i) * 0.15;
-                                    const height = particle.position.y - (particle.userData.baseY || 0);
-                                    if (particle.material) particle.material.opacity = Math.max(0, 0.9 - height * 0.15);
-                                    particle.scale.setScalar(Math.max(0.3, 1 - height * 0.1));
-                                    if (height > 5) {
-                                        particle.position.y = particle.userData.baseY || 0;
-                                        particle.scale.setScalar(1);
-                                        if (particle.material) particle.material.opacity = 0.9;
-                                    }
-                                });
-                            }
-                            
-                            // Wing flapping
-                            if (child.userData?.isWings) {
-                                const phase = child.userData.wingPhase || 0;
-                                child.rotation.y = Math.sin(time * 6 + phase) * 0.3;
-                            }
-                            
-                            // Fire Aura - spinning flames
-                            if (child.userData?.isFireAura) {
-                                child.rotation.y = time * 2;
-                                child.children.forEach((flame) => {
-                                    if (flame.userData?.isFlame) {
-                                        const offset = flame.userData.offset || 0;
-                                        flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.3 * VOXEL_SIZE;
-                                        flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.3;
-                                        flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.3;
-                                    }
-                                });
-                                if (child.userData.fireLight) {
-                                    child.userData.fireLight.intensity = 1.5 + Math.sin(time * 12) * 0.5;
-                                }
-                            }
-                            
-                            // Lightning Aura - spinning bolts
-                            if (child.userData?.isLightningAura) {
-                                child.rotation.y = time * 3;
-                                child.children.forEach((bolt) => {
-                                    if (bolt.userData?.flickerOffset !== undefined) {
-                                        const flicker = Math.sin(time * 20 + bolt.userData.flickerOffset);
-                                        bolt.visible = flicker > -0.3;
-                                        if (bolt.material) bolt.material.opacity = 0.5 + flicker * 0.4;
-                                        bolt.position.y = Math.sin(time * 15 + bolt.userData.flickerOffset) * 0.5 * VOXEL_SIZE;
-                                    }
-                                });
-                                if (child.userData.lightningLight) {
-                                    child.userData.lightningLight.intensity = 1 + Math.random() * 1;
-                                }
-                            }
-                        });
+                    if (ai._hasAnimatedCosmetics) {
+                        // Build cache lazily on first animation frame
+                        if (!ai.mesh.userData._animatedPartsCache) {
+                            ai.mesh.userData._animatedPartsCache = cacheAnimatedParts(ai.mesh);
+                        }
+                        animateCosmeticsFromCache(ai.mesh.userData._animatedPartsCache, time, delta);
                     }
                     
                     // AI Wizard Hat Trail - each AI gets their own particle pool (works in all rooms)
@@ -6300,202 +6302,13 @@ const VoxelWorld = ({
                 const otherPlayerMounted = !!(meshData.mesh.userData?.mount && meshData.mesh.userData?.mountData);
                 animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false, playerData.appearance?.characterType || 'penguin', otherPlayerMounted);
                 
-                // OPTIMIZED: Only traverse if this player has animated cosmetics
-                // Cache this check to avoid checking every frame
-                if (meshData.hasAnimatedCosmetics === undefined) {
-                    const appearance = playerData.appearance || {};
-                    meshData.hasAnimatedCosmetics = appearance.hat === 'propeller' || 
-                                                     appearance.hat === 'flamingCrown' ||
-                                                     appearance.mouth === 'cigarette' || 
-                                                     appearance.mouth === 'pipe' ||
-                                                     appearance.mouth === 'cigar' ||
-                                                     appearance.mouth === 'fireBreath' ||
-                                                     appearance.mouth === 'iceBreath' ||
-                                                     appearance.mouth === 'bubblegum' ||
-                                                     appearance.eyes === 'laser' ||
-                                                     appearance.eyes === 'fire' ||
-                                                     appearance.bodyItem === 'angelWings' ||
-                                                     appearance.bodyItem === 'demonWings' ||
-                                                     appearance.bodyItem === 'fireAura' ||
-                                                     appearance.bodyItem === 'lightningAura';
-                }
-                
+                // OPTIMIZATION: Use cached animated parts for other players
+                // Build cache lazily on first animation frame if needed
                 if (meshData.hasAnimatedCosmetics) {
-                    meshData.mesh.traverse(child => {
-                        if (child.name === 'propeller_blades') {
-                            child.rotation.y += delta * 15; // Fast spin
-                        }
-                        
-                        // Animate smoke particles (cigarette, pipe, cigar)
-                        if (child.userData?.isSmokeEmitter) {
-                            child.children.forEach((particle, i) => {
-                                particle.position.y += delta * 2;
-                                particle.position.x += Math.sin(time * 2 + i) * delta * 0.5;
-                                
-                                const height = particle.position.y - (particle.userData.baseY || 0);
-                                if (particle.material) {
-                                    particle.material.opacity = Math.max(0, 0.6 - height * 0.3);
-                                }
-                                
-                                if (height > 2) {
-                                    particle.position.y = particle.userData.baseY || 0;
-                                    particle.position.x = 0;
-                                    if (particle.material) particle.material.opacity = 0.6;
-                                }
-                            });
-                        }
-                        
-                        // Animate laser eyes - pulsing intensity
-                        if (child.userData?.isLaserEyes) {
-                            const intensity = 1 + Math.sin(time * 10) * 0.5;
-                            child.children.forEach(light => {
-                                if (light.isPointLight) {
-                                    light.intensity = intensity;
-                                }
-                            });
-                        }
-                        
-                        // Fire eyes animation
-                        if (child.userData?.isFireEyes) {
-                            child.children.forEach(eyeGroup => {
-                                if (eyeGroup.children) {
-                                    eyeGroup.children.forEach((particle, i) => {
-                                        if (particle.isMesh) {
-                                            particle.position.y = (particle.userData.baseY || 0) + Math.sin(time * 15 + i) * 0.1 * VOXEL_SIZE;
-                                            particle.position.x = Math.sin(time * 12 + i * 2) * 0.05 * VOXEL_SIZE;
-                                            if (particle.material) {
-                                                particle.material.opacity = 0.7 + Math.sin(time * 20 + i) * 0.3;
-                                            }
-                                        }
-                                        if (particle.isPointLight) {
-                                            particle.intensity = 0.5 + Math.sin(time * 15) * 0.3;
-                                        }
-                                    });
-                                }
-                            });
-                        }
-                        
-                        // Flaming Crown fire particles
-                        if (child.userData?.isFireEmitter) {
-                            child.children.forEach((particle, i) => {
-                                particle.position.y += delta * 3;
-                                particle.position.x = (particle.userData.baseX || 0) + Math.sin(time * 8 + i) * 0.15;
-                                particle.position.z = (particle.userData.baseZ || 0) + Math.cos(time * 6 + i) * 0.15;
-                                
-                                const height = particle.position.y - (particle.userData.baseY || 0);
-                                if (particle.material) {
-                                    particle.material.opacity = Math.max(0, 0.9 - height * 0.15);
-                                }
-                                const scale = Math.max(0.3, 1 - height * 0.1);
-                                particle.scale.setScalar(scale);
-                                
-                                if (height > 5) {
-                                    particle.position.y = particle.userData.baseY || 0;
-                                    particle.scale.setScalar(1);
-                                    if (particle.material) particle.material.opacity = 0.9;
-                                }
-                            });
-                        }
-                        
-                        // Fire Breath particles
-                        if (child.userData?.isBreathFire) {
-                            child.children.forEach((particle, i) => {
-                                particle.position.z += delta * 15;
-                                particle.position.y += (Math.random() - 0.5) * delta * 2;
-                                particle.position.x += (Math.random() - 0.5) * delta * 2;
-                                
-                                const dist = particle.position.z - (particle.userData.baseZ || 0);
-                                if (particle.material) {
-                                    particle.material.opacity = Math.max(0, 0.9 - dist * 0.1);
-                                }
-                                
-                                if (dist > 8) {
-                                    particle.position.z = particle.userData.baseZ || 0;
-                                    particle.position.y = 0;
-                                    particle.position.x = 0;
-                                    if (particle.material) particle.material.opacity = 0.9;
-                                }
-                            });
-                        }
-                        
-                        // Ice Breath particles
-                        if (child.userData?.isBreathIce) {
-                            child.children.forEach((particle, i) => {
-                                particle.position.z += delta * 12;
-                                particle.position.y += Math.sin(time * 10 + i) * delta;
-                                particle.position.x += Math.cos(time * 8 + i) * delta;
-                                
-                                const dist = particle.position.z - (particle.userData.baseZ || 0);
-                                if (particle.material) {
-                                    particle.material.opacity = Math.max(0, 0.8 - dist * 0.08);
-                                }
-                                
-                                if (dist > 10) {
-                                    particle.position.z = particle.userData.baseZ || 0;
-                                    particle.position.y = 0;
-                                    particle.position.x = 0;
-                                    if (particle.material) particle.material.opacity = 0.8;
-                                }
-                            });
-                        }
-                        
-                        // Bubblegum grow/pop animation
-                        if (child.userData?.isBubblegum) {
-                            const bubble = child.children[0];
-                            if (bubble) {
-                                const cycleTime = (time % 4) / 4;
-                                let scale;
-                                if (cycleTime < 0.8) {
-                                    scale = 0.5 + cycleTime * 2;
-                                } else if (cycleTime < 0.85) {
-                                    scale = 2.1 - (cycleTime - 0.8) * 30;
-                                } else {
-                                    scale = 0.5;
-                                }
-                                bubble.scale.setScalar(Math.max(0.3, scale));
-                            }
-                        }
-                        
-                        // Animate angel/demon wings - butterfly flapping
-                        if (child.userData?.isWings) {
-                            const phase = child.userData.wingPhase || 0;
-                            const flapSpeed = 6;
-                            const flapAngle = Math.sin(time * flapSpeed + phase) * 0.3;
-                            child.rotation.y = flapAngle;
-                        }
-                        
-                        // Fire Aura - spinning flames
-                        if (child.userData?.isFireAura) {
-                            child.rotation.y = time * 2;
-                            child.children.forEach((flame) => {
-                                if (flame.userData?.isFlame) {
-                                    const offset = flame.userData.offset || 0;
-                                    flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.3 * VOXEL_SIZE;
-                                    flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.3;
-                                    flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.3;
-                                }
-                            });
-                            if (child.userData.fireLight) {
-                                child.userData.fireLight.intensity = 1.5 + Math.sin(time * 12) * 0.5;
-                            }
-                        }
-                        
-                        // Lightning Aura - spinning bolts
-                        if (child.userData?.isLightningAura) {
-                            child.rotation.y = time * 3;
-                            child.children.forEach((bolt) => {
-                                if (bolt.userData?.flickerOffset !== undefined) {
-                                    const flicker = Math.sin(time * 20 + bolt.userData.flickerOffset);
-                                    bolt.visible = flicker > -0.3;
-                                    if (bolt.material) bolt.material.opacity = 0.5 + flicker * 0.4;
-                                    bolt.position.y = Math.sin(time * 15 + bolt.userData.flickerOffset) * 0.5 * VOXEL_SIZE;
-                                }
-                            });
-                            if (child.userData.lightningLight) {
-                                child.userData.lightningLight.intensity = 1 + Math.random() * 1;
-                            }
-                        }
-                    });
+                    if (!meshData.mesh.userData._animatedPartsCache) {
+                        meshData.mesh.userData._animatedPartsCache = cacheAnimatedParts(meshData.mesh);
+                    }
+                    animateCosmeticsFromCache(meshData.mesh.userData._animatedPartsCache, time, delta);
                 }
 
                 // --- MOUNT ANIMATION FOR OTHER PLAYERS ---
@@ -6663,7 +6476,7 @@ const VoxelWorld = ({
                     // Night (late)
                     nightFactor = 1.0;
                 }
-                townCenterRef.current.update(time, delta, nightFactor);
+                townCenterRef.current.update(time, delta, nightFactor, isMacDevice);
             }
             
             // Animate nightclub interior (dance floor, stage lights, speakers, disco ball)
@@ -6715,8 +6528,9 @@ const VoxelWorld = ({
             controls.update();
             
             // ==================== DAY/NIGHT CYCLE (Town only, Server-synchronized) ====================
-            // OPTIMIZED: Only update lighting every 3rd frame (still smooth at 60fps = 20 updates/sec)
-            if (room === 'town' && sunLightRef.current && ambientLightRef.current && frameCount % 3 === 0) {
+            // OPTIMIZED: Update lighting less frequently (Mac: every 6th, Others: every 3rd)
+            const lightingThrottle = isMacDevice ? 6 : 3;
+            if (room === 'town' && sunLightRef.current && ambientLightRef.current && frameCount % lightingThrottle === 0) {
                 // Use server-synchronized time (or local time for debug override)
                 const serverTime = serverWorldTimeRef?.current ?? 0.35;
                 const t = daySpeedRef.current === 0 ? dayTimeRef.current : serverTime;
@@ -8332,6 +8146,23 @@ const VoxelWorld = ({
                 console.log(`🐾 Puffle mesh added at`, pufflePos);
             }
             
+            // OPTIMIZATION: Check if player has animated cosmetics
+            const appearance = playerData.appearance || {};
+            const hasAnimatedCosmetics = appearance.hat === 'propeller' || 
+                                         appearance.hat === 'flamingCrown' ||
+                                         appearance.mouth === 'cigarette' || 
+                                         appearance.mouth === 'pipe' ||
+                                         appearance.mouth === 'cigar' ||
+                                         appearance.mouth === 'fireBreath' ||
+                                         appearance.mouth === 'iceBreath' ||
+                                         appearance.mouth === 'bubblegum' ||
+                                         appearance.eyes === 'laser' ||
+                                         appearance.eyes === 'fire' ||
+                                         appearance.bodyItem === 'angelWings' ||
+                                         appearance.bodyItem === 'demonWings' ||
+                                         appearance.bodyItem === 'fireAura' ||
+                                         appearance.bodyItem === 'lightningAura';
+            
             meshes.set(id, { 
                 mesh, 
                 bubble: null, 
@@ -8339,7 +8170,9 @@ const VoxelWorld = ({
                 nameSprite,
                 // Initialize emote from playerData (player might already be sitting)
                 currentEmote: playerData.emote || null,
-                emoteStartTime: playerData.emoteStartTime || Date.now()
+                emoteStartTime: playerData.emoteStartTime || Date.now(),
+                // OPTIMIZATION: Pre-cache whether this player has animated cosmetics
+                hasAnimatedCosmetics
             });
             
             // Clear the needsMesh flag

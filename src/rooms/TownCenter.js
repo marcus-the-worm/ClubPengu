@@ -848,8 +848,8 @@ class TownCenter {
         const distance = Math.sqrt(dx * dx + dz * dz);
         const angle = Math.atan2(dz, dx);
         
-        // Number of bulbs based on distance
-        const bulbCount = Math.max(8, Math.floor(distance / 3));
+        // OPTIMIZED: Reduced bulb count for better performance
+        const bulbCount = Math.max(6, Math.floor(distance / 4));
         const sagAmount = Math.min(distance * 0.15, 3); // Sag in the middle
         
         // Christmas light colors
@@ -864,10 +864,10 @@ class TownCenter {
             0xFF6699, // Pink
         ];
         
-        // Create the wire/string (thin dark line)
+        // OPTIMIZED: Create the wire/string with fewer points
         const wirePoints = [];
-        for (let i = 0; i <= 20; i++) {
-            const t = i / 20;
+        for (let i = 0; i <= 8; i++) {
+            const t = i / 8;
             const x = from.x + dx * t;
             const z = from.z + dz * t;
             // Catenary-like sag (parabola)
@@ -877,13 +877,14 @@ class TownCenter {
         }
         
         const wireCurve = new THREE.CatmullRomCurve3(wirePoints);
-        const wireGeo = new THREE.TubeGeometry(wireCurve, 20, 0.02, 4, false);
+        // OPTIMIZED: Reduced tube segments (8 instead of 20) and radial segments (3 instead of 4)
+        const wireGeo = new THREE.TubeGeometry(wireCurve, 8, 0.02, 3, false);
         const wireMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
         const wire = new THREE.Mesh(wireGeo, wireMat);
         group.add(wire);
         
-        // Create bulbs along the string
-        const bulbGeo = new THREE.SphereGeometry(0.12, 6, 6);
+        // OPTIMIZED: Lower polygon bulbs (4 segments instead of 6)
+        const bulbGeo = new THREE.SphereGeometry(0.12, 4, 4);
         
         for (let i = 0; i < bulbCount; i++) {
             const t = (i + 0.5) / bulbCount;
@@ -893,21 +894,19 @@ class TownCenter {
             const y = height - sag - 0.1; // Slightly below wire
             
             const color = lightColors[i % lightColors.length];
-            const bulbMat = new THREE.MeshStandardMaterial({
+            // OPTIMIZED: Use MeshBasicMaterial with emissive look (no lighting calculations)
+            const bulbMat = new THREE.MeshBasicMaterial({
                 color: color,
-                emissive: color,
-                emissiveIntensity: 0.8,
-                roughness: 0.3,
-                metalness: 0.1
             });
             
             const bulb = new THREE.Mesh(bulbGeo, bulbMat);
             bulb.position.set(x, y, z);
             group.add(bulb);
             
-            // Add small point light for every 3rd bulb (for performance)
-            if (i % 3 === 0) {
-                const light = new THREE.PointLight(color, 0.3, 4);
+            // OPTIMIZED: Only add point light for 1st bulb per string (was every 3rd)
+            // The emissive bulbs provide visual glow, we only need 1 light per string for ambiance
+            if (i === Math.floor(bulbCount / 2)) {
+                const light = new THREE.PointLight(0xFFFFAA, 0.4, 6); // Warm white, merged color
                 light.position.set(x, y, z);
                 group.add(light);
                 this.lights.push(light);
@@ -1028,7 +1027,7 @@ class TownCenter {
         return this.collisionSystem.getActiveTriggers(playerX, playerZ);
     }
 
-    update(time, delta, nightFactor = 0.5) {
+    update(time, delta, nightFactor = 0.5, isMac = false) {
         if (!this._animatedCache) {
             this._animatedCache = { campfires: [], christmasTrees: [], nightclubs: [], frameCounter: 0 };
             this.propMeshes.forEach(mesh => {
@@ -1051,43 +1050,59 @@ class TownCenter {
         this._animatedCache.frameCounter++;
         const frame = this._animatedCache.frameCounter;
         
-        // Animate nightclub speakers and neon lights (every frame for smooth bass)
-        this._animatedCache.nightclubs.forEach(mesh => {
-            if (mesh.userData.nightclubUpdate) {
-                mesh.userData.nightclubUpdate(time);
-            }
-        });
+        // Mac: more aggressive throttling (every 4th vs 2nd frame)
+        const animThrottle = isMac ? 4 : 2;
+        const particleThrottle = isMac ? 12 : 6;
+        const treeThrottle = isMac ? 24 : 12;
         
-        this._animatedCache.campfires.forEach(({ flames, particles, light }) => {
-            flames.forEach(flame => {
-                const offset = flame.userData.offset || 0;
-                flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.1;
-                flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.2;
-                flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.2;
-                flame.rotation.y = time * 2 + offset;
-            });
-            
-            if (particles && frame % 3 === 0) {
-                const positions = particles.geometry.attributes.position.array;
-                for (let i = 0; i < positions.length / 3; i++) {
-                    positions[i * 3 + 1] += delta * 2 * (1 + Math.random() * 0.5);
-                    positions[i * 3] += (Math.random() - 0.5) * delta;
-                    positions[i * 3 + 2] += (Math.random() - 0.5) * delta;
-                    if (positions[i * 3 + 1] > 3) {
-                        positions[i * 3] = (Math.random() - 0.5) * 0.8;
-                        positions[i * 3 + 1] = 0.2;
-                        positions[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
-                    }
+        // OPTIMIZED: Nightclub speakers and neon
+        if (frame % animThrottle === 0) {
+            this._animatedCache.nightclubs.forEach(mesh => {
+                if (mesh.userData.nightclubUpdate) {
+                    mesh.userData.nightclubUpdate(time);
                 }
-                particles.geometry.attributes.position.needsUpdate = true;
-            }
-            
-            if (light && frame % 3 === 0) {
-                light.intensity = 1.5 + Math.sin(time * 15) * 0.3 + Math.random() * 0.2;
-            }
-        });
+            });
+        }
         
-        if (frame % 6 === 0) {
+        // OPTIMIZED: Campfire flames
+        if (frame % animThrottle === 0) {
+            this._animatedCache.campfires.forEach(({ flames, particles, light }) => {
+                flames.forEach(flame => {
+                    const offset = flame.userData.offset || 0;
+                    flame.position.y = flame.userData.baseY + Math.sin(time * 8 + offset) * 0.1;
+                    flame.scale.x = 0.8 + Math.sin(time * 10 + offset) * 0.2;
+                    flame.scale.z = 0.8 + Math.cos(time * 10 + offset) * 0.2;
+                    flame.rotation.y = time * 2 + offset;
+                });
+                
+                // OPTIMIZED: Particles (Mac: every 12th, Others: every 6th)
+                if (particles && frame % particleThrottle === 0) {
+                    const positions = particles.geometry.attributes.position.array;
+                    const len = positions.length / 3;
+                    const speedMult = isMac ? 8 : 4; // Compensate for lower update rate
+                    for (let i = 0; i < len; i++) {
+                        const idx = i * 3;
+                        positions[idx + 1] += delta * speedMult * (1 + Math.random() * 0.5);
+                        positions[idx] += (Math.random() - 0.5) * delta * 2;
+                        positions[idx + 2] += (Math.random() - 0.5) * delta * 2;
+                        if (positions[idx + 1] > 3) {
+                            positions[idx] = (Math.random() - 0.5) * 0.8;
+                            positions[idx + 1] = 0.2;
+                            positions[idx + 2] = (Math.random() - 0.5) * 0.8;
+                        }
+                    }
+                    particles.geometry.attributes.position.needsUpdate = true;
+                }
+                
+                // OPTIMIZED: Light flicker
+                if (light && frame % particleThrottle === 0) {
+                    light.intensity = 1.5 + Math.sin(time * 15) * 0.3 + Math.random() * 0.2;
+                }
+            });
+        }
+        
+        // OPTIMIZED: Christmas trees (Mac: every 24th, Others: every 12th)
+        if (frame % treeThrottle === 0) {
             this._animatedCache.christmasTrees.forEach(mesh => {
                 if (mesh.userData.treeUpdate) mesh.userData.treeUpdate(time, nightFactor);
             });
