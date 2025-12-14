@@ -4269,7 +4269,7 @@ const VoxelWorld = ({
                                         }
                                         if (particle.isPointLight) {
                                             particle.intensity = 0.5 + Math.sin(time * 15) * 0.3;
-                }
+                        }
                     });
                 }
                             });
