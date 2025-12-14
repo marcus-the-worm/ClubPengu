@@ -564,21 +564,28 @@ class PropsFactory {
         globe.position.y = postHeight + 0.35;
         group.add(globe);
         
-        // Point light with configurable shadows - brighter for nighttime visibility
+        // Point light for all lamps that are on - shadows only for castShadow: true
+        // PointLights without shadows are much cheaper than with shadows
         let light = null;
         if (isOn) {
-            light = new THREE.PointLight(0xFFE4B5, 2.5, 18, 1.5); // Increased intensity, range, reduced decay
+            // Non-shadow lamps: dimmer, shorter range (ambient fill)
+            // Shadow lamps: brighter, longer range (key lights)
+            const intensity = castShadow ? 3.0 : 1.8;
+            const distance = castShadow ? 20 : 12;
+            
+            light = new THREE.PointLight(0xFFE4B5, intensity, distance, 1.8);
             light.position.y = postHeight + 0.35;
             light.castShadow = castShadow;
             
             if (castShadow) {
-                // Configure shadow for quality
+                // Configure shadow for quality (only shadow-casting lamps)
                 light.shadow.mapSize.width = 512;
                 light.shadow.mapSize.height = 512;
                 light.shadow.camera.near = 0.5;
                 light.shadow.camera.far = 20;
                 light.shadow.bias = -0.001;
             }
+            
             group.add(light);
         }
         
@@ -1742,7 +1749,7 @@ class PropsFactory {
         const firstRoofYCalc = dojoHeight + 1.2;
         const platformSurface = firstRoofYCalc + 1.0;
 
-        // End marker - golden arch on the landing platform
+        // End marker - golden arch on the landing platform (TIER 1 VIP)
         const archMat = this.getMaterial(0xFFD700, { 
             metalness: 0.8, 
             roughness: 0.2,
@@ -1764,7 +1771,7 @@ class PropsFactory {
             group.add(pillar);
         });
 
-        // Create benches ON the golden landing platform
+        // Create benches ON the golden landing platform (TIER 1)
         const roofBenches = [];
         
         // Two benches on the platform facing each other
@@ -1800,24 +1807,279 @@ class PropsFactory {
             });
         });
 
-        // Decorative lamp posts on platform
+        // ==================== PHASE 2: TIER 1 TO TIER 3 PARKOUR ====================
+        // Third roof is at h + 1.2 + 11 = ~20.2
+        const thirdRoofY = dojoHeight + 1.2 + 11;
+        const phase2Colors = [0xE040FB, 0xAB47BC, 0x7B1FA2, 0x9C27B0, 0xBA68C8]; // Purple theme
+        
+        // Phase 2 course - HARD MODE - Smaller platforms, longer jumps, tricky angles
+        // Blue course ends on LEFT side, player crosses through VIP checkpoint, jumps to purple on RIGHT
+        const phase2Layout = [
+            // START: Launch platform OFF the tier 1 roof (RIGHT side - jump down to it)
+            { x: dojoX + 13, y: platformSurface - 0.8, z: dojoZ, w: 3.0, d: 3.0, type: 'phase2_start', color: 0x9C27B0 },
+            
+            // Jump 1: Diagonal jump - tests precision (along right side)
+            { x: dojoRight + 5, y: platformSurface + 0.5, z: dojoZ - 3, w: 2.0, d: 2.0 },
+            
+            // Jump 2: Continue along right side (further back)
+            { x: dojoRight + 4, y: platformSurface + 1.5, z: dojoZ - 8, w: 2.0, d: 2.0 },
+            
+            // Jump 3: Corner turn - right-back of dojo
+            { x: dojoRight + 2, y: platformSurface + 2.8, z: dojoBack + 2, w: 1.8, d: 1.8 },
+            
+            // Jump 4: Behind dojo - center-right
+            { x: dojoX + 3, y: platformSurface + 3.8, z: dojoBack - 3, w: 2.0, d: 2.0 },
+            
+            // Jump 5: Behind dojo - center, steep climb
+            { x: dojoX, y: platformSurface + 4.5, z: dojoBack - 2, w: 2.0, d: 2.0 },
+            
+            // Jump 6: Behind dojo - center-left, another drop
+            { x: dojoX - 5, y: platformSurface + 4.0, z: dojoBack - 4, w: 2.0, d: 2.0 },
+            
+            // Jump 7: Behind dojo - left side, big height gain
+            { x: dojoLeft - 1, y: platformSurface + 5.8, z: dojoBack - 1, w: 1.8, d: 1.8 },
+            
+            // Jump 8: Corner - left-back, long diagonal
+            { x: dojoLeft - 4, y: platformSurface + 7.2, z: dojoBack + 4, w: 2.0, d: 2.0 },
+            
+            // Jump 9: Along LEFT side - precision jump
+            { x: dojoLeft - 5, y: platformSurface + 8.5, z: dojoZ - 3, w: 1.8, d: 1.8 },
+            
+            // Jump 10: Final approach - tiny platform
+            { x: dojoLeft - 3, y: platformSurface + 9.5, z: dojoZ + 2, w: 1.8, d: 1.8 },
+            
+            // Jump 11: Last leap to glory
+            { x: dojoLeft, y: platformSurface + 10.2, z: dojoZ + 5, w: 2.0, d: 2.0 },
+            
+            // END: Ultimate VIP platform on tier 3 roof (smaller)
+            { x: dojoX, y: thirdRoofY + 0.5, z: dojoZ, w: 5, d: 5, type: 'phase2_end', color: 0xFFD700 },
+        ];
+        
+        // Create phase 2 platforms
+        phase2Layout.forEach((plat, idx) => {
+            const color = plat.color || phase2Colors[idx % phase2Colors.length];
+            const isSpecial = plat.type === 'phase2_start' || plat.type === 'phase2_end';
+            const platformHeight = isSpecial ? 0.5 : 0.35;
+            
+            const platform = this.createParkourPlatform({
+                width: plat.w,
+                depth: plat.d,
+                height: platformHeight,
+                color: color,
+                glowing: isSpecial
+            });
+            
+            platform.position.set(plat.x, plat.y, plat.z);
+            group.add(platform);
+            
+            platforms.push({
+                mesh: platform,
+                x: plat.x,
+                y: plat.y,
+                z: plat.z,
+                width: plat.w,
+                depth: plat.d,
+                height: platformHeight,
+                phase: 2
+            });
+            
+            // Store collider info
+            colliders.push({
+                x: plat.x,
+                y: plat.y,
+                z: plat.z,
+                type: 'box',
+                size: { x: plat.w, y: platformHeight, z: plat.d },
+                height: platformHeight
+            });
+
+            // Platform number painted on surface (subtle, phase 2)
+            if (idx > 0 && idx < phase2Layout.length - 1) {
+                const numMat = this.getMaterial(0x6A1B9A, { roughness: 0.7 });
+                const numGeo = new THREE.RingGeometry(0.12, 0.2, 16);
+                const num = new THREE.Mesh(numGeo, numMat);
+                num.rotation.x = -Math.PI / 2;
+                num.position.set(plat.x, plat.y + platformHeight + 0.01, plat.z);
+                group.add(num);
+            }
+        });
+        
+        // Phase 2 sign on tier 1 platform - "MASTER'S SUMMIT"
+        const sign2Group = new THREE.Group();
+        
+        const post2Mat = this.getMaterial(0x4A148C, { roughness: 0.8 });
+        const post2Geo = new THREE.CylinderGeometry(0.15, 0.2, 2.5, 8);
+        const post2 = new THREE.Mesh(post2Geo, post2Mat);
+        post2.position.y = 1.25;
+        post2.castShadow = true;
+        sign2Group.add(post2);
+        
+        const frame2Mat = this.getMaterial(0x7B1FA2, { roughness: 0.7 });
+        const frame2Geo = new THREE.BoxGeometry(3.5, 1.5, 0.2);
+        const frame2 = new THREE.Mesh(frame2Geo, frame2Mat);
+        frame2.position.y = 2.8;
+        frame2.castShadow = true;
+        sign2Group.add(frame2);
+        
+        // Sign face with canvas text
+        const canvas2 = document.createElement('canvas');
+        canvas2.width = 512;
+        canvas2.height = 200;
+        const ctx2 = canvas2.getContext('2d');
+        
+        ctx2.fillStyle = '#1A0033';
+        ctx2.fillRect(0, 0, 512, 200);
+        
+        ctx2.strokeStyle = '#FFD700';
+        ctx2.lineWidth = 6;
+        ctx2.strokeRect(8, 8, 496, 184);
+        
+        ctx2.fillStyle = '#FFD700';
+        ctx2.font = 'bold 38px Arial';
+        ctx2.textAlign = 'center';
+        ctx2.fillText('⭐ MASTER\'S SUMMIT ⭐', 256, 65);
+        
+        ctx2.font = '26px Arial';
+        ctx2.fillStyle = '#E1BEE7';
+        ctx2.fillText('Ultimate VIP Zone', 256, 110);
+        
+        ctx2.font = '22px Arial';
+        ctx2.fillStyle = '#CE93D8';
+        ctx2.fillText('🔥 For True Ninjas Only 🔥', 256, 155);
+        
+        const texture2 = new THREE.CanvasTexture(canvas2);
+        const sign2Mat = new THREE.MeshStandardMaterial({ 
+            map: texture2,
+            roughness: 0.4
+        });
+        const sign2Geo = new THREE.BoxGeometry(3.2, 1.2, 0.08);
+        const sign2 = new THREE.Mesh(sign2Geo, sign2Mat);
+        sign2.position.y = 2.8;
+        sign2.position.z = 0.12;
+        sign2Group.add(sign2);
+        
+        // Purple glowing arrow
+        const arrow2Mat = this.getMaterial(0x9C27B0, { 
+            roughness: 0.4,
+            emissive: 0x9C27B0,
+            emissiveIntensity: 0.5
+        });
+        const arrow2Geo = new THREE.ConeGeometry(0.35, 0.7, 4);
+        const signArrow2 = new THREE.Mesh(arrow2Geo, arrow2Mat);
+        signArrow2.position.set(0, 3.7, 0);
+        sign2Group.add(signArrow2);
+        
+        // Position sign ON the first purple platform, facing toward the dojo/checkpoint
+        // First purple platform is at (dojoX + 12, platformSurface - 0.5, dojoZ)
+        sign2Group.position.set(dojoX + 12, platformSurface - 0.5, dojoZ + 1);
+        sign2Group.rotation.y = Math.PI; // Face toward the dojo (toward -X direction)
+        group.add(sign2Group);
+        
+        // ==================== TIER 3 ULTIMATE VIP HANGOUT ====================
+        const tier3Surface = thirdRoofY + 1.0;
+        
+        // Diamond arch for tier 3 (more impressive than gold)
+        const diamondMat = this.getMaterial(0x00FFFF, { 
+            metalness: 0.9, 
+            roughness: 0.1,
+            emissive: 0x00FFFF,
+            emissiveIntensity: 0.6
+        });
+        const arch3Geo = new THREE.TorusGeometry(1.8, 0.25, 8, 16, Math.PI);
+        const arch3 = new THREE.Mesh(arch3Geo, diamondMat);
+        arch3.position.set(dojoX, tier3Surface + 2.0, dojoZ - 2);
+        group.add(arch3);
+        
+        // Diamond pillars
+        [-1.8, 1.8].forEach(side => {
+            const pillar3Geo = new THREE.CylinderGeometry(0.18, 0.22, 2.0, 6);
+            const pillar3 = new THREE.Mesh(pillar3Geo, diamondMat);
+            pillar3.position.set(dojoX + side, tier3Surface + 1.0, dojoZ - 2);
+            group.add(pillar3);
+        });
+        
+        // Tier 3 benches - 4 benches in a circle (cooler hangout)
+        const tier3BenchPositions = [
+            { x: dojoX - 1.8, z: dojoZ + 1.2, rotation: Math.PI / 2 },
+            { x: dojoX + 1.8, z: dojoZ + 1.2, rotation: -Math.PI / 2 },
+            { x: dojoX - 1.8, z: dojoZ - 0.5, rotation: Math.PI / 2 },
+            { x: dojoX + 1.8, z: dojoZ - 0.5, rotation: -Math.PI / 2 },
+        ];
+        
+        tier3BenchPositions.forEach(pos => {
+            const bench3 = this.createBench(true);
+            bench3.position.set(pos.x, tier3Surface, pos.z);
+            bench3.rotation.y = pos.rotation;
+            group.add(bench3);
+            
+            roofBenches.push({
+                mesh: bench3,
+                x: pos.x,
+                y: tier3Surface,
+                z: pos.z,
+                rotation: pos.rotation,
+                tier: 3
+            });
+            
+            colliders.push({
+                x: pos.x,
+                y: tier3Surface,
+                z: pos.z,
+                type: 'box',
+                size: { x: 2.5, y: 0.8, z: 1 },
+                height: 0.8,
+                rotation: pos.rotation,
+                isBench: true
+            });
+        });
+        
+        // Glowing orbs around tier 3 platform (decorative, emissive only)
+        const orbMat = this.getMaterial(0x00FFFF, { 
+            emissive: 0x00FFFF, 
+            emissiveIntensity: 1.2,
+            transparent: true,
+            opacity: 0.8
+        });
+        const orbPositions = [
+            { x: dojoX - 2.5, z: dojoZ + 2 },
+            { x: dojoX + 2.5, z: dojoZ + 2 },
+            { x: dojoX - 2.5, z: dojoZ - 1.5 },
+            { x: dojoX + 2.5, z: dojoZ - 1.5 },
+        ];
+        orbPositions.forEach(pos => {
+            const orbGeo = new THREE.SphereGeometry(0.2, 12, 12);
+            const orb = new THREE.Mesh(orbGeo, orbMat);
+            orb.position.set(pos.x, tier3Surface + 1.2, pos.z);
+            group.add(orb);
+            
+            // Orb pedestal
+            const pedestalGeo = new THREE.CylinderGeometry(0.1, 0.15, 1.2, 6);
+            const pedestalMat = this.getMaterial(0x333333, { roughness: 0.6 });
+            const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
+            pedestal.position.set(pos.x, tier3Surface + 0.6, pos.z);
+            group.add(pedestal);
+        });
+
+        // OPTIMIZED: Decorative lamp posts on tier 1 platform (emissive only, no PointLights)
         const lampMat = this.getMaterial(0x333333, { roughness: 0.7 });
+        const lampGlowMat = this.getMaterial(0xFFAA55, { 
+            emissive: 0xFFAA55, 
+            emissiveIntensity: 1.0,
+            transparent: true,
+            opacity: 0.9
+        });
         [-2.5, 2.5].forEach(side => {
             const lampPostGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.5, 6);
             const lampPost = new THREE.Mesh(lampPostGeo, lampMat);
             lampPost.position.set(dojoX + side, platformSurface + 0.75, dojoZ - 2);
             group.add(lampPost);
             
-            // Lamp light
-            const lampLight = new THREE.PointLight(0xFFAA55, 0.4, 6);
-            lampLight.position.set(dojoX + side, platformSurface + 1.6, dojoZ - 2);
-            group.add(lampLight);
+            // Emissive globe instead of PointLight
+            const globeGeo = new THREE.SphereGeometry(0.15, 8, 8);
+            const globe = new THREE.Mesh(globeGeo, lampGlowMat);
+            globe.position.set(dojoX + side, platformSurface + 1.6, dojoZ - 2);
+            group.add(globe);
         });
-
-        // Ambient lighting on platform
-        const roofLight = new THREE.PointLight(0xFFFFDD, 0.6, 12);
-        roofLight.position.set(dojoX, platformSurface + 3, dojoZ);
-        group.add(roofLight);
 
         return { 
             mesh: group, 
@@ -1825,7 +2087,8 @@ class PropsFactory {
             colliders,
             roofBenches,
             roofHeight,
-            platformSurface  // The actual walking surface height
+            platformSurface,  // Tier 1 walking surface
+            tier3Surface      // Tier 3 walking surface
         };
     }
 
@@ -1937,15 +2200,17 @@ class PropsFactory {
         jewel.position.y = starY;
         group.add(jewel);
         
-        // Strong star glow light
-        const starLight = new THREE.PointLight(0xFFDD88, 2.5, 15);
+        // OPTIMIZED: Single star light (reduced from 2)
+        const starLight = new THREE.PointLight(0xFFDD88, 3.0, 12);
         starLight.position.y = starY;
         group.add(starLight);
         
-        // Secondary warm glow
-        const starGlow = new THREE.PointLight(0xFFFFAA, 1.5, 8);
-        starGlow.position.y = starY + 0.3;
-        group.add(starGlow);
+        // Ambient glow light - provides warm colorful glow around tree
+        // Intensity will be adjusted based on day/night cycle
+        const ambientGlow = new THREE.PointLight(0xFFEEDD, 1.5, 25);
+        ambientGlow.position.y = treeHeight / 2;
+        ambientGlow.name = 'treeAmbientGlow';
+        group.add(ambientGlow);
 
         // Christmas lights - many more with strong glow
         const lightColors = [
@@ -1953,18 +2218,19 @@ class PropsFactory {
             0xFF00FF, 0x00FFFF, 0xFFAA00, 0xFF6600,
             0xAAFF00, 0xFF0066
         ];
-        const ornamentLights = [];
         const ornamentMeshes = [];
         
-        // Dense light placement spiraling around tree
-        const lightsPerTier = 12;
+        // OPTIMIZED: Reduced from 12 to 8 lights per tier (48 total vs 72)
+        const lightsPerTier = 8;
         tierData.forEach((tier, tierIdx) => {
             for (let i = 0; i < lightsPerTier; i++) {
                 const angle = (i / lightsPerTier) * Math.PI * 2 + tierIdx * 0.6;
-                const radiusVariance = 0.85 + Math.random() * 0.15;
+                // FIXED: Position lights closer to tree surface (was 0.85-1.0, now 0.6-0.75)
+                const radiusVariance = 0.6 + Math.random() * 0.15;
                 const ox = Math.cos(angle) * tier.radius * radiusVariance;
                 const oz = Math.sin(angle) * tier.radius * radiusVariance;
-                const oy = tier.y + (Math.random() - 0.5) * 1.2;
+                // FIXED: Reduced vertical variance (was ±0.6, now ±0.25)
+                const oy = tier.y + (Math.random() - 0.5) * 0.5;
                 
                 const color = lightColors[(tierIdx * lightsPerTier + i) % lightColors.length];
                 
@@ -1980,20 +2246,10 @@ class PropsFactory {
                 bulb.position.set(ox, oy, oz);
                 bulb.userData.baseEmissive = 0.8;
                 bulb.userData.phaseOffset = Math.random() * Math.PI * 2;
-                bulb.userData.speed = 2 + Math.random() * 3;
+                // FIXED: Slowed down blinking (was 2-5, now 0.4-1.2 for gentle twinkle)
+                bulb.userData.speed = 0.4 + Math.random() * 0.8;
                 group.add(bulb);
                 ornamentMeshes.push(bulb);
-                
-                // OPTIMIZED: Point light for every 4th bulb (reduces from 36 to 18 lights)
-                if (i % 4 === 0) {
-                    const bulbLight = new THREE.PointLight(color, 0.6, 4); // Slightly brighter/larger to compensate
-                    bulbLight.position.set(ox, oy, oz);
-                    bulbLight.userData.baseIntensity = 0.6;
-                    bulbLight.userData.phaseOffset = bulb.userData.phaseOffset;
-                    bulbLight.userData.speed = bulb.userData.speed;
-                    group.add(bulbLight);
-                    ornamentLights.push(bulbLight);
-                }
             }
         });
 
@@ -2002,8 +2258,9 @@ class PropsFactory {
         tierData.slice(0, 4).forEach((tier, tidx) => {
             for (let i = 0; i < 3; i++) {
                 const angle = (i / 3) * Math.PI * 2 + tidx;
-                const bx = Math.cos(angle) * tier.radius * 0.7;
-                const bz = Math.sin(angle) * tier.radius * 0.7;
+                // FIXED: Position baubles closer to tree (was 0.7, now 0.55)
+                const bx = Math.cos(angle) * tier.radius * 0.55;
+                const bz = Math.sin(angle) * tier.radius * 0.55;
                 
                 const baubleMat = this.getMaterial(baubleColors[(tidx + i) % baubleColors.length], {
                     metalness: 0.5,
@@ -2037,16 +2294,14 @@ class PropsFactory {
             { box: 0x4169E1, ribbon: 0xFF6600 },
         ];
 
-        // Create present piles at different positions
+        // OPTIMIZED: Create present piles at different positions (reduced pile count and sizes)
         const pilePositions = [
-            { x: 2.0, z: 0.8, count: 4 },
-            { x: -1.8, z: 1.2, count: 5 },
-            { x: 0.5, z: 2.0, count: 3 },
-            { x: -1.2, z: -1.5, count: 4 },
-            { x: 1.5, z: -1.2, count: 5 },
-            { x: -2.2, z: -0.3, count: 3 },
-            { x: 0.0, z: -2.0, count: 4 },
-            { x: 2.5, z: -0.5, count: 3 },
+            { x: 2.0, z: 0.8, count: 3 },
+            { x: -1.8, z: 1.2, count: 3 },
+            { x: 0.5, z: 2.0, count: 2 },
+            { x: -1.2, z: -1.5, count: 3 },
+            { x: 1.5, z: -1.2, count: 2 },
+            { x: -2.2, z: -0.3, count: 2 },
         ];
 
         pilePositions.forEach((pile, pileIdx) => {
@@ -2115,8 +2370,8 @@ class PropsFactory {
             }
         });
 
-        // Scattered small presents
-        for (let i = 0; i < 8; i++) {
+        // OPTIMIZED: Scattered small presents (reduced from 8 to 5)
+        for (let i = 0; i < 5; i++) {
             const angle = (i / 8) * Math.PI * 2 + 0.3;
             const dist = 2.8 + Math.random() * 0.8;
             const px = Math.cos(angle) * dist;
@@ -2152,8 +2407,8 @@ class PropsFactory {
         snow.receiveShadow = true;
         group.add(snow);
         
-        // Snow bumps for natural look
-        for (let i = 0; i < 12; i++) {
+        // OPTIMIZED: Snow bumps for natural look (reduced from 12 to 6)
+        for (let i = 0; i < 6; i++) {
             const angle = (i / 12) * Math.PI * 2;
             const bumpGeo = new THREE.SphereGeometry(0.3 + Math.random() * 0.2, 8, 8);
             const bump = new THREE.Mesh(bumpGeo, snowMat);
@@ -2166,45 +2421,43 @@ class PropsFactory {
             group.add(bump);
         }
 
-        // OPTIMIZED: Update function for twinkling lights
+        // OPTIMIZED: Lightweight update function for twinkling (emissive only, no PointLights)
         // Uses batched updates - only updates a subset each call
         let updateBatch = 0;
-        const BATCH_SIZE = 12; // Update 12 items per call instead of all 72+
+        const BATCH_SIZE = 18; // Update 18 items per call instead of all 72
         const totalMeshes = ornamentMeshes.length;
-        const totalLights = ornamentLights.length;
         
-        const update = (time) => {
+        const update = (time, nightFactor = 0.5) => {
             // Batch update ornament meshes (cycle through in batches)
             const meshStart = (updateBatch * BATCH_SIZE) % totalMeshes;
             const meshEnd = Math.min(meshStart + BATCH_SIZE, totalMeshes);
             for (let i = meshStart; i < meshEnd; i++) {
                 const mesh = ornamentMeshes[i];
+                // FIXED: Smooth sine wave instead of harsh on/off
                 const twinkle = Math.sin(time * mesh.userData.speed + mesh.userData.phaseOffset);
-                const brightness = twinkle > 0 ? 1.2 : 0.3;
+                // Smooth brightness range: 0.5 to 1.1 (gentle glow variation)
+                // Brighter at night (nightFactor 1.0), dimmer during day (nightFactor 0.0)
+                const baseBrightness = 0.5 + nightFactor * 0.5;
+                const brightness = baseBrightness + twinkle * 0.3;
                 if (mesh.material.emissiveIntensity !== undefined) {
                     mesh.material.emissiveIntensity = mesh.userData.baseEmissive * brightness;
                 }
             }
             
-            // Batch update lights (cycle through in smaller batches)
-            const lightBatchSize = 6;
-            const lightStart = (updateBatch * lightBatchSize) % totalLights;
-            const lightEnd = Math.min(lightStart + lightBatchSize, totalLights);
-            for (let i = lightStart; i < lightEnd; i++) {
-                const light = ornamentLights[i];
-                const twinkle = Math.sin(time * light.userData.speed + light.userData.phaseOffset) * 0.5 + 0.5;
-                light.intensity = light.userData.baseIntensity * (0.3 + twinkle * 1.4);
-            }
+            // Star pulse (single light, gentle slow pulse)
+            // Brighter at night
+            const starPulse = Math.sin(time * 0.8) * 0.15 + 0.85;
+            const starBaseIntensity = 1.5 + nightFactor * 2.5; // 1.5 day, 4.0 night
+            starLight.intensity = starBaseIntensity * starPulse;
             
-            // Star pulse (always update - only 2 lights)
-            const starPulse = Math.sin(time * 1.5) * 0.2 + 0.8;
-            starLight.intensity = 2.5 * starPulse;
-            starGlow.intensity = 1.5 * (1.1 - starPulse * 0.3);
+            // Ambient glow - much stronger at night, subtle during day
+            const ambientBaseIntensity = 0.3 + nightFactor * 3.0; // 0.3 day, 3.3 night
+            ambientGlow.intensity = ambientBaseIntensity;
             
             updateBatch++;
         };
 
-        return { mesh: group, lights: ornamentLights, update };
+        return { mesh: group, lights: [], update, ambientGlow };
     }
 
     // ==================== BUILDINGS ====================
@@ -2305,14 +2558,16 @@ class PropsFactory {
             group.add(base);
         });
 
-        // Pagoda roof - two tiers
+        // Pagoda roof - THREE tiers
         const roofMat = this.getMaterial(roofTile, { roughness: 0.8 });
         const edgeMat = this.getMaterial(roofRed, { roughness: 0.6 });
         
-        for (let tier = 0; tier < 2; tier++) {
-            const tierScale = 1 - tier * 0.3;
-            // Second roof (tier 1) - gap of 5 gives clearance above VIP platform (at ~10.2)
-            const tierGap = tier === 0 ? 0 : 5;  // Tier 2 at h + 6.2 = ~14.2
+        // Tier heights: 0 = first roof, 1 = second roof, 2 = third roof (top)
+        const tierGaps = [0, 5.5, 11];  // Tier 3 at h + 12.2 = ~20.2
+        
+        for (let tier = 0; tier < 3; tier++) {
+            const tierScale = 1 - tier * 0.25;  // Slightly less scaling for 3 tiers
+            const tierGap = tierGaps[tier];
             const roofY = h + 1.2 + tierGap;
             const roofWidth = (w + 4) * tierScale;
             const roofDepth = (d + 4) * tierScale;
@@ -2359,22 +2614,22 @@ class PropsFactory {
                 group.add(upturn);
             });
 
-            // Top tier finial
-            if (tier === 1) {
+            // Top tier finial (only on tier 2 - the highest roof)
+            if (tier === 2) {
                 const ridgeGeo = new THREE.BoxGeometry(roofWidth * 0.7, 0.6, 0.25);
                 const ridge = new THREE.Mesh(ridgeGeo, edgeMat);
                 ridge.position.y = roofY + 0.5;
                 group.add(ridge);
 
-                // Gold finial
-                const finialGeo = new THREE.SphereGeometry(0.4, 12, 12);
+                // Gold finial - larger and more impressive for top tier
+                const finialGeo = new THREE.SphereGeometry(0.5, 12, 12);
                 const finial = new THREE.Mesh(finialGeo, goldMat);
-                finial.position.y = roofY + 1.2;
+                finial.position.y = roofY + 1.3;
                 group.add(finial);
 
-                const spikeGeo = new THREE.ConeGeometry(0.12, 1.2, 6);
+                const spikeGeo = new THREE.ConeGeometry(0.15, 1.5, 6);
                 const spike = new THREE.Mesh(spikeGeo, goldMat);
-                spike.position.y = roofY + 2.1;
+                spike.position.y = roofY + 2.4;
                 group.add(spike);
             }
         }
@@ -2412,37 +2667,37 @@ class PropsFactory {
             group.add(hBar);
         }
 
-        // Stone lanterns at entrance - clearly separated
+        // Stone lanterns at entrance - ON THE GROUND beside the stairs
         const lanternMat = this.getMaterial(0x707070, { roughness: 0.8 });
         [-3.2, 3.2].forEach(lx => {
-            // Lantern base
+            // Lantern base - on ground level
             const baseGeo = new THREE.BoxGeometry(0.9, 0.4, 0.9);
             const base = new THREE.Mesh(baseGeo, lanternMat);
-            base.position.set(lx, 1.2, d / 2 + 2.5);
+            base.position.set(lx, 0.2, d / 2 + 2.5);
             group.add(base);
 
             // Lantern pillar
             const pillarGeo = new THREE.BoxGeometry(0.5, 1.8, 0.5);
             const pillar = new THREE.Mesh(pillarGeo, lanternMat);
-            pillar.position.set(lx, 2.3, d / 2 + 2.5);
+            pillar.position.set(lx, 1.3, d / 2 + 2.5);
             group.add(pillar);
 
             // Lantern head
             const headGeo = new THREE.BoxGeometry(1, 0.8, 1);
             const head = new THREE.Mesh(headGeo, lanternMat);
-            head.position.set(lx, 3.6, d / 2 + 2.5);
+            head.position.set(lx, 2.6, d / 2 + 2.5);
             group.add(head);
 
             // Lantern roof cap
             const capGeo = new THREE.ConeGeometry(0.7, 0.5, 4);
             const cap = new THREE.Mesh(capGeo, lanternMat);
             cap.rotation.y = Math.PI / 4;
-            cap.position.set(lx, 4.25, d / 2 + 2.5);
+            cap.position.set(lx, 3.25, d / 2 + 2.5);
             group.add(cap);
 
             // Warm light
             const light = new THREE.PointLight(0xFFAA55, 0.4, 6);
-            light.position.set(lx, 3.6, d / 2 + 2.5);
+            light.position.set(lx, 2.6, d / 2 + 2.5);
             group.add(light);
         });
 

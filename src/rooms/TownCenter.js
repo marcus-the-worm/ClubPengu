@@ -158,7 +158,7 @@ class TownCenter {
         
         // ==================== LAMP POSTS ====================
         // OPTIMIZED: Only 2 key lamps cast shadows (major performance gain)
-        // All others provide ambient light without shadow cost
+        // All others provide ambient light without shadow cost (emissive globe only)
         props.push(
             // Main plaza - ONLY these 2 cast shadows (player area)
             { type: 'lamp_post', x: C + 8, z: C + 6, isOn: true, castShadow: true },
@@ -178,6 +178,14 @@ class TownCenter {
             // Igloo village - ambient lighting (no shadows)
             { type: 'lamp_post', x: campsiteX + 10, z: campsiteZ - 3, isOn: true, castShadow: false },
             { type: 'lamp_post', x: campsiteX - 5, z: campsiteZ + 5, isOn: true, castShadow: false },
+            
+            // Behind dojo - lights the back area (no shadows, emissive only)
+            { type: 'lamp_post', x: C - 8, z: C - 42, isOn: true, castShadow: false },
+            { type: 'lamp_post', x: C + 8, z: C - 42, isOn: true, castShadow: false },
+            
+            // Parkour course area - right side of dojo (no shadows, emissive only)
+            { type: 'lamp_post', x: C + 22, z: C - 20, isOn: true, castShadow: false },  // Near parkour start
+            { type: 'lamp_post', x: C + 18, z: C - 35, isOn: true, castShadow: false },  // Along parkour path
         );
         
         // ==================== BUILDING LIGHTS ====================
@@ -492,29 +500,42 @@ class TownCenter {
                 { name: building.id, isBuilding: true }
             );
             
-            // Add roof collision for dojo (tier 0 roof - walkable surface)
+            // Add roof collision for dojo (THREE tiers - walkable surfaces)
             if (building.id === 'dojo') {
-                const roofY = building.size.h + 1.2; // First tier roof height
-                this.collisionSystem.addCollider(
-                    bx,
-                    bz,
-                    {
-                        type: 'box',
-                        size: {
-                            x: building.size.w + 4, // Roof extends beyond walls
-                            y: 0.5,                  // Roof thickness
-                            z: building.size.d + 4,
+                const h = building.size.h;
+                const w = building.size.w;
+                const d = building.size.d;
+                
+                // Tier gaps match PropsFactory: [0, 5.5, 11]
+                const tierGaps = [0, 5.5, 11];
+                const tierScales = [1, 0.75, 0.5]; // 1 - tier * 0.25 for 3 tiers
+                
+                tierGaps.forEach((gap, tier) => {
+                    const roofY = h + 1.2 + gap;
+                    const tierScale = tierScales[tier];
+                    const roofWidth = (w + 4) * tierScale;
+                    const roofDepth = (d + 4) * tierScale;
+                    
+                    this.collisionSystem.addCollider(
+                        bx,
+                        bz,
+                        {
+                            type: 'box',
+                            size: {
+                                x: roofWidth,
+                                y: 0.5,
+                                z: roofDepth,
+                            },
+                            height: 0.5
                         },
-                        height: 0.5
-                    },
-                    CollisionSystem.TYPES.SOLID,
-                    { name: 'dojo_roof', isRoof: true },
-                    0,
-                    roofY  // Y position of roof
-                );
+                        CollisionSystem.TYPES.SOLID,
+                        { name: `dojo_roof_tier${tier}`, isRoof: true },
+                        0,
+                        roofY
+                    );
+                });
                 
                 // Add step collision for dojo entrance (3 steps)
-                const d = building.size.d;
                 for (let i = 0; i < 3; i++) {
                     const stepWidth = 4 - i * 0.4; // Same as PropsFactory
                     const stepY = 0.28 + i * 0.28; // Same as PropsFactory (fixed)
@@ -697,8 +718,9 @@ class TownCenter {
      * OPTIMIZED: Cache references to animated props, throttle updates
      * @param {number} time - Current time in seconds
      * @param {number} delta - Delta time since last frame
+     * @param {number} nightFactor - 0.0 (day) to 1.0 (night) for lighting contrast
      */
-    update(time, delta) {
+    update(time, delta, nightFactor = 0.5) {
         // OPTIMIZATION: Build cache on first call (avoid iterating ALL props every frame)
         if (!this._animatedCache) {
             this._animatedCache = {
@@ -739,8 +761,8 @@ class TownCenter {
                 flame.rotation.y = time * 2 + offset;
             });
             
-            // Embers: every 2nd frame (subtle effect)
-            if (particles && frame % 2 === 0) {
+            // OPTIMIZED: Embers: every 3rd frame (subtle effect, reduce CPU)
+            if (particles && frame % 3 === 0) {
                 const positions = particles.geometry.attributes.position.array;
                 const delta2 = delta * 2;
                 for (let i = 0; i < positions.length / 3; i++) {
@@ -762,10 +784,11 @@ class TownCenter {
             }
         });
         
-        // Christmas tree: every 4th frame (twinkling is subtle)
-        if (frame % 4 === 0) {
+        // OPTIMIZED: Christmas tree: every 6th frame (twinkling is subtle, reduce CPU)
+        // Pass nightFactor for day/night lighting contrast
+        if (frame % 6 === 0) {
             this._animatedCache.christmasTrees.forEach(mesh => {
-                if (mesh.userData.treeUpdate) mesh.userData.treeUpdate(time);
+                if (mesh.userData.treeUpdate) mesh.userData.treeUpdate(time, nightFactor);
             });
         }
     }

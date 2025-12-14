@@ -2268,6 +2268,7 @@ const VoxelWorld = ({
             // Add label sprite above building
             const sign = createLabelSprite(building.name, building.emoji);
             sign.position.set(0, h + 5, d / 2 + 1);
+            sign.name = `label_${building.id}`; // Name for visibility control
             buildingGroup.add(sign);
             
             // Add interactive glow for buildings with games
@@ -3151,9 +3152,9 @@ const VoxelWorld = ({
             const time = clock.getElapsedTime(); 
             
             const speed = 10 * delta; 
-            // PC rotation is 50% faster than mobile for tighter turning
+            // PC rotation is faster for tighter turning with A/D keys
             const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            const rotSpeed = isMobileDevice ? (2 * delta) : (3 * delta); // 50% faster on PC
+            const rotSpeed = isMobileDevice ? (2 * delta) : (4.5 * delta); // PC: 50% increase (3 -> 4.5)
             let moving = false;
             
             // Jump physics constants
@@ -3298,25 +3299,61 @@ const VoxelWorld = ({
                 }
             }
             else if (!emoteRef.current.type) {
-                // Joystick movement (PUBG-style - analog control)
+                const isInAir = !isGroundedRef.current;
+                
+                // Handle rotation
+                if (keyLeft || mobileLeft) rotRef.current += rotSpeed;
+                if (keyRight || mobileRight) rotRef.current -= rotSpeed;
+                
+                // === GROUND MOVEMENT ===
+                if (!isInAir) {
+                    // Mobile Joystick: 2D plane movement - player faces direction of movement
                 if (joystickMagnitude > 0.1 && !inMatch) {
-                    // Forward/back from joystick Y axis
                     const moveSpeed = speed * Math.min(joystickMagnitude, 1.0);
-                    velRef.current.z = Math.cos(rotRef.current) * joystick.y * moveSpeed;
-                    velRef.current.x = Math.sin(rotRef.current) * joystick.y * moveSpeed;
-                    
-                    // Strafe from joystick X axis (rotate character towards movement)
-                    if (Math.abs(joystick.x) > 0.2) {
-                        rotRef.current -= joystick.x * rotSpeed * 1.5;
-                    }
+                        
+                        // Get camera forward direction projected onto XZ plane
+                        const camera = cameraRef.current;
+                        if (camera) {
+                            // Camera looks at player, so forward is from camera toward player
+                            const camForward = new THREE.Vector3();
+                            camera.getWorldDirection(camForward);
+                            camForward.y = 0; // Project onto XZ plane
+                            camForward.normalize();
+                            
+                            // Camera right vector (perpendicular to forward on XZ plane)
+                            const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x);
+                            
+                            // Calculate world movement direction from joystick input
+                            // joystick.y = forward/back relative to camera, joystick.x = left/right
+                            const worldDirX = camRight.x * joystick.x + camForward.x * joystick.y;
+                            const worldDirZ = camRight.z * joystick.x + camForward.z * joystick.y;
+                            
+                            // Normalize and apply speed
+                            const dirMag = Math.sqrt(worldDirX * worldDirX + worldDirZ * worldDirZ);
+                            if (dirMag > 0.01) {
+                                velRef.current.x = (worldDirX / dirMag) * moveSpeed;
+                                velRef.current.z = (worldDirZ / dirMag) * moveSpeed;
+                                
+                                // Auto-rotate player to face movement direction
+                                const targetRot = Math.atan2(worldDirX, worldDirZ);
+                                // Smooth rotation interpolation
+                                let rotDiff = targetRot - rotRef.current;
+                                // Normalize to -PI to PI
+                                while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+                                while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+                                rotRef.current += rotDiff * 0.2; // Smooth turn (20% per frame)
+                                
                     moving = true;
+                            }
+                        }
                 }
                 // Keyboard/D-pad movement (digital control)
+                    // Note: mobileBack removed - mobile users can't walk backwards
                 else if (keyForward || mobileForward) {
                     velRef.current.z = Math.cos(rotRef.current) * speed;
                     velRef.current.x = Math.sin(rotRef.current) * speed;
                     moving = true;
-                } else if (keyBack || mobileBack) {
+                    } else if (keyBack) { // Keyboard only - no mobileBack
                     velRef.current.z = -Math.cos(rotRef.current) * speed;
                     velRef.current.x = -Math.sin(rotRef.current) * speed;
                     moving = true;
@@ -3324,9 +3361,56 @@ const VoxelWorld = ({
                     velRef.current.x = 0;
                     velRef.current.z = 0;
                 }
-                
-                if (keyLeft || mobileLeft) rotRef.current += rotSpeed;
-                if (keyRight || mobileRight) rotRef.current -= rotSpeed;
+                }
+                // === AIR MOVEMENT ===
+                // In air: allow movement in facing direction (like ground, but same speed - no boost)
+                else {
+                    // Mobile Joystick in air: same 2D plane movement with auto-facing
+                    if (joystickMagnitude > 0.1 && !inMatch) {
+                        const moveSpeed = speed * Math.min(joystickMagnitude, 1.0);
+                        
+                        const camera = cameraRef.current;
+                        if (camera) {
+                            const camForward = new THREE.Vector3();
+                            camera.getWorldDirection(camForward);
+                            camForward.y = 0;
+                            camForward.normalize();
+                            
+                            const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x);
+                            
+                            const worldDirX = camRight.x * joystick.x + camForward.x * joystick.y;
+                            const worldDirZ = camRight.z * joystick.x + camForward.z * joystick.y;
+                            
+                            const dirMag = Math.sqrt(worldDirX * worldDirX + worldDirZ * worldDirZ);
+                            if (dirMag > 0.01) {
+                                velRef.current.x = (worldDirX / dirMag) * moveSpeed;
+                                velRef.current.z = (worldDirZ / dirMag) * moveSpeed;
+                                
+                                // Auto-rotate in air too
+                                const targetRot = Math.atan2(worldDirX, worldDirZ);
+                                let rotDiff = targetRot - rotRef.current;
+                                while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+                                while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+                                rotRef.current += rotDiff * 0.2;
+                                
+                                moving = true;
+                            }
+                        }
+                    }
+                    // Keyboard/D-pad movement in air (same as ground - no boost by default)
+                    // Note: mobileBack removed - mobile users can't walk backwards
+                    else if (keyForward || mobileForward) {
+                        velRef.current.z = Math.cos(rotRef.current) * speed;
+                        velRef.current.x = Math.sin(rotRef.current) * speed;
+                        moving = true;
+                    } else if (keyBack) { // Keyboard only - no mobileBack
+                        velRef.current.z = -Math.cos(rotRef.current) * speed;
+                        velRef.current.x = -Math.sin(rotRef.current) * speed;
+                        moving = true;
+                    }
+                    // No input in air - maintain momentum (don't reset to 0)
+                    // velocity stays as-is from last frame
+                }
             } else {
                 velRef.current.x = 0;
                 velRef.current.z = 0;
@@ -5652,9 +5736,28 @@ const VoxelWorld = ({
                 });
             }
             
-            // Animate campfire (flames, embers, light flicker)
+            // Animate campfire (flames, embers, light flicker) and Christmas tree
             if (townCenterRef.current && roomRef.current === 'town') {
-                townCenterRef.current.update(time, delta);
+                // Calculate nightFactor for Christmas tree lighting (0=day, 1=night)
+                const worldTime = serverWorldTimeRef?.current ?? 0.35;
+                let nightFactor;
+                if (worldTime < 0.2) {
+                    // Night (early)
+                    nightFactor = 1.0;
+                } else if (worldTime < 0.3) {
+                    // Sunrise transition
+                    nightFactor = 1.0 - (worldTime - 0.2) / 0.1;
+                } else if (worldTime < 0.7) {
+                    // Day
+                    nightFactor = 0.0;
+                } else if (worldTime < 0.8) {
+                    // Sunset transition
+                    nightFactor = (worldTime - 0.7) / 0.1;
+                } else {
+                    // Night (late)
+                    nightFactor = 1.0;
+                }
+                townCenterRef.current.update(time, delta, nightFactor);
             }
             
             // Animate building door glows (pulse for interactive doors, town only)
@@ -5664,6 +5767,14 @@ const VoxelWorld = ({
                         const glow = building.mesh.getObjectByName(`door_glow_${building.id}`);
                         if (glow && glow.material) {
                             glow.material.opacity = 0.2 + Math.sin(time * 2) * 0.15;
+                        }
+                    }
+                    
+                    // Hide dojo label when player is on the roof (y > 9)
+                    if (building.id === 'dojo' && building.mesh) {
+                        const dojoLabel = building.mesh.getObjectByName('label_dojo');
+                        if (dojoLabel) {
+                            dojoLabel.visible = posRef.current.y < 9;
                         }
                     }
                 });
