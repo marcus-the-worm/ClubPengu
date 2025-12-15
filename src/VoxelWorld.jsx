@@ -3160,10 +3160,10 @@ const VoxelWorld = ({
                  // Build Marcus with SEPARATE PARTS for animation (like penguin)
                  const pivots = MarcusGenerators.pivots();
                  
-                 // Head (for laugh animation)
-                 const headVoxels = MarcusGenerators.head();
-                 const head = buildPartMerged(headVoxels, MARCUS_PALETTE, pivots.head);
-                 head.name = 'head';
+                // Head (for laugh animation)
+                const headVoxels = MarcusGenerators.head();
+                const head = buildPartMerged(headVoxels, MARCUS_PALETTE);
+                head.name = 'head';
                  
                  // Body
                  const bodyVoxels = MarcusGenerators.body();
