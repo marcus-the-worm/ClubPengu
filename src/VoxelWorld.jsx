@@ -2709,24 +2709,104 @@ const VoxelWorld = ({
             butterflyGroup = cityResult.butterflyGroup;
             const townCenterX = (CITY_SIZE / 2) * BUILDING_SCALE;
             const townCenterZ = (CITY_SIZE / 2) * BUILDING_SCALE;
+            // Park bench positions (matching TownCenter.js propPlacements)
+            const C = townCenterX; // CENTER = 110
+            const benchSnapPoints = [{ x: -0.6, z: 0 }, { x: 0, z: 0 }, { x: 0.6, z: 0 }];
+            const parkBenches = [
+                // T-stem walkway benches
+                { x: C - 22, z: C + 20, rotation: Math.PI / 2 },
+                { x: C + 22, z: C + 20, rotation: -Math.PI / 2 },
+                { x: C - 22, z: C + 45, rotation: Math.PI / 2 },
+                { x: C + 22, z: C + 45, rotation: -Math.PI / 2 },
+                // T-bar walkway benches (south edge)
+                { x: C - 35, z: C - 22, rotation: Math.PI },
+                { x: C + 35, z: C - 22, rotation: Math.PI },
+                { x: C - 65, z: C - 22, rotation: Math.PI },
+                { x: C + 65, z: C - 22, rotation: Math.PI },
+                // T-bar walkway benches (north edge)
+                { x: C - 35, z: C - 68, rotation: 0 },
+                { x: C + 35, z: C - 68, rotation: 0 },
+                { x: C - 65, z: C - 68, rotation: 0 },
+                { x: C + 65, z: C - 68, rotation: 0 },
+                // Benches near buildings
+                { x: C - 55, z: C + 48, rotation: -Math.PI / 2 },
+                { x: C + 55, z: C + 48, rotation: Math.PI / 2 },
+            ].map(b => ({
+                type: 'bench',
+                position: { x: b.x, z: b.z },
+                rotation: b.rotation,
+                seatHeight: 0.8,
+                platformHeight: 0,
+                snapPoints: benchSnapPoints,
+                interactionRadius: 2.5
+            }));
+            
+            // Christmas tree benches (4 benches in circle around tree)
+            const treeX = C + 43.2;
+            const treeZ = C + 6.8;
+            const treeBenchRadius = 8;
+            for (let i = 0; i < 4; i++) {
+                const angle = (i / 4) * Math.PI * 2;
+                const benchX = treeX + Math.cos(angle) * treeBenchRadius;
+                const benchZ = treeZ + Math.sin(angle) * treeBenchRadius;
+                const flipRotation = (i === 0 || i === 2) ? Math.PI : 0;
+                parkBenches.push({
+                    type: 'bench',
+                    position: { x: benchX, z: benchZ },
+                    rotation: angle + Math.PI / 2 + flipRotation,
+                    seatHeight: 0.8,
+                    platformHeight: 0,
+                    snapPoints: benchSnapPoints,
+                    interactionRadius: 2.5
+                });
+            }
+            
+            // Campfire log seats (6 logs in circle around campfire, facing inward)
+            const campfireX = C;
+            const campfireZ = C + 10;
+            const seatRadius = 5.5;
+            const logSeats = [];
+            for (let i = 0; i < 6; i++) {
+                const angle = (i / 6) * Math.PI * 2;
+                const seatX = campfireX + Math.cos(angle) * seatRadius;
+                const seatZ = campfireZ + Math.sin(angle) * seatRadius;
+                // Rotation faces the campfire (angle + PI points toward center)
+                const needsFlip = (i === 1 || i === 2 || i === 4 || i === 5);
+                const flipOffset = needsFlip ? Math.PI : 0;
+                logSeats.push({
+                    type: 'log',
+                    position: { x: seatX, z: seatZ },
+                    rotation: angle + Math.PI / 2 + flipOffset,
+                    seatHeight: 0.5,
+                    platformHeight: 0,
+                    snapPoints: [{ x: -0.6, z: 0 }, { x: 0.6, z: 0 }], // Along log length
+                    interactionRadius: 2.5,
+                    bidirectionalSit: true // Sit from either side, face based on approach
+                });
+            }
+            
             roomData = {
                 bounds: null, // Town uses wall collision
                 spawnPos: { x: townCenterX, z: townCenterZ + 85 }, // South of dojo, facing north
-                // Nightclub roof couch (on top of the nightclub building)
                 furniture: [
+                    // Nightclub roof couch
                     {
                         type: 'couch',
-                        position: { x: townCenterX, z: townCenterZ - 75 }, // Nightclub roof (CENTER, CENTER-75)
-                        rotation: 0, // Facing south
-                        seatHeight: 13 + 0.95, // Platform height (13) + cushion height (0.95)
-                        platformHeight: 13, // Roof height (building height 12 + 1)
+                        position: { x: townCenterX, z: townCenterZ - 75 },
+                        rotation: 0,
+                        seatHeight: 13 + 0.95,
+                        platformHeight: 13,
                         snapPoints: [
-                            { x: -1.5, z: 0 },   // Left cushion
-                            { x: 0, z: 0 },       // Middle cushion  
-                            { x: 1.5, z: 0 }      // Right cushion
+                            { x: -1.5, z: 0 },
+                            { x: 0, z: 0 },
+                            { x: 1.5, z: 0 }
                         ],
                         interactionRadius: 3
-                    }
+                    },
+                    // All park benches
+                    ...parkBenches,
+                    // Campfire log seats
+                    ...logSeats
                 ]
             };
         } else if (room === 'dojo') {
@@ -4975,7 +5055,8 @@ const VoxelWorld = ({
                                     worldZ: nearFurniture.position.z,
                                     worldRotation: nearFurniture.rotation,
                                     snapPoints: nearFurniture.snapPoints,
-                                    seatHeight: nearFurniture.seatHeight
+                                    seatHeight: nearFurniture.seatHeight,
+                                    bidirectionalSit: nearFurniture.bidirectionalSit || false
                                 }
                             }
                         }));
@@ -5097,7 +5178,8 @@ const VoxelWorld = ({
                                     worldRotation: nearFurniture.rotation,
                                     snapPoints: nearFurniture.snapPoints,
                                     seatHeight: nearFurniture.seatHeight,
-                                    platformHeight: nearFurniture.platformHeight
+                                    platformHeight: nearFurniture.platformHeight,
+                                    bidirectionalSit: nearFurniture.bidirectionalSit || false
                                 }
                             }
                         }));

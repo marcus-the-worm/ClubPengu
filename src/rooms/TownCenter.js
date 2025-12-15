@@ -542,6 +542,7 @@ class TownCenter {
                     break;
                 case 'bench':
                     mesh = this.propsFactory.createBench(true);
+                    // Sitting interaction handled via furniture array in VoxelWorld.jsx
                     break;
                 case 'snowman':
                     mesh = this.propsFactory.createSnowman();
