@@ -1142,14 +1142,23 @@ const VoxelWorld = ({
         camera.position.set(0, 15, -15);
         
         // Detect Mac for performance optimizations (WebGL via Metal causes issues on Safari)
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 || 
-                      navigator.userAgent.toUpperCase().indexOf('MAC') >= 0;
+        // IMPORTANT: Exclude iOS devices - iPhones/iPads can report as "Macintosh" in desktop mode
+        const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const hasMultiTouch = navigator.maxTouchPoints > 1; // iPads have multi-touch
+        const isIOSDevice = isMobileDevice || (navigator.platform === 'MacIntel' && hasMultiTouch);
+        
+        // Only true Mac desktops - not iOS devices pretending to be Macs
+        const isMac = !isIOSDevice && (
+            navigator.platform.toUpperCase().indexOf('MAC') >= 0 || 
+            navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
+        );
         
         // Store Mac detection globally for other components to use
         window._isMacDevice = isMac;
+        window._isIOSDevice = isIOSDevice;
         
         // Log for debugging
-        console.log('🖥️ Platform:', navigator.platform, '| isMac:', isMac);
+        console.log('🖥️ Platform:', navigator.platform, '| isMac:', isMac, '| isIOS:', isIOSDevice);
         
         // Mac-specific renderer settings (PC/Android unchanged)
         // Fixes WebGL via Metal performance issues on Safari/macOS
@@ -1207,6 +1216,21 @@ const VoxelWorld = ({
         controls.maxPolarAngle = Math.PI / 2 - 0.1; 
         controls.enablePan = false; 
         controlsRef.current = controls;
+        
+        // Window resize handler (important for iOS URL bar showing/hiding)
+        const handleResize = () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        };
+        window.addEventListener('resize', handleResize);
+        // Also listen for orientation change on mobile
+        window.addEventListener('orientationchange', () => {
+            // Delay to let iOS finish orientation animation
+            setTimeout(handleResize, 100);
+        });
 
         // Lighting - Arctic daylight (cool, icy blue tones)
         // Removed hemisphere light that was causing ground glares
@@ -7299,6 +7323,8 @@ const VoxelWorld = ({
             cancelAnimationFrame(reqRef.current);
             window.removeEventListener('keydown', handleDown);
             window.removeEventListener('keyup', handleUp);
+            window.removeEventListener('resize', handleResize);
+            window.removeEventListener('orientationchange', handleResize);
             if(rendererRef.current && mountRef.current) {
                 mountRef.current.removeChild(rendererRef.current.domElement);
                 rendererRef.current.dispose();

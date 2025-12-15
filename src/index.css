@@ -14,6 +14,29 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Mobile fullscreen fixes (iOS + Android) */
+@media (hover: none) and (pointer: coarse) {
+  html, body, #root {
+    height: 100dvh; /* Dynamic viewport height - accounts for URL bar */
+    overscroll-behavior: none;
+  }
+}
+
+/* iOS Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+  @media (hover: none) and (pointer: coarse) {
+    html, body, #root {
+      height: -webkit-fill-available;
+    }
+    
+    body {
+      /* Prevent iOS bounce scroll and pull-to-refresh */
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+    }
+  }
+}
+
 /* Retro text styling */
 .retro-text {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
