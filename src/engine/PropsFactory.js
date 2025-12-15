@@ -566,10 +566,11 @@ class PropsFactory {
         
         // Point light for all lamps that are on - shadows only for castShadow: true
         // PointLights without shadows are much cheaper than with shadows
-        // Mac: Skip point lights entirely (emissive globe provides visual glow)
+        // Apple only: Skip point lights (emissive globe provides glow, Metal performance fix)
+        // PC/Android: Keep point lights for better lighting quality
         let light = null;
-        const isMac = typeof window !== 'undefined' && window._isMacDevice;
-        if (isOn && !isMac) {
+        const isApple = typeof window !== 'undefined' && window._isMacDevice;
+        if (isOn && !isApple) {
             // Non-shadow lamps: dimmer, shorter range (ambient fill)
             // Shadow lamps: brighter, longer range (key lights)
             const intensity = castShadow ? 3.0 : 1.8;
