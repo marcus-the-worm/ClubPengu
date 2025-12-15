@@ -1,6 +1,7 @@
 /**
  * ProfileMenu - Displays player profile when clicking on another player
  * Shows name, penguin preview, stats, and challenge button
+ * Responsive design for desktop, portrait mobile, and landscape mobile
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -18,26 +19,40 @@ const ProfileMenu = () => {
     } = useChallenge();
     
     const [showGameDropdown, setShowGameDropdown] = useState(false);
+    const [isLandscape, setIsLandscape] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
     const menuRef = useRef(null);
+    
+    // Detect orientation and mobile
+    useEffect(() => {
+        const checkLayout = () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            setIsLandscape(width > height);
+            setIsMobile(width < 768 || height < 500);
+        };
+        
+        checkLayout();
+        window.addEventListener('resize', checkLayout);
+        window.addEventListener('orientationchange', () => setTimeout(checkLayout, 100));
+        
+        return () => {
+            window.removeEventListener('resize', checkLayout);
+            window.removeEventListener('orientationchange', checkLayout);
+        };
+    }, []);
     
     // Close on click/touch outside (but not when wager modal is open)
     useEffect(() => {
         const handleClickOutside = (e) => {
-            // Don't close if wager modal is open
-            if (showWagerModal) {
-                return;
-            }
-            
+            if (showWagerModal) return;
             if (menuRef.current && !menuRef.current.contains(e.target)) {
                 clearSelectedPlayer();
             }
         };
         
         const handleEscape = (e) => {
-            // Don't close profile if wager modal is open (wager modal handles its own escape)
-            if (showWagerModal) {
-                return;
-            }
+            if (showWagerModal) return;
             if (e.key === 'Escape') {
                 clearSelectedPlayer();
             }
@@ -81,169 +96,264 @@ const ProfileMenu = () => {
         { id: 'card_jitsu', name: 'Card Jitsu', emoji: '⚔️', available: true },
         { id: 'tic_tac_toe', name: 'Tic Tac Toe', emoji: '⭕', available: true },
         { id: 'connect4', name: 'Connect 4', emoji: '🔴', available: true },
-        { id: 'pong', name: 'Pong', emoji: '🏓', available: false },
     ];
     
-    // Stop all event propagation to prevent 3D canvas interactions
     const handleMenuInteraction = (e) => {
         e.stopPropagation();
     };
     
-    // Handle touch events to allow scrolling inside menu but not outside
-    const handleTouchMove = (e) => {
-        // Allow scroll if the touch is inside scrollable content
-        e.stopPropagation();
-    };
+    // Landscape mobile layout - horizontal and compact
+    if (isLandscape && isMobile) {
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-2">
+                {/* Backdrop */}
+                <div 
+                    className="absolute inset-0 bg-black/40"
+                    onClick={clearSelectedPlayer}
+                />
+                
+                {/* Modal wrapper with outset close button */}
+                <div className="relative">
+                    {/* Close button - outset */}
+                    <button 
+                        onClick={clearSelectedPlayer}
+                        className="absolute -top-3 -right-3 z-10 w-8 h-8 bg-gray-800 hover:bg-gray-700 border border-white/20 rounded-full flex items-center justify-center text-white/70 hover:text-white text-sm shadow-lg transition-colors"
+                    >
+                        ✕
+                    </button>
+                    
+                    <div 
+                        ref={menuRef}
+                        data-no-camera="true"
+                        className="bg-gradient-to-br from-gray-900/95 to-gray-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl animate-fade-in max-h-[90vh] overflow-hidden"
+                        style={{ maxWidth: '95vw', width: 'auto' }}
+                        onClick={handleMenuInteraction}
+                    >
+                    
+                    <div className="flex gap-3 p-3">
+                        {/* Left: Avatar + Name */}
+                        <div className="flex flex-col items-center justify-center min-w-[80px]">
+                            <div 
+                                className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg"
+                                style={{ 
+                                    background: `linear-gradient(135deg, ${colorHex}, ${colorHex}88)`,
+                                    border: '2px solid rgba(255,255,255,0.2)'
+                                }}
+                            >
+                                🐧
+                            </div>
+                            <h3 className="text-white font-bold text-sm mt-1.5 text-center max-w-[80px] truncate">
+                                {selectedPlayer.name}
+                            </h3>
+                            {selectedPlayer.appearance?.hat && selectedPlayer.appearance.hat !== 'none' && (
+                                <p className="text-white/40 text-[9px] truncate max-w-[80px]">
+                                    {selectedPlayer.appearance.hat}
+                                </p>
+                            )}
+                        </div>
+                        
+                        {/* Middle: Stats (compact grid) */}
+                        <div className="bg-black/30 rounded-lg p-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] min-w-[140px]">
+                            <span className="text-white/50">⚔️ CJ</span>
+                            <span className="text-yellow-400 font-bold text-right">
+                                {stats?.cardJitsuWins ?? 0}W/{stats?.cardJitsuLosses ?? 0}L
+                            </span>
+                            <span className="text-white/50">⭕ TTT</span>
+                            <span className="text-cyan-400 font-bold text-right">
+                                {stats?.ticTacToeWins ?? 0}W/{stats?.ticTacToeLosses ?? 0}L
+                            </span>
+                            <span className="text-white/50">🔴 C4</span>
+                            <span className="text-red-400 font-bold text-right">
+                                {stats?.connect4Wins ?? 0}W/{stats?.connect4Losses ?? 0}L
+                            </span>
+                            <span className="text-white/50 border-t border-white/10 pt-1">💰 You</span>
+                            <span className="text-yellow-400 font-bold text-right border-t border-white/10 pt-1">
+                                {playerCoins}
+                            </span>
+                        </div>
+                        
+                        {/* Right: Challenge buttons */}
+                        <div className="flex flex-col gap-1.5 min-w-[100px]">
+                            {!showGameDropdown ? (
+                                <button
+                                    onClick={handleChallengeClick}
+                                    disabled={isInMatch}
+                                    className={`px-3 py-2 rounded-lg font-bold text-white text-xs flex items-center justify-center gap-1.5 transition-all ${
+                                        isInMatch 
+                                            ? 'bg-gray-600 cursor-not-allowed'
+                                            : 'bg-gradient-to-r from-red-500 to-orange-500 active:scale-95'
+                                    }`}
+                                >
+                                    <span>⚔️</span>
+                                    <span>Challenge</span>
+                                </button>
+                            ) : (
+                                <>
+                                    {availableGames.map(game => (
+                                        <button
+                                            key={game.id}
+                                            onClick={() => handleGameSelect(game.id)}
+                                            className="px-2 py-1.5 flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 rounded-lg text-white text-[11px] transition-colors"
+                                        >
+                                            <span>{game.emoji}</span>
+                                            <span className="flex-1 text-left">{game.name}</span>
+                                        </button>
+                                    ))}
+                                    <button
+                                        onClick={() => setShowGameDropdown(false)}
+                                        className="px-2 py-1 text-white/50 text-[10px] hover:text-white"
+                                    >
+                                        Cancel
+                                    </button>
+                                </>
+                            )}
+                            {isInMatch && (
+                                <p className="text-white/40 text-[9px] text-center">In match</p>
+                            )}
+                        </div>
+                    </div>
+                </div>{/* Close modal wrapper */}
+                </div>
+            </div>
+        );
+    }
     
+    // Portrait mobile & Desktop layout - vertical
     return (
-        <div 
-            className="fixed inset-0 z-50 pointer-events-none overflow-hidden"
-        >
-            {/* Scrollable container for mobile */}
+        <div className="fixed inset-0 z-50 pointer-events-none overflow-hidden">
+            {/* Backdrop for mobile */}
+            {isMobile && (
+                <div 
+                    className="absolute inset-0 bg-black/40 pointer-events-auto"
+                    onClick={clearSelectedPlayer}
+                />
+            )}
+            
             <div 
                 className="w-full h-full flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain"
                 style={{ WebkitOverflowScrolling: 'touch' }}
                 onMouseDown={handleMenuInteraction}
                 onClick={handleMenuInteraction}
             >
-                <div 
-                    ref={menuRef}
-                    data-no-camera="true"
-                    className="pointer-events-auto bg-gradient-to-br from-gray-900/95 to-gray-800/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-4 sm:p-5 w-full max-w-[300px] sm:max-w-[320px] animate-fade-in relative my-4 sm:my-auto flex-shrink-0"
-                    onMouseDown={handleMenuInteraction}
-                    onClick={handleMenuInteraction}
-                    onTouchMove={handleTouchMove}
-                >
-                {/* Close button */}
-                <button 
-                    onClick={clearSelectedPlayer}
-                    className="absolute top-2 right-2 sm:top-3 sm:right-3 text-white/50 hover:text-white active:text-white transition-colors w-8 h-8 flex items-center justify-center text-lg"
-                >
-                    ✕
-                </button>
-                
-                {/* Penguin Preview */}
-                <div className="flex justify-center mb-3 sm:mb-4">
-                    <div 
-                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center text-3xl sm:text-4xl shadow-lg"
-                        style={{ 
-                            background: `linear-gradient(135deg, ${colorHex}, ${colorHex}88)`,
-                            border: '3px solid rgba(255,255,255,0.2)'
-                        }}
+                {/* Modal wrapper with outset close button */}
+                <div className="relative my-4 sm:my-auto flex-shrink-0 pointer-events-auto">
+                    {/* Close button - outset */}
+                    <button 
+                        onClick={clearSelectedPlayer}
+                        className="absolute -top-3 -right-3 z-10 w-9 h-9 bg-gray-800 hover:bg-gray-700 border border-white/20 rounded-full flex items-center justify-center text-white/70 hover:text-white text-base shadow-lg transition-colors"
                     >
-                        🐧
-                    </div>
-                </div>
-                
-                {/* Player Name */}
-                <h3 className="text-center text-lg sm:text-xl font-bold text-white mb-1 truncate px-6">
-                    {selectedPlayer.name}
-                </h3>
-                
-                {/* Hat indicator */}
-                {selectedPlayer.appearance?.hat && selectedPlayer.appearance.hat !== 'none' && (
-                    <p className="text-center text-white/50 text-xs mb-2 sm:mb-3">
-                        Wearing: {selectedPlayer.appearance.hat}
-                    </p>
-                )}
-                
-                {/* Stats */}
-                <div className="bg-black/30 rounded-xl p-2.5 sm:p-3 mb-3 sm:mb-4 space-y-1.5">
-                    <div className="flex items-center justify-between text-xs sm:text-sm">
-                        <span className="text-white/60">⚔️ Card Jitsu</span>
-                        <span className="text-yellow-400 font-bold">
-                            {stats?.cardJitsuWins ?? 0}W / {stats?.cardJitsuLosses ?? 0}L
-                        </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs sm:text-sm">
-                        <span className="text-white/60">⭕ Tic Tac Toe</span>
-                        <span className="text-cyan-400 font-bold">
-                            {stats?.ticTacToeWins ?? 0}W / {stats?.ticTacToeLosses ?? 0}L
-                        </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs sm:text-sm">
-                        <span className="text-white/60">🔴 Connect 4</span>
-                        <span className="text-red-400 font-bold">
-                            {stats?.connect4Wins ?? 0}W / {stats?.connect4Losses ?? 0}L
-                        </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs sm:text-sm pt-1.5 border-t border-white/10">
-                        <span className="text-white/60">📊 Total</span>
-                        <span className="text-green-400 font-bold">
-                            {(stats?.cardJitsuWins ?? 0) + (stats?.ticTacToeWins ?? 0) + (stats?.connect4Wins ?? 0)}W
-                        </span>
-                    </div>
-                </div>
-                
-                {/* Challenge Button */}
-                <div className="relative">
-                    <button
-                        onClick={handleChallengeClick}
-                        disabled={isInMatch}
-                        className={`w-full py-2.5 sm:py-3 rounded-xl font-bold text-white text-sm sm:text-base flex items-center justify-center gap-2 transition-all ${
-                            isInMatch 
-                                ? 'bg-gray-600 cursor-not-allowed'
-                                : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-400 hover:to-orange-400 active:from-red-600 active:to-orange-600 active:scale-95'
-                        }`}
-                    >
-                        <span>⚔️</span>
-                        <span>Challenge</span>
-                        <span className={`transition-transform ${showGameDropdown ? 'rotate-180' : ''}`}>▼</span>
+                        ✕
                     </button>
                     
-                    {/* Game Selection - Inline list for better mobile support */}
-                    {showGameDropdown && (
+                    <div 
+                        ref={menuRef}
+                        data-no-camera="true"
+                        className="bg-gradient-to-br from-gray-900/95 to-gray-800/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-4 sm:p-5 w-[280px] sm:w-[320px] animate-fade-in"
+                        onMouseDown={handleMenuInteraction}
+                        onClick={handleMenuInteraction}
+                    >
+                    
+                    {/* Penguin Preview */}
+                    <div className="flex justify-center mb-3">
                         <div 
-                            className="mt-2 bg-gray-800 rounded-xl border border-white/10 shadow-xl animate-fade-in"
-                            style={{ WebkitOverflowScrolling: 'touch' }}
+                            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-2xl sm:text-3xl shadow-lg"
+                            style={{ 
+                                background: `linear-gradient(135deg, ${colorHex}, ${colorHex}88)`,
+                                border: '3px solid rgba(255,255,255,0.2)'
+                            }}
                         >
-                            <div className="p-1">
-                                <p className="text-white/50 text-[10px] sm:text-xs px-3 py-1.5 border-b border-white/10">
-                                    Select a game:
-                                </p>
-                                {availableGames.map(game => (
-                                    <button
-                                        key={game.id}
-                                        onClick={() => game.available && handleGameSelect(game.id)}
-                                        disabled={!game.available}
-                                        className={`w-full px-3 sm:px-4 py-3 sm:py-3.5 flex items-center gap-2 sm:gap-3 transition-colors rounded-lg my-0.5 ${
-                                            game.available 
-                                                ? 'hover:bg-white/10 active:bg-white/20 text-white'
-                                                : 'text-white/30 cursor-not-allowed bg-black/20'
-                                        }`}
-                                    >
-                                        <span className="text-xl sm:text-2xl">{game.emoji}</span>
-                                        <span className="flex-1 text-left text-sm sm:text-base font-medium">{game.name}</span>
-                                        {game.available ? (
-                                            <span className="text-green-400 text-sm">▶</span>
-                                        ) : (
-                                            <span className="text-[10px] sm:text-xs bg-gray-700 px-2 py-0.5 rounded text-white/40">Soon</span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
+                            🐧
                         </div>
-                    )}
-                </div>
-                
-                {isInMatch && (
-                    <p className="text-center text-white/50 text-[10px] sm:text-xs mt-2">
-                        You're currently in a match
-                    </p>
-                )}
-                
-                {/* Your coins indicator */}
-                <div className="mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t border-white/10">
-                    <div className="flex items-center justify-between text-xs sm:text-sm">
-                        <span className="text-white/50">Your Balance</span>
-                        <span className="text-yellow-400 font-bold">💰 {playerCoins}</span>
                     </div>
-                </div>
+                    
+                    {/* Player Name */}
+                    <h3 className="text-center text-base sm:text-lg font-bold text-white mb-1 truncate px-6">
+                        {selectedPlayer.name}
+                    </h3>
+                    
+                    {/* Hat indicator */}
+                    {selectedPlayer.appearance?.hat && selectedPlayer.appearance.hat !== 'none' && (
+                        <p className="text-center text-white/50 text-[10px] sm:text-xs mb-2">
+                            Wearing: {selectedPlayer.appearance.hat}
+                        </p>
+                    )}
+                    
+                    {/* Stats - Compact */}
+                    <div className="bg-black/30 rounded-xl p-2 sm:p-2.5 mb-3 space-y-1">
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs">
+                            <span className="text-white/60">⚔️ Card Jitsu</span>
+                            <span className="text-yellow-400 font-bold">
+                                {stats?.cardJitsuWins ?? 0}W / {stats?.cardJitsuLosses ?? 0}L
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs">
+                            <span className="text-white/60">⭕ Tic Tac Toe</span>
+                            <span className="text-cyan-400 font-bold">
+                                {stats?.ticTacToeWins ?? 0}W / {stats?.ticTacToeLosses ?? 0}L
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs">
+                            <span className="text-white/60">🔴 Connect 4</span>
+                            <span className="text-red-400 font-bold">
+                                {stats?.connect4Wins ?? 0}W / {stats?.connect4Losses ?? 0}L
+                            </span>
+                        </div>
+                    </div>
+                    
+                    {/* Challenge Button */}
+                    <div className="relative">
+                        <button
+                            onClick={handleChallengeClick}
+                            disabled={isInMatch}
+                            className={`w-full py-2 sm:py-2.5 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-all ${
+                                isInMatch 
+                                    ? 'bg-gray-600 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-400 hover:to-orange-400 active:from-red-600 active:to-orange-600 active:scale-95'
+                            }`}
+                        >
+                            <span>⚔️</span>
+                            <span>Challenge</span>
+                            <span className={`transition-transform ${showGameDropdown ? 'rotate-180' : ''}`}>▼</span>
+                        </button>
+                        
+                        {/* Game Selection */}
+                        {showGameDropdown && (
+                            <div className="mt-2 bg-gray-800 rounded-xl border border-white/10 shadow-xl animate-fade-in">
+                                <div className="p-1">
+                                    {availableGames.map(game => (
+                                        <button
+                                            key={game.id}
+                                            onClick={() => handleGameSelect(game.id)}
+                                            className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 active:bg-white/20 text-white rounded-lg my-0.5 transition-colors"
+                                        >
+                                            <span className="text-lg">{game.emoji}</span>
+                                            <span className="flex-1 text-left text-sm font-medium">{game.name}</span>
+                                            <span className="text-green-400 text-sm">▶</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    
+                    {isInMatch && (
+                        <p className="text-center text-white/50 text-[10px] mt-2">
+                            You're currently in a match
+                        </p>
+                    )}
+                    
+                    {/* Your coins indicator */}
+                    <div className="mt-2.5 pt-2 border-t border-white/10">
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs">
+                            <span className="text-white/50">Your Balance</span>
+                            <span className="text-yellow-400 font-bold">💰 {playerCoins}</span>
+                        </div>
+                    </div>
+                    </div>
+                </div>{/* Close modal wrapper */}
             </div>
-            </div>{/* Close scrollable container */}
         </div>
     );
 };
 
 export default ProfileMenu;
-

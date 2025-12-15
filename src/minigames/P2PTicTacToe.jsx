@@ -1,6 +1,7 @@
 /**
  * P2PTicTacToe - Player vs Player Tic Tac Toe match
  * Real-time synchronized game with wagering
+ * Mobile-optimized with landscape support
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -10,13 +11,32 @@ const P2PTicTacToe = ({ onMatchEnd }) => {
     const {
         activeMatch,
         matchState,
-        playCard, // Reusing this for making moves
+        playCard,
         forfeitMatch,
         clearMatch,
     } = useChallenge();
     
     const [selectedCell, setSelectedCell] = useState(null);
     const [animatingCell, setAnimatingCell] = useState(null);
+    const [isLandscape, setIsLandscape] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+    
+    // Detect orientation
+    useEffect(() => {
+        const checkLayout = () => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            setIsLandscape(w > h);
+            setIsMobile(w < 768 || h < 500);
+        };
+        checkLayout();
+        window.addEventListener('resize', checkLayout);
+        window.addEventListener('orientationchange', () => setTimeout(checkLayout, 100));
+        return () => {
+            window.removeEventListener('resize', checkLayout);
+            window.removeEventListener('orientationchange', checkLayout);
+        };
+    }, []);
     
     // Handle cell click
     const handleCellClick = useCallback((index) => {
@@ -28,7 +48,7 @@ const P2PTicTacToe = ({ onMatchEnd }) => {
         setAnimatingCell(index);
         
         setTimeout(() => {
-            playCard(index); // Reusing playCard for moves
+            playCard(index);
             setAnimatingCell(null);
             setSelectedCell(null);
         }, 150);
@@ -56,28 +76,33 @@ const P2PTicTacToe = ({ onMatchEnd }) => {
     const didWin = matchState.winner === mySymbol;
     const totalPot = activeMatch.wagerAmount * 2;
     
+    const landscapeMobile = isLandscape && isMobile;
+    
+    // Cell sizes based on layout
+    const cellSize = landscapeMobile ? 'w-14 h-14' : 'w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28';
+    const textSize = landscapeMobile ? 'text-3xl' : 'text-4xl sm:text-5xl md:text-6xl';
+    
     // Render a cell
     const renderCell = (index) => {
         const value = matchState.board[index];
         const isWinningCell = matchState.winningLine?.includes(index);
         const isClickable = matchState.isMyTurn && value === null && matchState.phase === 'playing';
         
-        // Handle touch/click
-        const handleInteraction = (e) => {
-            e.preventDefault();
-            handleCellClick(index);
-        };
-        
         return (
             <button
                 key={index}
-                onClick={handleInteraction}
-                onTouchEnd={handleInteraction}
+                onClick={() => handleCellClick(index)}
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleCellClick(index);
+                }}
                 disabled={!isClickable}
                 className={`
-                    aspect-square w-full
+                    aspect-square ${cellSize}
                     flex items-center justify-center
-                    text-4xl sm:text-5xl md:text-6xl font-bold
+                    ${textSize} font-bold
                     transition-all duration-200
                     select-none touch-manipulation
                     ${isWinningCell ? 'bg-green-500/30 scale-105' : 'bg-white/5'}
@@ -88,81 +113,119 @@ const P2PTicTacToe = ({ onMatchEnd }) => {
                 `}
             >
                 {value || (isClickable && matchState.isMyTurn ? (
-                    <span className="text-white/10 text-2xl sm:text-3xl">{mySymbol}</span>
+                    <span className="text-white/10 text-xl">{mySymbol}</span>
                 ) : '')}
             </button>
         );
     };
     
-    return (
-        <div className="fixed inset-0 z-40 overflow-hidden touch-none">
-            {/* Background */}
-            <div 
-                className="absolute inset-0"
-                style={{
-                    background: 'linear-gradient(180deg, #0a1628 0%, #1a2a4a 50%, #0d1a30 100%)'
-                }}
-            >
-                {/* Grid pattern overlay */}
-                <div 
-                    className="absolute inset-0 opacity-5"
-                    style={{
-                        backgroundImage: `
-                            linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-                        `,
-                        backgroundSize: '40px 40px'
-                    }}
-                />
-            </div>
-            
-            {/* Header Bar */}
-            <div className="absolute top-0 left-0 right-0 safe-area-top">
-                <div className="flex items-center justify-between p-2 sm:p-4 gap-2">
-                    {/* Forfeit */}
+    // Landscape mobile layout
+    if (landscapeMobile) {
+        return (
+            <div className="fixed inset-0 z-40 overflow-hidden"
+                style={{ background: 'linear-gradient(180deg, #0a1628 0%, #1a2a4a 50%, #0d1a30 100%)' }}>
+                
+                {/* Compact Header */}
+                <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-2 py-1 gap-2 z-20">
                     <button 
                         onClick={handleForfeit}
-                        className="bg-red-600 hover:bg-red-500 active:bg-red-700 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg retro-text text-[10px] sm:text-xs shrink-0"
+                        className="bg-red-600 active:bg-red-700 text-white px-2 py-1 rounded text-[10px] font-bold"
                     >
                         FORFEIT
                     </button>
-                    
-                    {/* Wager */}
-                    <div className="bg-black/60 rounded-lg px-2 py-1 sm:px-3 sm:py-1.5">
-                        <span className="text-yellow-400 retro-text text-[10px] sm:text-xs">
-                            💰 {totalPot}
-                        </span>
+                    <span className="text-yellow-400 text-[10px] font-bold">💰 {totalPot}</span>
+                    <h1 className="text-white text-xs font-bold">TIC TAC TOE</h1>
+                    <span className={`text-[10px] font-bold ${matchState.turnTimeRemaining <= 10 ? 'text-red-400' : 'text-white'}`}>
+                        ⏱ {matchState.turnTimeRemaining}s
+                    </span>
+                </div>
+                
+                {/* Main layout: opponent | board | you */}
+                <div className="h-full flex items-center justify-center gap-3 px-2 pt-8 pb-2">
+                    {/* Opponent */}
+                    <div className={`flex flex-col items-center p-2 rounded-lg ${!matchState.isMyTurn ? 'bg-pink-500/20 border border-pink-500/50' : 'bg-black/40'}`}>
+                        <span className="text-2xl font-bold text-pink-400">{opponentSymbol}</span>
+                        <span className="text-white text-[10px] truncate max-w-[60px]">{opponent.name}</span>
+                        {!matchState.isMyTurn && matchState.phase === 'playing' && (
+                            <span className="text-pink-400 text-[8px]">Thinking...</span>
+                        )}
                     </div>
                     
-                    {/* Title */}
-                    <div className="text-center flex-1 min-w-0">
-                        <h1 className="retro-text text-sm sm:text-xl text-white truncate" style={{textShadow: '2px 2px 0 #000'}}>
-                            TIC TAC TOE
-                        </h1>
+                    {/* Board */}
+                    <div className="bg-black/40 p-2 rounded-xl">
+                        <div className="grid grid-cols-3 gap-1.5">
+                            {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(index => renderCell(index))}
+                        </div>
                     </div>
                     
-                    {/* Timer */}
-                    <div className="bg-black/60 rounded-lg px-2 py-1 sm:px-3 sm:py-1.5 shrink-0">
-                        <span className={`retro-text text-[10px] sm:text-xs ${matchState.turnTimeRemaining <= 10 ? 'text-red-400 animate-pulse' : 'text-white'}`}>
-                            ⏱ {matchState.turnTimeRemaining}s
-                        </span>
+                    {/* You */}
+                    <div className={`flex flex-col items-center p-2 rounded-lg ${matchState.isMyTurn ? 'bg-cyan-500/20 border border-cyan-500/50' : 'bg-black/40'}`}>
+                        <span className="text-2xl font-bold text-cyan-400">{mySymbol}</span>
+                        <span className="text-white text-[10px] truncate max-w-[60px]">{myPlayer.name}</span>
+                        {matchState.isMyTurn && matchState.phase === 'playing' && (
+                            <span className="text-cyan-400 text-[8px]">Your turn!</span>
+                        )}
                     </div>
+                </div>
+                
+                {/* Complete overlay */}
+                {isComplete && (
+                    <div className="absolute inset-0 bg-black/90 flex items-center justify-center z-50 p-2">
+                        <div className="bg-gray-800 rounded-xl p-4 text-center max-w-xs w-full border border-white/10">
+                            <div className="text-4xl mb-2">{isDraw ? '🤝' : didWin ? '🏆' : '😢'}</div>
+                            <h2 className="text-lg font-bold text-white mb-1">
+                                {isDraw ? 'DRAW!' : didWin ? 'VICTORY!' : 'DEFEAT'}
+                            </h2>
+                            <div className={`${isDraw ? 'text-gray-400' : didWin ? 'text-green-400' : 'text-red-400'} text-xl font-bold mb-3`}>
+                                {isDraw ? 'REFUNDED' : didWin ? `+${totalPot}` : `-${activeMatch.wagerAmount}`} 💰
+                            </div>
+                            <button 
+                                onClick={() => { clearMatch(); onMatchEnd?.(); }}
+                                className="w-full bg-cyan-500 active:bg-cyan-600 text-white py-2 rounded-lg font-bold text-sm"
+                            >
+                                CONTINUE
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+    
+    // Portrait/Desktop layout
+    return (
+        <div className="fixed inset-0 z-40 overflow-hidden">
+            {/* Background */}
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #0a1628 0%, #1a2a4a 50%, #0d1a30 100%)' }}>
+                <div className="absolute inset-0 opacity-5" style={{
+                    backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
+                    backgroundSize: '40px 40px'
+                }} />
+            </div>
+            
+            {/* Header */}
+            <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-2 sm:p-4 gap-2">
+                <button onClick={handleForfeit} className="bg-red-600 active:bg-red-700 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-[10px] sm:text-xs font-bold">
+                    FORFEIT
+                </button>
+                <div className="bg-black/60 rounded-lg px-2 py-1 sm:px-3 sm:py-1.5">
+                    <span className="text-yellow-400 text-[10px] sm:text-xs font-bold">💰 {totalPot}</span>
+                </div>
+                <h1 className="text-white text-sm sm:text-xl font-bold flex-1 text-center">TIC TAC TOE</h1>
+                <div className="bg-black/60 rounded-lg px-2 py-1 sm:px-3 sm:py-1.5">
+                    <span className={`text-[10px] sm:text-xs font-bold ${matchState.turnTimeRemaining <= 10 ? 'text-red-400 animate-pulse' : 'text-white'}`}>
+                        ⏱ {matchState.turnTimeRemaining}s
+                    </span>
                 </div>
             </div>
             
-            {/* Player Info - Opponent (Top) */}
+            {/* Opponent Info */}
             <div className="absolute top-14 sm:top-20 left-1/2 -translate-x-1/2 z-10">
-                <div className={`
-                    bg-black/60 rounded-xl px-4 py-2 sm:px-6 sm:py-3 text-center
-                    border-2 transition-all duration-300
-                    ${!matchState.isMyTurn && matchState.phase === 'playing' ? 'border-pink-500 shadow-lg shadow-pink-500/30' : 'border-transparent'}
-                `}>
+                <div className={`bg-black/60 rounded-xl px-4 py-2 sm:px-6 sm:py-3 border-2 transition-all ${!matchState.isMyTurn && matchState.phase === 'playing' ? 'border-pink-500 shadow-lg shadow-pink-500/30' : 'border-transparent'}`}>
                     <div className="flex items-center gap-2 sm:gap-3">
                         <span className="text-2xl sm:text-3xl font-bold text-pink-400">{opponentSymbol}</span>
                         <div className="text-left">
-                            <span className="text-white font-bold text-xs sm:text-sm block truncate max-w-[100px] sm:max-w-[150px]">
-                                {opponent.name}
-                            </span>
+                            <span className="text-white font-bold text-xs sm:text-sm block truncate max-w-[100px] sm:max-w-[150px]">{opponent.name}</span>
                             <span className="text-white/50 text-[10px] sm:text-xs">
                                 {!matchState.isMyTurn && matchState.phase === 'playing' ? 'Thinking...' : 'Opponent'}
                             </span>
@@ -171,44 +234,29 @@ const P2PTicTacToe = ({ onMatchEnd }) => {
                 </div>
             </div>
             
-            {/* Game Board */}
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
-                <div className="grid grid-cols-3 gap-2 sm:gap-3 p-4 sm:p-6 bg-black/40 backdrop-blur-sm rounded-2xl border border-white/10">
+            {/* Board */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 p-4 sm:p-6 bg-black/40 rounded-2xl border border-white/10">
                     {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(index => (
-                        <div key={index} className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28">
-                            {renderCell(index)}
-                        </div>
+                        <div key={index} className={cellSize}>{renderCell(index)}</div>
                     ))}
                 </div>
-                
-                {/* Turn Indicator */}
                 {matchState.phase === 'playing' && (
                     <div className="text-center mt-4">
-                        <span className={`
-                            inline-block px-4 py-2 rounded-full text-sm sm:text-base font-medium
-                            ${matchState.isMyTurn 
-                                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' 
-                                : 'bg-white/10 text-white/60'}
-                        `}>
+                        <span className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${matchState.isMyTurn ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-white/10 text-white/60'}`}>
                             {matchState.isMyTurn ? `Your turn (${mySymbol})` : `${opponent.name}'s turn`}
                         </span>
                     </div>
                 )}
             </div>
             
-            {/* Player Info - You (Bottom) */}
-            <div className="absolute bottom-8 sm:bottom-12 left-1/2 -translate-x-1/2 z-10 safe-area-bottom">
-                <div className={`
-                    bg-black/60 rounded-xl px-4 py-2 sm:px-6 sm:py-3 text-center
-                    border-2 transition-all duration-300
-                    ${matchState.isMyTurn && matchState.phase === 'playing' ? 'border-cyan-500 shadow-lg shadow-cyan-500/30' : 'border-transparent'}
-                `}>
+            {/* Your Info */}
+            <div className="absolute bottom-8 sm:bottom-12 left-1/2 -translate-x-1/2 z-10">
+                <div className={`bg-black/60 rounded-xl px-4 py-2 sm:px-6 sm:py-3 border-2 transition-all ${matchState.isMyTurn && matchState.phase === 'playing' ? 'border-cyan-500 shadow-lg shadow-cyan-500/30' : 'border-transparent'}`}>
                     <div className="flex items-center gap-2 sm:gap-3">
                         <span className="text-2xl sm:text-3xl font-bold text-cyan-400">{mySymbol}</span>
                         <div className="text-left">
-                            <span className="text-white font-bold text-xs sm:text-sm block truncate max-w-[100px] sm:max-w-[150px]">
-                                {myPlayer.name}
-                            </span>
+                            <span className="text-white font-bold text-xs sm:text-sm block truncate max-w-[100px] sm:max-w-[150px]">{myPlayer.name}</span>
                             <span className="text-white/50 text-[10px] sm:text-xs">
                                 {matchState.isMyTurn && matchState.phase === 'playing' ? 'Your turn!' : 'You'}
                             </span>
@@ -217,50 +265,25 @@ const P2PTicTacToe = ({ onMatchEnd }) => {
                 </div>
             </div>
             
-            {/* Rules Panel - Desktop only */}
-            <div className="absolute bottom-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg p-3 text-xs text-white/80 hidden lg:block border border-white/10 max-w-[160px]">
-                <div className="font-bold text-yellow-400 mb-2 retro-text text-[10px]">RULES</div>
-                <div className="space-y-0.5 text-[10px]">
-                    <p>• Get 3 in a row to win</p>
-                    <p>• Horizontal, vertical, or diagonal</p>
-                    <p>• X always goes first</p>
-                </div>
-            </div>
-            
-            {/* Match Complete Overlay */}
+            {/* Complete overlay */}
             {isComplete && (
-                <div className="absolute inset-0 bg-black/85 flex items-center justify-center z-50 animate-fade-in p-4">
-                    <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 sm:p-8 text-center max-w-sm w-full mx-4 border border-white/10 shadow-2xl">
-                        <div className="text-5xl sm:text-6xl mb-4">
-                            {isDraw ? '🤝' : didWin ? '🏆' : '😢'}
-                        </div>
-                        <h2 className="retro-text text-xl sm:text-3xl text-white mb-2">
+                <div className="absolute inset-0 bg-black/85 flex items-center justify-center z-50 p-4">
+                    <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 sm:p-8 text-center max-w-sm w-full border border-white/10 shadow-2xl">
+                        <div className="text-5xl sm:text-6xl mb-4">{isDraw ? '🤝' : didWin ? '🏆' : '😢'}</div>
+                        <h2 className="text-xl sm:text-3xl font-bold text-white mb-2">
                             {isDraw ? 'DRAW!' : didWin ? 'VICTORY!' : 'DEFEAT'}
                         </h2>
-                        <p className="text-white/60 text-sm sm:text-base mb-4">
-                            {isDraw 
-                                ? 'No one wins this round!' 
-                                : didWin 
-                                    ? `You defeated ${opponent.name}!` 
-                                    : `${opponent.name} wins...`}
+                        <p className="text-white/60 text-sm mb-4">
+                            {isDraw ? 'No one wins this round!' : didWin ? `You defeated ${opponent.name}!` : `${opponent.name} wins...`}
                         </p>
-                        <div className={`
-                            ${isDraw ? 'bg-gray-500/20 border-gray-500/30' : didWin ? 'bg-green-500/20 border-green-500/30' : 'bg-red-500/20 border-red-500/30'} 
-                            rounded-xl p-4 mb-6 border
-                        `}>
-                            <p className={`${isDraw ? 'text-gray-400' : didWin ? 'text-green-400' : 'text-red-400'} text-xl sm:text-2xl retro-text`}>
+                        <div className={`${isDraw ? 'bg-gray-500/20' : didWin ? 'bg-green-500/20' : 'bg-red-500/20'} rounded-xl p-4 mb-6 border ${isDraw ? 'border-gray-500/30' : didWin ? 'border-green-500/30' : 'border-red-500/30'}`}>
+                            <p className={`${isDraw ? 'text-gray-400' : didWin ? 'text-green-400' : 'text-red-400'} text-xl sm:text-2xl font-bold`}>
                                 {isDraw ? 'REFUNDED' : didWin ? `+${totalPot}` : `-${activeMatch.wagerAmount}`} 💰
-                            </p>
-                            <p className="text-white/50 text-xs mt-1">
-                                {isDraw ? 'Wagers returned' : didWin ? 'Coins Won' : 'Coins Lost'}
                             </p>
                         </div>
                         <button 
-                            onClick={() => {
-                                clearMatch();
-                                onMatchEnd && onMatchEnd();
-                            }}
-                            className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 active:from-cyan-600 active:to-blue-600 text-white px-8 py-3 rounded-xl retro-text text-sm sm:text-base shadow-lg transition-all"
+                            onClick={() => { clearMatch(); onMatchEnd?.(); }}
+                            className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 active:from-cyan-600 active:to-blue-600 text-white px-8 py-3 rounded-xl font-bold text-sm sm:text-base shadow-lg"
                         >
                             CONTINUE
                         </button>
@@ -272,4 +295,3 @@ const P2PTicTacToe = ({ onMatchEnd }) => {
 };
 
 export default P2PTicTacToe;
-

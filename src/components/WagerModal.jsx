@@ -1,6 +1,6 @@
 /**
  * WagerModal - Modal for setting wager amount when challenging
- * Mobile-friendly with proper touch handling
+ * Mobile-friendly with proper touch handling and landscape support
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -19,24 +19,43 @@ const WagerModal = () => {
     const [wagerAmount, setWagerAmount] = useState('');
     const [error, setError] = useState('');
     const [playerCoins, setPlayerCoins] = useState(0);
+    const [isLandscape, setIsLandscape] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
     const inputRef = useRef(null);
     const modalRef = useRef(null);
+    
+    // Detect orientation and mobile
+    useEffect(() => {
+        const checkLayout = () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            setIsLandscape(width > height);
+            setIsMobile(width < 768 || height < 500);
+        };
+        
+        checkLayout();
+        window.addEventListener('resize', checkLayout);
+        window.addEventListener('orientationchange', () => setTimeout(checkLayout, 100));
+        
+        return () => {
+            window.removeEventListener('resize', checkLayout);
+            window.removeEventListener('orientationchange', checkLayout);
+        };
+    }, []);
     
     // Refresh coin balance from localStorage/GameManager whenever modal opens
     useEffect(() => {
         if (showWagerModal) {
-            // Always get fresh balance when modal opens
             const currentCoins = GameManager.getInstance().getCoins();
             setPlayerCoins(currentCoins);
             setWagerAmount('');
             setError('');
             // Only auto-focus on desktop
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             if (!isMobile && inputRef.current) {
                 inputRef.current.focus();
             }
         }
-    }, [showWagerModal]);
+    }, [showWagerModal, isMobile]);
     
     // Also listen for coin changes while modal is open
     useEffect(() => {
@@ -70,6 +89,13 @@ const WagerModal = () => {
         'tic_tac_toe': 'Tic Tac Toe'
     };
     
+    const gameEmojis = {
+        'card_jitsu': '⚔️',
+        'connect4': '🔴',
+        'pong': '🏓',
+        'tic_tac_toe': '⭕'
+    };
+    
     const handleWagerChange = (e) => {
         const value = e.target.value.replace(/[^0-9]/g, '');
         setWagerAmount(value);
@@ -97,152 +123,266 @@ const WagerModal = () => {
     
     const quickAmounts = [10, 50, 100, 250];
     
-    // Handle quick amount selection
     const handleQuickAmount = (amount) => {
         setWagerAmount(String(Math.min(amount, playerCoins)));
         setError('');
     };
     
-    // Stop propagation to prevent closing when clicking inside modal
     const handleModalInteraction = (e) => {
         e.stopPropagation();
     };
     
-    // Only close when clicking backdrop (not modal content)
     const handleBackdropClick = (e) => {
         if (e.target === e.currentTarget) {
             closeWagerModal();
         }
     };
     
+    // Landscape mobile layout
+    if (isLandscape && isMobile) {
+        return (
+            <div 
+                className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2"
+                onClick={handleBackdropClick}
+            >
+                {/* Modal wrapper with outset close button */}
+                <div className="relative">
+                    {/* Close button - outset */}
+                    <button 
+                        onClick={closeWagerModal}
+                        className="absolute -top-3 -right-3 z-10 w-8 h-8 bg-gray-800 hover:bg-gray-700 border border-white/20 rounded-full flex items-center justify-center text-white/70 hover:text-white text-sm shadow-lg transition-colors"
+                    >
+                        ✕
+                    </button>
+                    
+                    <div 
+                        ref={modalRef}
+                        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-white/10 shadow-2xl overflow-hidden max-h-[85vh]"
+                        style={{ maxWidth: '90vw', width: '480px' }}
+                        onClick={handleModalInteraction}
+                        data-no-camera="true"
+                    >
+                        <form onSubmit={handleSubmit} className="flex">
+                            {/* Left side - Player info */}
+                            <div className="bg-black/30 p-3 flex flex-col items-center justify-center min-w-[100px] border-r border-white/10">
+                                <div className="w-12 h-12 rounded-full bg-cyan-500/20 flex items-center justify-center text-xl mb-1.5">
+                                    🐧
+                                </div>
+                                <p className="text-white font-medium text-xs text-center truncate max-w-[90px]">
+                                    {selectedPlayer.name}
+                                </p>
+                                <p className="text-white/50 text-[10px] flex items-center gap-1">
+                                    {gameEmojis[wagerGameType]} {gameNames[wagerGameType]}
+                                </p>
+                                <div className="mt-2 pt-2 border-t border-white/10 w-full text-center">
+                                    <p className="text-[9px] text-white/40">Your Balance</p>
+                                    <p className="text-yellow-400 font-bold text-xs">💰 {playerCoins}</p>
+                                </div>
+                            </div>
+                            
+                            {/* Right side - Wager controls */}
+                            <div className="p-3 flex-1">
+                                {/* Input */}
+                                <div className="mb-2">
+                                    <div className="relative">
+                                        <input
+                                            ref={inputRef}
+                                            type="number"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            value={wagerAmount}
+                                            onChange={handleWagerChange}
+                                            placeholder="0"
+                                            className="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-white text-lg font-bold placeholder-white/30 focus:outline-none focus:border-cyan-500/50"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 text-[10px]">
+                                            coins
+                                        </span>
+                                    </div>
+                                    {error && <p className="text-red-400 text-[10px] mt-1">{error}</p>}
+                                </div>
+                                
+                                {/* Quick amounts row */}
+                                <div className="flex gap-1 mb-2">
+                                    {quickAmounts.map(amount => (
+                                        <button
+                                            key={amount}
+                                            type="button"
+                                            onClick={() => handleQuickAmount(amount)}
+                                            disabled={amount > playerCoins}
+                                            className={`flex-1 py-1.5 rounded text-[11px] font-medium transition-colors active:scale-95 ${
+                                                amount > playerCoins
+                                                    ? 'bg-gray-700 text-white/30'
+                                                    : 'bg-white/10 text-white active:bg-white/20'
+                                            }`}
+                                        >
+                                            {amount}
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleQuickAmount(playerCoins)}
+                                        className="flex-1 py-1.5 rounded text-[11px] font-medium bg-yellow-500/20 text-yellow-400 active:bg-yellow-500/30"
+                                    >
+                                        ALL
+                                    </button>
+                                </div>
+                                
+                                {/* Action buttons */}
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={closeWagerModal}
+                                        className="flex-1 py-2 rounded-lg font-bold text-white text-xs bg-gray-600 active:bg-gray-500 active:scale-95"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="flex-1 py-2 rounded-lg font-bold text-white text-xs bg-gradient-to-r from-green-500 to-emerald-600 active:scale-95"
+                                    >
+                                        Send ⚔️
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    
+    // Portrait mobile & Desktop layout
     return (
         <div 
             className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm animate-fade-in overflow-hidden"
             onClick={handleBackdropClick}
         >
-            {/* Scrollable container for mobile */}
             <div 
                 className="w-full h-full flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain"
                 style={{ WebkitOverflowScrolling: 'touch' }}
                 onClick={handleBackdropClick}
             >
-                <div 
-                    ref={modalRef}
-                    className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl border border-white/10 shadow-2xl p-4 sm:p-6 w-full max-w-[340px] my-4 sm:my-auto flex-shrink-0"
-                    onClick={handleModalInteraction}
-                    onMouseDown={handleModalInteraction}
-                    data-no-camera="true"
-                >
-                {/* Header */}
-                <div className="flex items-center justify-between mb-3 sm:mb-4">
-                    <h3 className="text-base sm:text-lg font-bold text-white">
-                        ⚔️ Challenge
-                    </h3>
+                {/* Modal wrapper with outset close button */}
+                <div className="relative my-4 sm:my-auto flex-shrink-0">
+                    {/* Close button - outset */}
                     <button 
                         onClick={closeWagerModal}
-                        className="text-white/50 hover:text-white active:text-white transition-colors text-lg sm:text-xl w-8 h-8 flex items-center justify-center"
+                        className="absolute -top-3 -right-3 z-10 w-9 h-9 bg-gray-800 hover:bg-gray-700 border border-white/20 rounded-full flex items-center justify-center text-white/70 hover:text-white text-base shadow-lg transition-colors"
                     >
                         ✕
                     </button>
-                </div>
-                
-                {/* Challenge Info */}
-                <div className="bg-black/30 rounded-xl p-2.5 sm:p-3 mb-3 sm:mb-4">
-                    <div className="flex items-center gap-2.5 sm:gap-3">
-                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-lg sm:text-xl">
-                            🐧
-                        </div>
-                        <div className="min-w-0 flex-1">
-                            <p className="text-white font-medium text-sm sm:text-base truncate">{selectedPlayer.name}</p>
-                            <p className="text-white/50 text-xs sm:text-sm">{gameNames[wagerGameType] || wagerGameType}</p>
-                        </div>
-                    </div>
-                </div>
-                
-                {/* Balance */}
-                <div className="flex items-center justify-between mb-3 sm:mb-4 px-1">
-                    <span className="text-white/60 text-xs sm:text-sm">Your Balance</span>
-                    <span className="text-yellow-400 font-bold text-sm sm:text-base">💰 {playerCoins}</span>
-                </div>
-                
-                {/* Wager Input */}
-                <form onSubmit={handleSubmit}>
-                    <div className="mb-3">
-                        <label className="block text-white/70 text-xs sm:text-sm mb-1.5 sm:mb-2">
-                            Wager Amount
-                        </label>
-                        <div className="relative">
-                            <input
-                                ref={inputRef}
-                                type="number"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                value={wagerAmount}
-                                onChange={handleWagerChange}
-                                placeholder="0"
-                                className="w-full bg-black/40 border border-white/20 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-white text-base sm:text-lg font-bold placeholder-white/30 focus:outline-none focus:border-cyan-500/50 transition-colors"
-                            />
-                            <span className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-white/50 text-xs sm:text-sm">
-                                coins
-                            </span>
-                        </div>
-                        {error && (
-                            <p className="text-red-400 text-xs sm:text-sm mt-1.5 sm:mt-2">{error}</p>
-                        )}
-                    </div>
                     
-                    {/* Quick amounts */}
-                    <div className="flex gap-1.5 sm:gap-2 mb-3 sm:mb-4">
-                        {quickAmounts.map(amount => (
-                            <button
-                                key={amount}
-                                type="button"
-                                onClick={() => handleQuickAmount(amount)}
-                                disabled={amount > playerCoins}
-                                className={`flex-1 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-colors active:scale-95 ${
-                                    amount > playerCoins
-                                        ? 'bg-gray-700 text-white/30 cursor-not-allowed'
-                                        : 'bg-white/10 text-white hover:bg-white/20 active:bg-white/30'
-                                }`}
-                            >
-                                {amount}
-                            </button>
-                        ))}
-                    </div>
-                    
-                    {/* All-in button */}
-                    <button
-                        type="button"
-                        onClick={() => handleQuickAmount(playerCoins)}
-                        className="w-full py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 active:bg-yellow-500/40 transition-colors mb-3 sm:mb-4 active:scale-[0.98]"
+                    <div 
+                        ref={modalRef}
+                        className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl border border-white/10 shadow-2xl p-4 sm:p-5 w-[300px] sm:w-[340px]"
+                        onClick={handleModalInteraction}
+                        onMouseDown={handleModalInteraction}
+                        data-no-camera="true"
                     >
-                        ALL IN ({playerCoins} coins)
-                    </button>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 sm:gap-3">
-                        <button
-                            type="button"
-                            onClick={closeWagerModal}
-                            className="flex-1 py-2.5 sm:py-3 rounded-xl font-bold text-white text-sm sm:text-base bg-gray-600 hover:bg-gray-500 active:bg-gray-400 transition-colors active:scale-95"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            className="flex-1 py-2.5 sm:py-3 rounded-xl font-bold text-white text-sm sm:text-base bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 active:from-green-600 active:to-emerald-700 transition-all active:scale-95"
-                        >
-                            Send Challenge
-                        </button>
+                        {/* Header */}
+                        <h3 className="text-base sm:text-lg font-bold text-white mb-3">
+                            ⚔️ Challenge
+                        </h3>
+                        
+                        {/* Challenge Info */}
+                        <div className="bg-black/30 rounded-xl p-2.5 mb-3">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-full bg-cyan-500/20 flex items-center justify-center text-lg">
+                                    🐧
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-white font-medium text-sm truncate">{selectedPlayer.name}</p>
+                                    <p className="text-white/50 text-xs">{gameEmojis[wagerGameType]} {gameNames[wagerGameType]}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Balance */}
+                        <div className="flex items-center justify-between mb-3 px-1">
+                            <span className="text-white/60 text-xs">Your Balance</span>
+                            <span className="text-yellow-400 font-bold text-sm">💰 {playerCoins}</span>
+                        </div>
+                        
+                        {/* Wager Input */}
+                        <form onSubmit={handleSubmit}>
+                            <div className="mb-3">
+                                <label className="block text-white/70 text-xs mb-1.5">
+                                    Wager Amount
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        ref={inputRef}
+                                        type="number"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        value={wagerAmount}
+                                        onChange={handleWagerChange}
+                                        placeholder="0"
+                                        className="w-full bg-black/40 border border-white/20 rounded-xl px-3 py-2.5 text-white text-lg font-bold placeholder-white/30 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 text-xs">
+                                        coins
+                                    </span>
+                                </div>
+                                {error && (
+                                    <p className="text-red-400 text-xs mt-1.5">{error}</p>
+                                )}
+                            </div>
+                            
+                            {/* Quick amounts */}
+                            <div className="flex gap-1.5 mb-2">
+                                {quickAmounts.map(amount => (
+                                    <button
+                                        key={amount}
+                                        type="button"
+                                        onClick={() => handleQuickAmount(amount)}
+                                        disabled={amount > playerCoins}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors active:scale-95 ${
+                                            amount > playerCoins
+                                                ? 'bg-gray-700 text-white/30 cursor-not-allowed'
+                                                : 'bg-white/10 text-white hover:bg-white/20 active:bg-white/30'
+                                        }`}
+                                    >
+                                        {amount}
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            {/* All-in button */}
+                            <button
+                                type="button"
+                                onClick={() => handleQuickAmount(playerCoins)}
+                                className="w-full py-2 rounded-lg text-xs font-medium bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 active:bg-yellow-500/40 transition-colors mb-3 active:scale-[0.98]"
+                            >
+                                ALL IN ({playerCoins} coins)
+                            </button>
+                            
+                            {/* Action Buttons */}
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={closeWagerModal}
+                                    className="flex-1 py-2.5 rounded-xl font-bold text-white text-sm bg-gray-600 hover:bg-gray-500 active:bg-gray-400 transition-colors active:scale-95"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 active:scale-95"
+                                >
+                                    Send Challenge
+                                </button>
+                            </div>
+                        </form>
+                        
+                        {/* Info */}
+                        <p className="text-white/40 text-[10px] text-center mt-3">
+                            Winner takes all • 5 min to respond
+                        </p>
                     </div>
-                </form>
-                
-                {/* Info */}
-                <p className="text-white/40 text-[10px] sm:text-xs text-center mt-3 sm:mt-4">
-                    Winner takes all • 5 min to respond
-                </p>
+                </div>
             </div>
-            </div>{/* Close scrollable container */}
         </div>
     );
 };
