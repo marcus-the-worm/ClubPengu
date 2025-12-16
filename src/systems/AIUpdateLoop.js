@@ -146,7 +146,8 @@ export function updateAIAgents(params) {
         ai.mesh.position.set(ai.pos.x, aiY, ai.pos.z);
         if (ai.action !== 'chatting') ai.mesh.rotation.y = ai.rot;
 
-        animateMesh(ai.mesh, aiMoving, ai.emoteType, ai.emoteStart);
+        // Pass all params including time for proper walk animation
+        animateMesh(ai.mesh, aiMoving, ai.emoteType, ai.emoteStart, false, 'penguin', false, false, time);
 
         // --- AI COSMETIC ANIMATIONS ---
         updateAICosmetics(ai, { time, delta, cacheAnimatedParts, animateCosmeticsFromCache });
