@@ -98,7 +98,16 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
             skin: 'silver',  // Set feathers to soft grey/cream
             name: '🐐 Mistor Goat Set'
         },
-        'PENGU': { id: 'penguShirt', category: 'bodyItem', name: '🐧 $PENGU Shirt' }
+        'PENGU': { id: 'penguShirt', category: 'bodyItem', name: '🐧 $PENGU Shirt' },
+        'BONK': { 
+            items: [
+                { id: 'bonkExclamation', category: 'hat' },
+                { id: 'bonkEyes', category: 'eyes' },
+                { id: 'bonkShirt', category: 'bodyItem' }
+            ],
+            skin: 'orange',  // Shiba orange color
+            name: '🐕 BONK Set'
+        }
     };
     
     // Check if a cosmetic is unlocked (or doesn't require unlock)
@@ -552,6 +561,27 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                 addPart(eyeVoxels, 'eyes');
                 addPart(mouthVoxels, 'mouth');
                 addPart(bodyItemVoxels, 'accessory');
+                
+                // Handle flipper attachments (like baseball bat)
+                if (bodyItemData?.flipperAttachment) {
+                    const attach = bodyItemData.flipperAttachment;
+                    const flipperName = attach.flipper === 'left' ? 'flipper_l' : 'flipper_r';
+                    const targetFlipper = group.getObjectByName(flipperName);
+                    
+                    if (targetFlipper && attach.voxels && attach.voxels.length > 0) {
+                        const heldItemGroup = buildVoxelPart(attach.voxels, PALETTE, attach.offset || {x:0, y:0, z:0});
+                        heldItemGroup.name = 'held_item';
+                        targetFlipper.add(heldItemGroup);
+                        
+                        if (mirrorGroup) {
+                            const mirrorFlipper = mirrorGroup.getObjectByName(flipperName);
+                            if (mirrorFlipper) {
+                                const mirrorItem = heldItemGroup.clone();
+                                mirrorFlipper.add(mirrorItem);
+                            }
+                        }
+                    }
+                }
                 
                 // Handle text decal body items (e.g., lobotomy shirt)
                 if (bodyItemData?.textDecal) {
@@ -1054,6 +1084,4 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
 }
 
 export default VoxelPenguinDesigner;
-
-
 

@@ -34,6 +34,15 @@ export const EYES = {
          {x:-2, y:8, z:4, c:'black'}, {x:2, y:8, z:4, c:'black'},
          {x:-1.5, y:7.5, z:4.2, c:'white'}, {x:2.5, y:7.5, z:4.2, c:'white'}
     ],
+    // PROMO: BONK Shiba eyes - squinted/closed look
+    bonkEyes: [
+         // Squinted left eye (horizontal line)
+         {x:-3, y:7, z:4, c:'black'}, {x:-2, y:7, z:4, c:'black'}, {x:-1, y:7, z:4, c:'black'},
+         {x:-3, y:7.5, z:4.1, c:'black'}, {x:-2, y:7.5, z:4.1, c:'black'}, {x:-1, y:7.5, z:4.1, c:'black'},
+         // Squinted right eye (horizontal line)  
+         {x:1, y:7, z:4, c:'black'}, {x:2, y:7, z:4, c:'black'}, {x:3, y:7, z:4, c:'black'},
+         {x:1, y:7.5, z:4.1, c:'black'}, {x:2, y:7.5, z:4.1, c:'black'}, {x:3, y:7.5, z:4.1, c:'black'}
+    ],
     cyclops: [
          {x:0, y:7, z:4.5, c:'black'}, {x:-1, y:7, z:4.5, c:'white'}, {x:1, y:7, z:4.5, c:'white'},
          {x:0, y:8, z:4.5, c:'white'}, {x:0, y:6, z:4.5, c:'white'}

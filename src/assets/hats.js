@@ -465,6 +465,36 @@ export const HATS = {
         return v;
     })(),
     
+    // PROMO: BONK "!!!" - Three simple exclamation marks (shaft + dot)
+    bonkExclamation: (() => {
+        const v = [];
+        const red = '#E53935';
+        
+        // Simple exclamation: straight line + dot bottom
+        const addExclamation = (x, baseY) => {
+            // Straight line (the shaft)
+            for (let y = baseY; y < baseY + 5; y++) {
+                v.push({x, y, z: 0, c: red, glow: true});
+                v.push({x: x+1, y, z: 0, c: red, glow: true});
+                v.push({x, y, z: 1, c: red, glow: true});
+                v.push({x: x+1, y, z: 1, c: red, glow: true});
+            }
+            
+            // Dot at bottom
+            v.push({x, y: baseY - 2, z: 0, c: red, glow: true});
+            v.push({x: x+1, y: baseY - 2, z: 0, c: red, glow: true});
+            v.push({x, y: baseY - 2, z: 1, c: red, glow: true});
+            v.push({x: x+1, y: baseY - 2, z: 1, c: red, glow: true});
+        };
+        
+        // Three exclamation marks - left, center (higher), right
+        addExclamation(-4, 14);  // Left
+        addExclamation(-1, 15);  // Center (slightly higher)
+        addExclamation(2, 14);   // Right
+        
+        return v;
+    })(),
+    
     // PROMO: Mistor Goat White Hair
     mistorHair: (() => {
         const v = [];

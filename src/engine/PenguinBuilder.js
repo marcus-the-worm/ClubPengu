@@ -686,6 +686,30 @@ export function createPenguinBuilder(THREE) {
         head.name = 'head';
         body.name = 'body';
         
+        // Handle body item flipper modifications
+        const bodyItemInfo = data.bodyItem ? ASSETS.BODY[data.bodyItem] : null;
+        
+        // Attach held items to flippers (like baseball bat)
+        if (bodyItemInfo?.flipperAttachment) {
+            const attach = bodyItemInfo.flipperAttachment;
+            const targetFlipper = attach.flipper === 'left' ? flippersLeft : flippersRight;
+            const flipperPivot = attach.flipper === 'left' ? {x:5, y:0, z:0} : {x:-5, y:0, z:0};
+            
+            if (attach.voxels && attach.voxels.length > 0) {
+                // Apply offset to voxels (offset is in world space, convert to flipper local space)
+                const offsetVoxels = attach.voxels.map(v => ({
+                    ...v,
+                    x: v.x + (attach.offset?.x || 0) - flipperPivot.x,
+                    y: v.y + (attach.offset?.y || 0) - flipperPivot.y,
+                    z: v.z + (attach.offset?.z || 0) - flipperPivot.z
+                }));
+                
+                const heldItem = buildPartMerged(offsetVoxels, PALETTE);
+                heldItem.name = 'held_item';
+                targetFlipper.add(heldItem);
+            }
+        }
+        
         group.add(body, head, flippersLeft, flippersRight, footL, footR);
         
         // Add cosmetics

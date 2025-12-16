@@ -697,6 +697,66 @@ export const BODY = {
         voxels: [] 
     },
     
+    // PROMO: BONK shirt - unlocked with BONK promo code
+    bonkShirt: (() => {
+        // Baseball bat voxels - attached to right flipper, pointing forward
+        const batVoxels = [];
+        const batWood = '#C19A6B';
+        const batWoodDark = '#8B6914';
+        const batHandle = '#5D4037';
+        const batGrip = '#2A2A2A';
+        
+        // Bat pointing forward (positive Z) from hand position
+        // The bat is built starting at origin and extending forward
+        
+        // Handle grip (near hand)
+        for (let z = 0; z < 3; z++) {
+            batVoxels.push({x: 0, y: 0, z, c: batGrip});
+        }
+        
+        // Handle wrapped section
+        for (let z = 3; z < 6; z++) {
+            batVoxels.push({x: 0, y: 0, z, c: batHandle});
+        }
+        
+        // Taper to barrel
+        for (let z = 6; z < 9; z++) {
+            batVoxels.push({x: 0, y: 0, z, c: batWood});
+        }
+        
+        // Barrel (thicker) - 2x2 cross section
+        for (let z = 9; z < 16; z++) {
+            batVoxels.push({x: 0, y: 0, z, c: batWood});
+            batVoxels.push({x: 1, y: 0, z, c: batWoodDark});
+            batVoxels.push({x: 0, y: 1, z, c: batWood});
+            batVoxels.push({x: 1, y: 1, z, c: batWoodDark});
+        }
+        
+        // End cap
+        batVoxels.push({x: 0, y: 0, z: 16, c: batWoodDark});
+        batVoxels.push({x: 1, y: 0, z: 16, c: batWood});
+        batVoxels.push({x: 0, y: 1, z: 16, c: batWood});
+        batVoxels.push({x: 1, y: 1, z: 16, c: batWoodDark});
+        
+        return {
+            textDecal: {
+                text: '$BONK',
+                color: '#FF3B3B',
+                font: 'bold 80px Arial Black, Arial, sans-serif',
+                y: 0.8,
+                z: 5.51,
+                scale: 1.54
+            },
+            voxels: [],  // No body voxels
+            // Bat attaches to right flipper
+            flipperAttachment: {
+                flipper: 'right',
+                voxels: batVoxels,
+                offset: { x: -7, y: -4, z: 0 }  // At flipper hand (tip), pointing forward
+            }
+        };
+    })(),
+    
     // PROMO: $PENGU shirt - unlocked with PENGU promo code
     penguShirt: { 
         textDecal: {
