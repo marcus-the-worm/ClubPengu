@@ -3017,6 +3017,44 @@ const VoxelWorld = ({
                         }
                     }
                 }
+                
+                // Handle chat bubbles for other players
+                if (playerData.chatMessage && playerData.chatTime) {
+                    const bubbleAge = Date.now() - playerData.chatTime;
+                    const isAfkBubble = playerData.isAfkBubble;
+                    
+                    // Show bubble if within time limit (5 seconds) or AFK bubble
+                    if (bubbleAge < 5000 || isAfkBubble) {
+                        // Create or update bubble
+                        const needsNewBubble = !meshData.bubble || meshData.lastChatMessage !== playerData.chatMessage;
+                        
+                        if (needsNewBubble) {
+                            // Remove old bubble first
+                            if (meshData.bubble) {
+                                meshData.mesh.remove(meshData.bubble);
+                            }
+                            const bubbleHeight = playerData.appearance?.characterType === 'marcus' ? BUBBLE_HEIGHT_MARCUS : BUBBLE_HEIGHT_PENGUIN;
+                            meshData.bubble = createChatSprite(THREE, playerData.chatMessage, bubbleHeight);
+                            meshData.mesh.add(meshData.bubble);
+                            meshData.lastChatMessage = playerData.chatMessage;
+                        }
+                    } else {
+                        // Remove expired bubble
+                        if (meshData.bubble) {
+                            meshData.mesh.remove(meshData.bubble);
+                            meshData.bubble = null;
+                            meshData.lastChatMessage = null;
+                        }
+                        // Clear the chat data
+                        playerData.chatMessage = null;
+                        playerData.chatTime = null;
+                    }
+                } else if (meshData.bubble) {
+                    // No chat message but bubble exists - remove it
+                    meshData.mesh.remove(meshData.bubble);
+                    meshData.bubble = null;
+                    meshData.lastChatMessage = null;
+                }
             }
             
             // Dynamic name tag scaling for LOCAL player
@@ -3492,9 +3530,11 @@ const VoxelWorld = ({
     // Listen for our own chat messages to show local bubble
     const lastChatIdRef = useRef(null);
     useEffect(() => {
-        if (!chatMessages || chatMessages.length === 0 || !playerId) return;
+        // Guard: need chatMessages array with content and valid playerId
+        if (!chatMessages?.length || !playerId) return;
         
         const latestMsg = chatMessages[chatMessages.length - 1];
+        if (!latestMsg) return;
         
         // Only process if it's a new message from us
         if (latestMsg.id === lastChatIdRef.current) return;
