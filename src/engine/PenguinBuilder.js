@@ -628,6 +628,10 @@ export function createPenguinBuilder(THREE) {
         group.userData.isJoeMode = true;
         group.add(whiteFlippersLeft, whiteFlippersRight, footL, footR);
         
+        // Apply overall scale (same as other character types)
+        group.scale.set(0.2, 0.2, 0.2);
+        group.position.y = 0.8;
+        
         return group;
     };
     
