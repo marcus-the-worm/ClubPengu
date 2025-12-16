@@ -101,8 +101,8 @@ function Navigation() {
   const navItems = [
     { label: "About", href: "#about" },
     { label: "Features", href: "#features" },
-    { label: "Customize", href: "#customization" },
-    { label: "Economy", href: "#economy" },
+    { label: "Whale Status", href: "#whale-status" },
+    { label: "Casino", href: "#casino" },
     { label: "Wagering", href: "#wagering" },
     { label: "Roadmap", href: "#roadmap" },
   ];
@@ -785,6 +785,291 @@ function EconomySection() {
   );
 }
 
+// Whale Status Section - Tiered Nametags
+function WhaleStatusSection() {
+  const tiers = [
+    { 
+      name: "Standard", 
+      balance: "0 - 999", 
+      color: "text-slate-400",
+      bgColor: "bg-slate-500/10",
+      borderColor: "border-slate-500/30",
+      effects: "Basic white nametag",
+      glow: false
+    },
+    { 
+      name: "Bronze", 
+      balance: "1K - 9.9K", 
+      color: "text-amber-600",
+      bgColor: "bg-amber-600/10",
+      borderColor: "border-amber-600/30",
+      effects: "Bronze shimmer effect",
+      glow: false
+    },
+    { 
+      name: "Silver", 
+      balance: "10K - 99.9K", 
+      color: "text-slate-300",
+      bgColor: "bg-slate-300/10",
+      borderColor: "border-slate-300/30",
+      effects: "Silver glow + sparkles",
+      glow: true
+    },
+    { 
+      name: "Gold", 
+      balance: "100K - 999K", 
+      color: "text-yellow-400",
+      bgColor: "bg-yellow-400/10",
+      borderColor: "border-yellow-400/30",
+      effects: "Gold aura + particle trail",
+      glow: true
+    },
+    { 
+      name: "Diamond", 
+      balance: "1M - 9.9M", 
+      color: "text-cyan-300",
+      bgColor: "bg-cyan-300/10",
+      borderColor: "border-cyan-300/30",
+      effects: "Diamond prism + rainbow shimmer",
+      glow: true
+    },
+    { 
+      name: "Legendary", 
+      balance: "10M+", 
+      color: "text-purple-400",
+      bgColor: "bg-gradient-to-r from-purple-500/20 to-pink-500/20",
+      borderColor: "border-purple-500/50",
+      effects: "Animated legendary crown + fire aura",
+      glow: true
+    },
+  ];
+
+  return (
+    <section id="whale-status" className="py-32 px-6 relative overflow-hidden">
+      <div className="section-divider mb-32" />
+      
+      {/* Background decoration */}
+      <div className="absolute inset-0">
+        <div className="absolute top-1/4 left-0 w-[500px] h-[500px] bg-yellow-500/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-0 w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-3xl" />
+      </div>
+      
+      <div className="max-w-6xl mx-auto relative">
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-16"
+        >
+          <span className="text-yellow-400 text-sm font-semibold uppercase tracking-widest">Status System</span>
+          <h2 className="text-4xl md:text-5xl font-bold mt-4 mb-6">
+            Whale <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-purple-400 to-cyan-400">Status</span>
+          </h2>
+          <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+            Your $CPw3 balance determines your visual status in-game. 
+            <span className="text-yellow-400 font-semibold"> Bigger bags = bigger clout.</span>
+          </p>
+        </motion.div>
+
+        {/* Live Nametag Preview */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          className="mb-16"
+        >
+          <div className="glass-card rounded-2xl p-8 max-w-md mx-auto text-center border border-yellow-500/20">
+            <p className="text-sm text-slate-500 mb-4">Live Nametag Preview</p>
+            <div className="relative inline-block">
+              <motion.div
+                animate={{ 
+                  boxShadow: [
+                    "0 0 20px rgba(168, 85, 247, 0.4)",
+                    "0 0 40px rgba(236, 72, 153, 0.4)",
+                    "0 0 20px rgba(168, 85, 247, 0.4)"
+                  ]
+                }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-500/30 via-pink-500/30 to-purple-500/30 border border-purple-500/50"
+              >
+                <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400">
+                  👑 DiamondFlipper
+                </span>
+              </motion.div>
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                className="absolute -top-2 -right-2 text-xl"
+              >
+                ✨
+              </motion.div>
+            </div>
+            <p className="text-xs text-purple-400 mt-3">Legendary Tier • 15.2M $CPw3</p>
+          </div>
+        </motion.div>
+
+        {/* Tiers Grid */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {tiers.map((tier, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.1 }}
+              className={`glass-card rounded-xl p-5 ${tier.borderColor} ${tier.glow ? 'relative overflow-hidden' : ''}`}
+            >
+              {tier.glow && (
+                <div className={`absolute inset-0 ${tier.bgColor} opacity-30`} />
+              )}
+              <div className="relative">
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`text-lg font-bold ${tier.color}`}>{tier.name}</span>
+                  <span className="text-xs text-slate-500 font-mono">{tier.balance} $CPw3</span>
+                </div>
+                <p className="text-sm text-slate-400">{tier.effects}</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Social Proof */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mt-12 text-center"
+        >
+          <p className="text-slate-500 text-sm mb-4">Everyone will know who the whales are 🐳</p>
+          <div className="flex justify-center gap-2 flex-wrap">
+            {["💎 Diamond holders get special emotes", "👑 Legendary tier = automatic clout", "🔥 Balance checked live via RPC"].map((perk, i) => (
+              <span key={i} className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-slate-400 text-xs">
+                {perk}
+              </span>
+            ))}
+          </div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+// Casino Section
+function CasinoSection() {
+  const rarities = [
+    { name: "Common", chance: "55%", color: "text-slate-400", items: "Basic hats, simple colors" },
+    { name: "Uncommon", chance: "25%", color: "text-green-400", items: "Patterns, unique eyes" },
+    { name: "Rare", chance: "12%", color: "text-blue-400", items: "Animated trails, special outfits" },
+    { name: "Epic", chance: "6%", color: "text-purple-400", items: "Glowing effects, rare mounts" },
+    { name: "Legendary", chance: "2%", color: "text-yellow-400", items: "Ultra-rare, tradeable for big $$$" },
+  ];
+
+  return (
+    <section id="casino" className="py-32 px-6 relative overflow-hidden">
+      <div className="section-divider mb-32" />
+      
+      {/* Slot machine background effect */}
+      <div className="absolute inset-0">
+        <div className="absolute top-0 left-1/4 w-[400px] h-[400px] bg-pink-500/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-yellow-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
+      </div>
+      
+      <div className="max-w-6xl mx-auto relative">
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-16"
+        >
+          <span className="text-pink-400 text-sm font-semibold uppercase tracking-widest">Casino</span>
+          <h2 className="text-4xl md:text-5xl font-bold mt-4 mb-6">
+            🎰 <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-yellow-400 to-pink-400">Slots & Gacha</span>
+          </h2>
+          <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+            Spin slots with <span className="text-yellow-400 font-semibold">$CPw3</span> to win exclusive cosmetics. 
+            Every item is tradeable on the open market.
+          </p>
+        </motion.div>
+
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
+          {/* Slot Machine Visual */}
+          <motion.div
+            initial={{ opacity: 0, x: -40 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            className="relative"
+          >
+            <div className="glass-card rounded-2xl p-8 border-2 border-pink-500/30 bg-gradient-to-br from-pink-500/5 to-yellow-500/5">
+              {/* Slot Display */}
+              <div className="bg-black/50 rounded-xl p-6 mb-6 border border-white/10">
+                <div className="flex justify-center gap-4 mb-4">
+                  {["🎩", "👑", "🎩"].map((emoji, i) => (
+                    <motion.div
+                      key={i}
+                      animate={{ y: [0, -5, 0] }}
+                      transition={{ duration: 0.5, delay: i * 0.1, repeat: Infinity, repeatDelay: 2 }}
+                      className="w-20 h-20 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg flex items-center justify-center text-4xl border border-white/10"
+                    >
+                      {emoji}
+                    </motion.div>
+                  ))}
+                </div>
+                <p className="text-center text-yellow-400 font-bold text-sm">🎉 YOU WON: Rare Crown!</p>
+              </div>
+              
+              {/* Spin Button */}
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full py-4 bg-gradient-to-r from-pink-500 to-yellow-500 rounded-xl font-bold text-lg text-white shadow-lg shadow-pink-500/20"
+              >
+                🎰 SPIN (100 $CPw3)
+              </motion.button>
+              
+              <p className="text-center text-slate-500 text-xs mt-4">Provably fair • All drops tradeable</p>
+            </div>
+          </motion.div>
+
+          {/* Drop Rates */}
+          <motion.div
+            initial={{ opacity: 0, x: 40 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+          >
+            <h3 className="text-2xl font-bold mb-6">Drop Rates</h3>
+            <div className="space-y-3">
+              {rarities.map((rarity, i) => (
+                <div key={i} className="glass-card rounded-xl p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className={`font-bold ${rarity.color}`}>{rarity.name}</span>
+                    <span className="text-slate-500 text-sm">•</span>
+                    <span className="text-slate-400 text-sm">{rarity.items}</span>
+                  </div>
+                  <span className={`font-mono font-bold ${rarity.color}`}>{rarity.chance}</span>
+                </div>
+              ))}
+            </div>
+            
+            {/* Trading callout */}
+            <div className="mt-6 p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">💰</span>
+                <div>
+                  <h4 className="font-bold text-green-400 mb-1">Trade Your Wins</h4>
+                  <p className="text-sm text-slate-400">
+                    Hit a legendary? Sell it on the open market. 
+                    Supply &amp; demand determines the price.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // Wagering Section
 function WageringSection() {
   const games = [
@@ -895,43 +1180,43 @@ function RoadmapSection() {
         "✅ Puffle Companion System",
         "✅ Card Jitsu Minigame",
         "✅ AI NPCs & Social Features",
-        "🔄 Playable Demo Release",
+        "🔄 MongoDB Database Migration",
       ],
     },
     {
       phase: "Phase 2",
-      title: "Expansion",
+      title: "Web3 Auth",
       status: "upcoming",
       items: [
-        "New Locations (Beach, Ski Village, Plaza)",
-        "Additional Minigames (Pong, Connect 4, Tic Tac Toe)",
-        "Property Rental System",
-        "Igloo Customization",
-        "$CPw3 Token Integration",
+        "x403 Phantom Wallet Auth",
+        "Anti-Bot Protection",
+        "Whale Status Nametags",
+        "Friend System",
+        "Match History & Stats",
       ],
     },
     {
       phase: "Phase 3",
-      title: "Wagering",
+      title: "Economy",
       status: "planned",
       items: [
-        "P2P Wagering System",
-        "Multi-Token Support",
-        "x403 Integration",
-        "x402 Integration",
+        "🎰 Casino & Slot Machines",
+        "Tradeable Cosmetics",
+        "P2P Wagering (Any SPL Token)",
+        "Audit Logging & Security",
         "Leaderboards & Rankings",
       ],
     },
     {
       phase: "Phase 4",
-      title: "Economy",
+      title: "Properties",
       status: "planned",
       items: [
-        "Gacha System Launch",
-        "Tradeable Cosmetics Marketplace",
+        "🏠 Igloo Ownership (NFT)",
+        "Igloo Rentals System",
+        "Marketplace Trading",
         "Property Paywalls",
-        "Advanced Social Features",
-        "Mobile Companion App",
+        "Cross-Cult Events",
       ],
     },
   ];
@@ -1173,6 +1458,8 @@ export default function WhitepaperPage() {
       <AboutSection />
       <FeaturesSection />
       <CustomizationSection />
+      <WhaleStatusSection />
+      <CasinoSection />
       <EconomySection />
       <WageringSection />
       <RoadmapSection />
