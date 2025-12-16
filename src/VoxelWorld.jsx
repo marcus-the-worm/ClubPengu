@@ -2798,7 +2798,7 @@ const VoxelWorld = ({
                 // Consider mount only if it's visible
                 const otherPlayerMounted = !!(meshData.mesh.userData?.mount && meshData.mesh.userData?.mountData && meshData.mesh.userData?.mountVisible !== false);
                 const otherIsAirborne = (playerData.position?.y ?? 0) > 0.1;
-                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false, playerData.appearance?.characterType || 'penguin', otherPlayerMounted, otherIsAirborne);
+                animateMesh(meshData.mesh, isMoving, meshData.currentEmote, meshData.emoteStartTime, playerData.seatedOnFurniture || false, playerData.appearance?.characterType || 'penguin', otherPlayerMounted, otherIsAirborne, time);
                 
                 // Animate cosmetics for other players with animated items
                 if (meshData.hasAnimatedCosmetics) {

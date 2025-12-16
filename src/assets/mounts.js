@@ -132,7 +132,7 @@ export const MOUNTS = {
             const bodyBlack = '#1a1a1a';
             const bellyWhite = '#FFFFFF';
             const beakOrange = '#FF8C00';
-            const eyeGrey = '#888888';
+            const eyeWhite = '#FFFFFF';
             const eyeBlack = '#000000';
             const feetOrange = '#FF6600';
             
@@ -176,17 +176,9 @@ export const MOUNTS = {
                 }
             }
             
-            // Eyes (on head, facing forward +Z) - grey, centered on face
-            // Left eye
-            addVoxel(-2, 1, 10, eyeGrey);
-            addVoxel(-2, 1, 11, eyeGrey);
-            addVoxel(-2, 0, 10, eyeGrey);
-            addVoxel(-2, 0, 11, eyeGrey);
-            // Right eye  
-            addVoxel(2, 1, 10, eyeGrey);
-            addVoxel(2, 1, 11, eyeGrey);
-            addVoxel(2, 0, 10, eyeGrey);
-            addVoxel(2, 0, 11, eyeGrey);
+            // Eyes (on head, facing forward +Z) - white, 1x1 each
+            addVoxel(-2, 1, 10, eyeWhite); // Left eye
+            addVoxel(2, 1, 10, eyeWhite);  // Right eye
             
             // Beak (pointing forward/outward from face at +Z)
             // Beak base on face
