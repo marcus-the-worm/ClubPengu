@@ -57,3 +57,6 @@ export { default as WizardTrailSystem } from './WizardTrailSystem';
 // Mount trail system (icy trails, etc.)
 export { default as MountTrailSystem, TRAIL_TYPES } from './MountTrailSystem';
 
+// Localized particle effects (nametag gold rain, sparkles, etc.)
+export { default as LocalizedParticleSystem, PRESETS as LOCALIZED_PARTICLE_PRESETS } from './LocalizedParticleSystem';
+

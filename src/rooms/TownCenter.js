@@ -972,7 +972,7 @@ class TownCenter {
                 case 'gravel_path':
                     // Create blue gravel ice texture for walking path
                     mesh = this._createGravelPath(prop.width, prop.depth);
-                    mesh.position.y = 0.15; // Elevated well above ice ground to avoid z-fighting
+                    mesh.position.y = 0.02; // Slightly above ground - low enough to blend, high enough to avoid z-fighting
                     mesh.name = 'gravel_path';
                     break;
                     
@@ -1296,14 +1296,15 @@ class TownCenter {
         texture.repeat.set(width / 15, depth / 15); // Tile the texture
         
         // Create material with the gravel texture
+        // Enhanced polygon offset to fix z-fighting when camera looks straight down
         const material = new THREE.MeshStandardMaterial({
             map: texture,
             roughness: 0.9,
             metalness: 0.1,
             depthWrite: true,
             polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -1,
+            polygonOffsetFactor: -2,
+            polygonOffsetUnits: -2,
         });
         
         // Create flat plane for the path

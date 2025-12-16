@@ -37,7 +37,7 @@ import {
     IGLOO_BANNER_STYLES,
     IGLOO_BANNER_CONTENT
 } from './config';
-import { createChatSprite, updateAIAgents, updateMatchBanners, createIglooOccupancySprite, updateIglooOccupancySprite, animateMesh, updateDayNightCycle, calculateNightFactor, SnowfallSystem, WizardTrailSystem, MountTrailSystem, lerp, lerpRotation, calculateLerpFactor } from './systems';
+import { createChatSprite, updateAIAgents, updateMatchBanners, createIglooOccupancySprite, updateIglooOccupancySprite, animateMesh, updateDayNightCycle, calculateNightFactor, SnowfallSystem, WizardTrailSystem, MountTrailSystem, LocalizedParticleSystem, lerp, lerpRotation, calculateLerpFactor } from './systems';
 import { createDojo, createGiftShop, createPizzaParlor, generateDojoInterior, generatePizzaInterior } from './buildings';
 
 const VoxelWorld = ({ 
@@ -57,6 +57,8 @@ const VoxelWorld = ({
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
     const playerRef = useRef(null);
+    const playerNameSpriteRef = useRef(null); // Player's own name tag
+    const playerGoldRainRef = useRef(null); // Gold rain particle system for Day 1 nametag
     const cameraRef = useRef(null);
     const rendererRef = useRef(null);
     const controlsRef = useRef(null);
@@ -121,6 +123,7 @@ const VoxelWorld = ({
         window.addEventListener('mountToggled', handleMountToggle);
         return () => window.removeEventListener('mountToggled', handleMountToggle);
     }, []);
+    
     
     // Multiplayer - OPTIMIZED: use refs for positions, state only for player list changes
     const {
@@ -2967,6 +2970,98 @@ const VoxelWorld = ({
                     wizardTrailSystemRef.current.getOrCreatePool(poolKey);
                     wizardTrailSystemRef.current.update(poolKey, meshData.mesh.position, isMoving, time, delta);
                 }
+                
+                // Dynamic name tag scaling based on camera distance
+                // Scale smaller when closer, max size when far (no scaling up beyond default)
+                if (meshData.nameSprite && camera) {
+                    const distToCamera = camera.position.distanceTo(meshData.mesh.position);
+                    // Moderate scaling for readable effect
+                    const minDist = 8;   // Distance where scale is minimum
+                    const maxDist = 25;  // Distance where scale is maximum (default)
+                    const minScale = 0.25; // Smaller when close (25%) - reduced from 15%
+                    const maxScale = 1.0;
+                    
+                    const t = Math.min(1, Math.max(0, (distToCamera - minDist) / (maxDist - minDist)));
+                    const scaleFactor = minScale + t * (maxScale - minScale);
+                    
+                    const baseScale = meshData.nameSprite.userData.baseScale || { x: 4, y: 1 };
+                    meshData.nameSprite.scale.set(
+                        baseScale.x * scaleFactor,
+                        baseScale.y * scaleFactor,
+                        1
+                    );
+                    
+                    // Animated nametag floating effect (day1 and whale)
+                    const nameStyle = meshData.nameSprite.userData.nametagStyle;
+                    if (nameStyle === 'day1' || nameStyle === 'whale') {
+                        const phase = meshData.nameSprite.userData.animationPhase || 0;
+                        const floatOffset = Math.sin(time * 1.5 + phase) * 0.1;
+                        const characterType = meshData.mesh.userData?.characterType || 'penguin';
+                        const baseHeight = characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                        meshData.nameSprite.position.y = baseHeight + floatOffset;
+                    }
+                    
+                    // Update gold rain particle system for Day 1 nametag (other players)
+                    // Nametag particle rain - controlled by same setting as snow
+                    if (meshData.goldRainSystem && camera) {
+                        if (gameSettingsRef.current.snowEnabled !== false) {
+                            const pos = meshData.mesh.position;
+                            const camPos = camera.position;
+                            meshData.goldRainSystem.update(time, delta, 
+                                { x: pos.x, y: pos.y, z: pos.z },
+                                { x: camPos.x, y: camPos.y, z: camPos.z }
+                            );
+                            meshData.goldRainSystem.setVisible(true);
+                        } else {
+                            meshData.goldRainSystem.setVisible(false);
+                        }
+                    }
+                }
+            }
+            
+            // Dynamic name tag scaling for LOCAL player
+            if (playerNameSpriteRef.current && playerRef.current && camera) {
+                const distToCamera = camera.position.distanceTo(playerRef.current.position);
+                const minDist = 8;
+                const maxDist = 25;
+                const minScale = 0.25; // Reduced from 15%
+                const maxScale = 1.0;
+                
+                const t = Math.min(1, Math.max(0, (distToCamera - minDist) / (maxDist - minDist)));
+                const scaleFactor = minScale + t * (maxScale - minScale);
+                
+                const baseScale = playerNameSpriteRef.current.userData.baseScale || { x: 4, y: 1 };
+                playerNameSpriteRef.current.scale.set(
+                    baseScale.x * scaleFactor,
+                    baseScale.y * scaleFactor,
+                    1
+                );
+                
+                // Animated nametag floating effect for local player (day1 and whale)
+                const localNameStyle = playerNameSpriteRef.current.userData.nametagStyle;
+                if (localNameStyle === 'day1' || localNameStyle === 'whale') {
+                    const phase = playerNameSpriteRef.current.userData.animationPhase || 0;
+                    const floatOffset = Math.sin(time * 1.5 + phase) * 0.1;
+                    const baseHeight = penguinData?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                    playerNameSpriteRef.current.position.y = baseHeight + floatOffset;
+                }
+                
+            }
+            
+            // Update world-space nametag particle rain for local player
+            // Controlled by same setting as snow particles
+            if (playerGoldRainRef.current && playerRef.current && camera) {
+                if (gameSettingsRef.current.snowEnabled !== false) {
+                    const pos = playerRef.current.position;
+                    const camPos = camera.position;
+                    playerGoldRainRef.current.update(time, delta, 
+                        { x: pos.x, y: pos.y, z: pos.z },
+                        { x: camPos.x, y: camPos.y, z: camPos.z }
+                    );
+                    playerGoldRainRef.current.setVisible(true);
+                } else {
+                    playerGoldRainRef.current.setVisible(false);
+                }
             }
 
             // Animate campfire (flames, embers, light flicker) and Christmas tree
@@ -3109,6 +3204,13 @@ const VoxelWorld = ({
                 mountTrailSystemRef.current.dispose();
                 mountTrailSystemRef.current = null;
             }
+            // Cleanup gold rain particle system
+            if (playerGoldRainRef.current) {
+                playerGoldRainRef.current.dispose();
+                playerGoldRainRef.current = null;
+            }
+            // Cleanup player name sprite ref
+            playerNameSpriteRef.current = null;
         };
     }, [penguinData, room]); // Rebuild scene when room changes
     
@@ -3996,32 +4098,273 @@ const VoxelWorld = ({
 
     // ==================== MULTIPLAYER SYNC (OPTIMIZED) ====================
     
-    // Helper to create name sprite for other players
-    const createNameSprite = useCallback((name) => {
+    // ==================== NAMETAG STYLE SYSTEM ====================
+    // Nametag styles: 'default', 'day1' (Day One supporter badge), 'whale' (Whale status)
+    const NAME_SPRITE_BASE_SCALE = { x: 4, y: 1 }; // Default/max scale
+    
+    // Helper to create name sprite for players (including self)
+    // style: 'default' | 'day1' | 'whale'
+    const createNameSprite = useCallback((name, style = 'day1') => {
         const THREE = window.THREE;
         if (!THREE) return null;
         
         const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 64;
+        canvas.width = 512; // Higher res for animated styles
+        canvas.height = 128;
         const ctx = canvas.getContext('2d');
         
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.roundRect(0, 0, 256, 64, 10);
-        ctx.fill();
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 28px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(name, 128, 32);
+        if (style === 'whale') {
+            // Whale Status - Premium diamond/legendary style
+            // Outer glow with cyan/purple shimmer
+            ctx.shadowColor = 'rgba(6, 182, 212, 0.9)';
+            ctx.shadowBlur = 25;
+            
+            // Gradient border
+            const borderGradient = ctx.createLinearGradient(20, 0, 492, 0);
+            borderGradient.addColorStop(0, 'rgba(6, 182, 212, 1)');     // Cyan
+            borderGradient.addColorStop(0.5, 'rgba(168, 85, 247, 1)');  // Purple
+            borderGradient.addColorStop(1, 'rgba(236, 72, 153, 1)');    // Pink
+            ctx.fillStyle = borderGradient;
+            ctx.beginPath();
+            ctx.roundRect(20, 20, 472, 88, 20);
+            ctx.fill();
+            
+            // Inner background - darker with luxury feel
+            ctx.shadowBlur = 0;
+            const innerGradient = ctx.createLinearGradient(28, 28, 28, 100);
+            innerGradient.addColorStop(0, 'rgba(15, 23, 42, 0.95)');
+            innerGradient.addColorStop(1, 'rgba(30, 41, 59, 0.95)');
+            ctx.fillStyle = innerGradient;
+            ctx.beginPath();
+            ctx.roundRect(28, 28, 456, 72, 16);
+            ctx.fill();
+            
+            // Inner shimmer border
+            ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(28, 28, 456, 72, 16);
+            ctx.stroke();
+            
+            // Whale emoji
+            ctx.font = 'bold 36px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🐳', 45, 64);
+            
+            // Separator line with gradient
+            const sepGradient = ctx.createLinearGradient(100, 38, 100, 90);
+            sepGradient.addColorStop(0, 'rgba(6, 182, 212, 0)');
+            sepGradient.addColorStop(0.5, 'rgba(6, 182, 212, 0.8)');
+            sepGradient.addColorStop(1, 'rgba(6, 182, 212, 0)');
+            ctx.fillStyle = sepGradient;
+            ctx.fillRect(100, 38, 2, 52);
+            
+            // Player name with animated gradient effect
+            const nameGradient = ctx.createLinearGradient(120, 0, 470, 0);
+            nameGradient.addColorStop(0, '#67e8f9');    // Cyan
+            nameGradient.addColorStop(0.5, '#c084fc');  // Purple
+            nameGradient.addColorStop(1, '#f472b6');    // Pink
+            ctx.fillStyle = nameGradient;
+            ctx.font = 'bold 38px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Truncate long names
+            let displayName = name;
+            if (ctx.measureText(name).width > 300) {
+                while (ctx.measureText(displayName + '...').width > 300 && displayName.length > 0) {
+                    displayName = displayName.slice(0, -1);
+                }
+                displayName += '...';
+            }
+            ctx.fillText(displayName, 290, 64);
+            
+        } else if (style === 'day1') {
+            // Day One Supporter - Golden gradient badge
+            const gradient = ctx.createLinearGradient(20, 0, 492, 0);
+            gradient.addColorStop(0, 'rgba(234, 179, 8, 0.9)');     // Gold
+            gradient.addColorStop(0.3, 'rgba(251, 191, 36, 0.9)');  // Amber
+            gradient.addColorStop(0.7, 'rgba(245, 158, 11, 0.9)');  // Orange-gold
+            gradient.addColorStop(1, 'rgba(234, 179, 8, 0.9)');     // Gold
+            
+            // Outer glow
+            ctx.shadowColor = 'rgba(234, 179, 8, 0.8)';
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.roundRect(20, 20, 472, 88, 20);
+            ctx.fill();
+            
+            // Inner darker background
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.beginPath();
+            ctx.roundRect(28, 28, 456, 72, 16);
+            ctx.fill();
+            
+            // Border shimmer
+            ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(28, 28, 456, 72, 16);
+            ctx.stroke();
+            
+            // Day 1 badge icon (star)
+            ctx.fillStyle = '#fbbf24'; // Gold
+            ctx.font = 'bold 32px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('⭐', 48, 64);
+            
+            // "DAY 1" text
+            ctx.fillStyle = '#fbbf24';
+            ctx.font = 'bold 18px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('DAY 1', 88, 50);
+            
+            // Supporter subtitle
+            ctx.fillStyle = 'rgba(251, 191, 36, 0.7)';
+            ctx.font = '12px sans-serif';
+            ctx.fillText('SUPPORTER', 88, 72);
+            
+            // Separator line
+            ctx.fillStyle = 'rgba(251, 191, 36, 0.4)';
+            ctx.fillRect(170, 38, 2, 52);
+            
+            // Player name with golden glow
+            ctx.shadowColor = 'rgba(251, 191, 36, 0.5)';
+            ctx.shadowBlur = 8;
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Truncate long names
+            let displayName = name;
+            if (ctx.measureText(name).width > 250) {
+                while (ctx.measureText(displayName + '...').width > 250 && displayName.length > 0) {
+                    displayName = displayName.slice(0, -1);
+                }
+                displayName += '...';
+            }
+            ctx.fillText(displayName, 330, 64);
+            
+        } else {
+            // Default style - simple clean background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.beginPath();
+            ctx.roundRect(64, 32, 384, 64, 16);
+            ctx.fill();
+            
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(64, 32, 384, 64, 16);
+            ctx.stroke();
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(name, 256, 64);
+        }
         
         const texture = new THREE.CanvasTexture(canvas);
-        const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+        const material = new THREE.SpriteMaterial({ 
+            map: texture, 
+            depthTest: false,
+            depthWrite: false,
+            transparent: true
+        });
         const sprite = new THREE.Sprite(material);
-        sprite.scale.set(4, 1, 1);
+        
+        // Ensure nametags ALWAYS render on top of trails, particles, everything
+        sprite.renderOrder = 9999;
+        
+        // Styled nametags are wider
+        const isStyled = style === 'day1' || style === 'whale';
+        const scaleX = isStyled ? 5.5 : NAME_SPRITE_BASE_SCALE.x;
+        const scaleY = isStyled ? 1.4 : NAME_SPRITE_BASE_SCALE.y;
+        sprite.scale.set(scaleX, scaleY, 1);
+        sprite.userData.baseScale = { x: scaleX, y: scaleY };
+        sprite.userData.nametagStyle = style;
+        
+        // Store animation data for styled nametags
+        if (isStyled) {
+            sprite.userData.animationPhase = Math.random() * Math.PI * 2;
+        }
+        
+        // Mark if this nametag needs gold rain (created separately as world-space effect)
+        sprite.userData.needsGoldRain = (style === 'day1');
+        
         return sprite;
     }, []);
+    
+    // Listen for nametag style changes from settings
+    useEffect(() => {
+        const handleNametagChange = (e) => {
+            const newStyle = e.detail?.style || 'day1';
+            
+            // Remove old nametag from player mesh
+            if (playerRef.current && playerNameSpriteRef.current) {
+                playerRef.current.remove(playerNameSpriteRef.current);
+                playerNameSpriteRef.current = null;
+            }
+            
+            // Dispose old gold rain system if present
+            if (playerGoldRainRef.current) {
+                playerGoldRainRef.current.dispose();
+                playerGoldRainRef.current = null;
+            }
+            
+            // Create new nametag with new style
+            const savedName = localStorage.getItem('penguin_name');
+            if (playerRef.current && savedName) {
+                const THREE = window.THREE;
+                if (THREE) {
+                    const nameSprite = createNameSprite(savedName, newStyle);
+                    if (nameSprite) {
+                        // Determine character type for height
+                        let characterType = 'penguin';
+                        try {
+                            const customization = JSON.parse(localStorage.getItem('penguin_customization') || '{}');
+                            characterType = customization.characterType || 'penguin';
+                        } catch { /* use default */ }
+                        const nameHeight = characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                        nameSprite.position.set(0, nameHeight, 0);
+                        playerRef.current.add(nameSprite);
+                        playerNameSpriteRef.current = nameSprite;
+                        
+                        // Create world-space particle rain for Day 1 or Whale nametag
+                        if ((newStyle === 'day1' || newStyle === 'whale') && sceneRef.current) {
+                            const playerPos = playerRef.current.position;
+                            const preset = newStyle === 'day1' ? 'goldRain' : 'whaleRain';
+                            const particleRain = new LocalizedParticleSystem(THREE, sceneRef.current, preset);
+                            particleRain.create({ x: playerPos.x, y: playerPos.y, z: playerPos.z });
+                            playerGoldRainRef.current = particleRain;
+                        }
+                    }
+                }
+            }
+            
+            // Broadcast to server via appearance update
+            if (mpUpdateAppearanceRef.current) {
+                try {
+                    const savedSettings = JSON.parse(localStorage.getItem('game_settings') || '{}');
+                    const customization = JSON.parse(localStorage.getItem('penguin_customization') || '{}');
+                    mpUpdateAppearanceRef.current({
+                        ...customization,
+                        mountEnabled: savedSettings.mountEnabled !== false,
+                        nametagStyle: newStyle
+                    });
+                } catch { /* ignore */ }
+            }
+        };
+        
+        window.addEventListener('nametagChanged', handleNametagChange);
+        return () => window.removeEventListener('nametagChanged', handleNametagChange);
+    }, [createNameSprite]);
     
     // Join room when connected and scene is ready
     useEffect(() => {
@@ -4032,21 +4375,48 @@ const VoxelWorld = ({
                 name: playerPuffle.name
             } : null;
             
-            // Include current mount enabled state from settings
+            // Include current mount enabled state and nametag style from settings
             let mountEnabled = true;
+            let nametagStyle = 'day1';
             try {
                 const settings = JSON.parse(localStorage.getItem('game_settings') || '{}');
                 mountEnabled = settings.mountEnabled !== false;
+                nametagStyle = settings.nametagStyle || 'day1';
             } catch { /* use default true */ }
             
             const appearanceWithMount = {
                 ...penguinData,
-                mountEnabled
+                mountEnabled,
+                nametagStyle  // Broadcast nametag style to all players
             };
             
             mpJoinRoom(room, appearanceWithMount, puffleData);
+            
+            // Add player's own name tag (so they can see their username)
+            if (playerRef.current && playerName && !playerNameSpriteRef.current) {
+                
+                const nameSprite = createNameSprite(playerName, nametagStyle);
+                if (nameSprite) {
+                    const nameHeight = penguinData?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                    nameSprite.position.set(0, nameHeight, 0);
+                    playerRef.current.add(nameSprite);
+                    playerNameSpriteRef.current = nameSprite;
+                    
+                    // Create world-space particle rain for Day 1 or Whale nametag
+                    if ((nametagStyle === 'day1' || nametagStyle === 'whale') && sceneRef.current && !playerGoldRainRef.current) {
+                        const THREE = window.THREE;
+                        if (THREE) {
+                            const playerPos = playerRef.current.position;
+                            const preset = nametagStyle === 'day1' ? 'goldRain' : 'whaleRain';
+                            const particleRain = new LocalizedParticleSystem(THREE, sceneRef.current, preset);
+                            particleRain.create({ x: playerPos.x, y: playerPos.y, z: playerPos.z });
+                            playerGoldRainRef.current = particleRain;
+                        }
+                    }
+                }
+            }
         }
-    }, [connected, playerId, room, penguinData]);
+    }, [connected, playerId, room, penguinData, playerName, createNameSprite]);
     
     // Send position updates (throttled) - OPTIMIZED: 100ms interval, only when changed
     useEffect(() => {
@@ -4119,6 +4489,10 @@ const VoxelWorld = ({
                 if (data.mesh) scene.remove(data.mesh);
                 if (data.bubble) scene.remove(data.bubble);
                 if (data.puffleMesh) scene.remove(data.puffleMesh);
+                // Clean up gold rain particle system
+                if (data.goldRainSystem) {
+                    data.goldRainSystem.dispose();
+                }
                 // Clean up their trail points
                 if (mountTrailSystemRef.current) {
                     mountTrailSystemRef.current.removePlayerTrails(id);
@@ -4155,11 +4529,22 @@ const VoxelWorld = ({
             }
             
             // Create name tag - adjust height for character type
-            const nameSprite = createNameSprite(playerData.name || 'Player');
+            // Use player's chosen nametag style from appearance (default to 'day1')
+            const playerNametagStyle = playerData.appearance?.nametagStyle || 'day1';
+            const nameSprite = createNameSprite(playerData.name || 'Player', playerNametagStyle);
             if (nameSprite) {
                 const nameHeight = playerData.appearance?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
                 nameSprite.position.set(0, nameHeight, 0);
                 mesh.add(nameSprite);
+            }
+            
+            // Create world-space particle rain for Day 1 or Whale nametag
+            let goldRainSystem = null;
+            if ((playerNametagStyle === 'day1' || playerNametagStyle === 'whale') && scene) {
+                const pos = playerData.position || { x: 0, y: 0, z: 0 };
+                const preset = playerNametagStyle === 'day1' ? 'goldRain' : 'whaleRain';
+                goldRainSystem = new LocalizedParticleSystem(THREE, scene, preset);
+                goldRainSystem.create({ x: pos.x, y: pos.y || 0, z: pos.z });
             }
             
             // Create puffle if player has one
@@ -4203,6 +4588,7 @@ const VoxelWorld = ({
                 bubble: null, 
                 puffleMesh, 
                 nameSprite,
+                goldRainSystem, // World-space gold rain for Day 1 nametag
                 // Initialize emote from playerData (player might already be sitting)
                 currentEmote: playerData.emote || null,
                 emoteStartTime: playerData.emoteStartTime || Date.now(),

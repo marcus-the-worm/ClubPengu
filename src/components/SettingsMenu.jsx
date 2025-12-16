@@ -145,13 +145,13 @@ const SettingsMenu = ({ isOpen, onClose, settings, onSettingsChange }) => {
                         </div>
                     </div>
                     
-                    {/* Snowfall Toggle */}
+                    {/* Particle Effects Toggle */}
                     <div className="bg-black/30 rounded-xl p-3">
                         <div className="flex items-center justify-between">
                             <div className="flex-1 mr-3">
-                                <h3 className="text-white font-medium text-sm">❄️ Snowfall Effects</h3>
+                                <h3 className="text-white font-medium text-sm">✨ Particle Effects</h3>
                                 <p className="text-white/50 text-[11px] mt-0.5">
-                                    Disable for better performance
+                                    Snow & nametag particles
                                 </p>
                             </div>
                             <button
@@ -199,6 +199,110 @@ const SettingsMenu = ({ isOpen, onClose, settings, onSettingsChange }) => {
                         </div>
                         <p className="text-[10px] text-orange-400/70 mt-2">
                             {settings.mountEnabled !== false ? '✓ Mount equipped (visible to all)' : '✗ Mount unequipped'}
+                        </p>
+                    </div>
+                    
+                    {/* Nametag Style Selection */}
+                    <div className="bg-black/30 rounded-xl p-3">
+                        <h3 className="text-white font-medium text-sm mb-2">🏷️ Nametag Style</h3>
+                        <p className="text-white/50 text-[11px] mb-3">
+                            Choose how your name appears to others
+                        </p>
+                        
+                        <div className="space-y-2">
+                            {/* Day 1 Supporter */}
+                            <button
+                                onClick={() => {
+                                    const newSettings = { ...settings, nametagStyle: 'day1' };
+                                    onSettingsChange(newSettings);
+                                    window.dispatchEvent(new CustomEvent('nametagChanged', { 
+                                        detail: { style: 'day1' } 
+                                    }));
+                                }}
+                                className={`w-full p-2.5 rounded-lg border-2 transition-all touch-manipulation select-none text-left ${
+                                    (settings.nametagStyle || 'day1') === 'day1'
+                                        ? 'border-amber-500 bg-amber-500/10'
+                                        : 'border-white/10 bg-black/20 hover:border-white/20'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">⭐</span>
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-amber-400 font-bold text-sm">DAY 1</span>
+                                            <span className="text-white/70 text-xs">Supporter</span>
+                                        </div>
+                                        <p className="text-white/40 text-[10px]">Golden badge with floating animation</p>
+                                    </div>
+                                    {(settings.nametagStyle || 'day1') === 'day1' && (
+                                        <span className="text-amber-400 text-sm">✓</span>
+                                    )}
+                                </div>
+                            </button>
+                            
+                            {/* Whale Status */}
+                            <button
+                                onClick={() => {
+                                    const newSettings = { ...settings, nametagStyle: 'whale' };
+                                    onSettingsChange(newSettings);
+                                    window.dispatchEvent(new CustomEvent('nametagChanged', { 
+                                        detail: { style: 'whale' } 
+                                    }));
+                                }}
+                                className={`w-full p-2.5 rounded-lg border-2 transition-all touch-manipulation select-none text-left ${
+                                    settings.nametagStyle === 'whale'
+                                        ? 'border-cyan-500 bg-cyan-500/10'
+                                        : 'border-white/10 bg-black/20 hover:border-white/20'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">🐳</span>
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 font-bold text-sm">WHALE</span>
+                                            <span className="text-white/70 text-xs">Status</span>
+                                        </div>
+                                        <p className="text-white/40 text-[10px]">Premium gradient with cyan/purple glow</p>
+                                    </div>
+                                    {settings.nametagStyle === 'whale' && (
+                                        <span className="text-cyan-400 text-sm">✓</span>
+                                    )}
+                                </div>
+                            </button>
+                            
+                            {/* Default */}
+                            <button
+                                onClick={() => {
+                                    const newSettings = { ...settings, nametagStyle: 'default' };
+                                    onSettingsChange(newSettings);
+                                    window.dispatchEvent(new CustomEvent('nametagChanged', { 
+                                        detail: { style: 'default' } 
+                                    }));
+                                }}
+                                className={`w-full p-2.5 rounded-lg border-2 transition-all touch-manipulation select-none text-left ${
+                                    settings.nametagStyle === 'default'
+                                        ? 'border-white/50 bg-white/10'
+                                        : 'border-white/10 bg-black/20 hover:border-white/20'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">📛</span>
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-white font-bold text-sm">DEFAULT</span>
+                                            <span className="text-white/70 text-xs">Classic</span>
+                                        </div>
+                                        <p className="text-white/40 text-[10px]">Simple clean nametag</p>
+                                    </div>
+                                    {settings.nametagStyle === 'default' && (
+                                        <span className="text-white text-sm">✓</span>
+                                    )}
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <p className="text-[10px] text-cyan-400/70 mt-2">
+                            ✨ Your nametag style is visible to all players
                         </p>
                     </div>
                     
