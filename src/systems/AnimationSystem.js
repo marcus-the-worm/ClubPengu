@@ -82,8 +82,10 @@ export function animateMesh(
 
     // Mounted animation (sitting on mount)
     if (isMounted) {
-        // Raise player up to sit on mount
-        meshInner.position.y = 1.1;
+        // Raise player up to sit on mount - different heights for different mounts
+        // Mount name is stored in userData.mount on the wrapper (meshInner's parent)
+        const mountName = meshInner.parent?.userData?.mount || 'penguMount';
+        meshInner.position.y = mountName === 'minecraftBoat' ? 0.8 : 1.2;
         if(footL) {
             footL.rotation.x = -Math.PI / 2.5;
             footL.position.z = 2.5;

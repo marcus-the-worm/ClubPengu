@@ -493,7 +493,33 @@ export function createPenguinBuilder(THREE) {
             mountGroup.add(mountMesh);
         }
         
-        // Build animated oars
+        // Build animated flippers for pengu mount
+        if (mountData.leftFlipper) {
+            const leftFlipperMesh = buildPartMerged(mountData.leftFlipper, PALETTE);
+            leftFlipperMesh.name = 'left_flipper';
+            mountGroup.add(leftFlipperMesh);
+        }
+        
+        if (mountData.rightFlipper) {
+            const rightFlipperMesh = buildPartMerged(mountData.rightFlipper, PALETTE);
+            rightFlipperMesh.name = 'right_flipper';
+            mountGroup.add(rightFlipperMesh);
+        }
+        
+        // Build animated feet for pengu mount
+        if (mountData.leftFoot) {
+            const leftFootMesh = buildPartMerged(mountData.leftFoot, PALETTE);
+            leftFootMesh.name = 'left_foot';
+            mountGroup.add(leftFootMesh);
+        }
+        
+        if (mountData.rightFoot) {
+            const rightFootMesh = buildPartMerged(mountData.rightFoot, PALETTE);
+            rightFootMesh.name = 'right_foot';
+            mountGroup.add(rightFootMesh);
+        }
+        
+        // Build animated oars for boat
         if (mountData.leftOar) {
             const leftOarMesh = buildPartMerged(mountData.leftOar, PALETTE);
             leftOarMesh.name = 'left_oar';
@@ -516,8 +542,10 @@ export function createPenguinBuilder(THREE) {
             mountGroup.add(rightOarPivot);
         }
         
-        mountGroup.scale.set(0.2, 0.2, 0.2);
-        mountGroup.position.y = 0.4;
+        // Use mount-specific scale if defined, otherwise default 0.2
+        const mountScale = mountData.scale || 0.2;
+        mountGroup.scale.set(mountScale, mountScale, mountScale);
+        mountGroup.position.y = mountData.positionY ?? 0.4;
         wrapper.add(mountGroup);
         
         wrapper.userData.mount = data.mount;

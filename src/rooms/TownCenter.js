@@ -217,12 +217,12 @@ class TownCenter {
             imagePath: '/advert.png'
         });
         
-        // Second billboard on the west side facing east
+        // Second billboard on the west side (behind pizzeria) facing east toward town
         props.push({
             type: 'billboard',
             x: C - 80,      // West side of map
             z: C + 40,      // Along the stem
-            rotation: -Math.PI / 2,  // Face east toward the street
+            rotation: Math.PI / 2,  // Face east toward the street (rotated 180 from before)
             imagePath: '/advert.png'
         });
         
@@ -539,6 +539,105 @@ class TownCenter {
         // ==================== DOJO PARKOUR COURSE ====================
         // Bound to dojo position - moves with dojo
         props.push({ type: 'dojo_parkour', x: 0, z: 0 });
+        
+        // ==================== MAILBOXES - NEAR IGLOOS & BUILDINGS ====================
+        // Igloos need mail delivery!
+        props.push(
+            { type: 'mailbox', x: C - 70, z: C - 70, rotation: 0, style: 'classic' },      // Near igloo1
+            { type: 'mailbox', x: C - 20, z: C - 70, rotation: 0, style: 'classic' },      // Near igloo3 (SKNY)
+            { type: 'mailbox', x: C + 30, z: C - 70, rotation: 0, style: 'classic' },      // Near igloo4
+            { type: 'mailbox', x: C + 80, z: C - 70, rotation: 0, style: 'classic' },      // Near igloo6
+            { type: 'mailbox', x: C - 65, z: C - 10, rotation: Math.PI, style: 'classic' }, // Near igloo7
+            { type: 'mailbox', x: C + 75, z: C - 10, rotation: Math.PI, style: 'classic' }, // Near igloo10
+            { type: 'mailbox', x: C + 52, z: C + 28, rotation: -Math.PI / 2, style: 'modern' }, // Near gift shop
+        );
+        
+        // ==================== TRASH CANS - NEAR PUBLIC AREAS ====================
+        // Near benches and high-traffic areas (positioned OFF gravel paths)
+        props.push(
+            { type: 'trash_can', x: C - 18, z: C + 20 },    // Near stem bench west
+            { type: 'trash_can', x: C + 18, z: C + 50 },    // Near stem bench east
+            { type: 'trash_can', x: C - 32, z: C - 24 },    // Near T-bar bench south (above path)
+            { type: 'trash_can', x: C + 32, z: C - 24 },    // Near T-bar bench south (above path)
+            { type: 'trash_can', x: C - 32, z: C - 66 },    // Near T-bar bench north (below path)
+            { type: 'trash_can', x: C + 32, z: C - 66 },    // Near T-bar bench north (below path)
+            { type: 'trash_can', x: C - 50, z: C + 48 },    // Near pizza (outside path)
+            { type: 'trash_can', x: C + 50, z: C + 48 },    // Near gift shop (outside path)
+            { type: 'trash_can', x: C + 18, z: C + 12 },    // Near campfire (outside stem)
+            { type: 'trash_can', x: C + 18, z: C - 66 },    // Nightclub corner (outside path)
+        );
+        
+        // ==================== BARRELS - SUPPLY AREAS ====================
+        // Near businesses and storage areas (positioned OFF gravel paths)
+        props.push(
+            // Pizza parlor - ingredient barrels
+            { type: 'barrel', x: C - 52, z: C + 28, size: 'medium' },
+            { type: 'barrel', x: C - 54, z: C + 30, size: 'small' },
+            // Dojo - training supplies (outside stem path)
+            { type: 'barrel', x: C + 18, z: C + 78, size: 'large' },
+            { type: 'barrel', x: C - 18, z: C + 78, size: 'medium' },
+            // Nightclub - equipment (behind building)
+            { type: 'barrel', x: C - 18, z: C - 82, size: 'medium' },
+            { type: 'barrel', x: C + 18, z: C - 82, size: 'medium' },
+        );
+        
+        // ==================== FIRE HYDRANTS - SAFETY ALONG STREETS ====================
+        // Positioned along path edges, NOT on the gravel
+        props.push(
+            { type: 'fire_hydrant', x: C - 48, z: C + 48, color: 0xCC2222 },  // Near pizza (outside path)
+            { type: 'fire_hydrant', x: C + 48, z: C + 48, color: 0xCC2222 },  // Near gift shop (outside path)
+            { type: 'fire_hydrant', x: C - 18, z: C - 26, color: 0xFFD700 },  // T-junction west (outside paths)
+            { type: 'fire_hydrant', x: C + 18, z: C - 26, color: 0xFFD700 },  // T-junction east (outside paths)
+            { type: 'fire_hydrant', x: C - 50, z: C - 26, color: 0xCC2222 },  // T-bar west (above path)
+            { type: 'fire_hydrant', x: C + 50, z: C - 26, color: 0xCC2222 },  // T-bar east (above path)
+            { type: 'fire_hydrant', x: C - 18, z: C - 66, color: 0x2288CC },  // Near nightclub (outside path)
+        );
+        
+        // ==================== ICE SCULPTURES - DECORATIVE CENTERPIECES ====================
+        // Large premium sculptures positioned in open areas away from paths and furniture
+        props.push(
+            { type: 'ice_sculpture', x: C - 55, z: C + 55, sculptureType: 'penguin' }, // Northwest open area
+            { type: 'ice_sculpture', x: C + 55, z: C + 55, sculptureType: 'fish' },    // Northeast open area (near gift shop)
+            { type: 'ice_sculpture', x: C - 85, z: C - 45, sculptureType: 'heart', rotation: Math.PI / 2 },   // Far west - rotated 90°
+            { type: 'ice_sculpture', x: C + 85, z: C - 45, sculptureType: 'star', rotation: Math.PI / 2 },    // Far east - rotated 90°
+        );
+        
+        // ==================== CRATES - LOADING/STORAGE AREAS ====================
+        props.push(
+            // Pizza supplies
+            { type: 'crate', x: C - 56, z: C + 32, size: 'medium' },
+            { type: 'crate', x: C - 58, z: C + 34, size: 'small' },
+            // Gift shop merchandise
+            { type: 'crate', x: C + 56, z: C + 32, size: 'large' },
+            { type: 'crate', x: C + 58, z: C + 30, size: 'medium' },
+            { type: 'crate', x: C + 54, z: C + 30, size: 'small' },
+            // Nightclub equipment
+            { type: 'crate', x: C - 20, z: C - 80, size: 'large' },
+            { type: 'crate', x: C + 20, z: C - 80, size: 'large' },
+        );
+        
+        // ==================== STREET SIGNS - KEY INTERSECTIONS ====================
+        // Positioned along path edges, NOT on the gravel
+        props.push(
+            { type: 'street_sign', x: C - 18, z: C - 26, signType: 'arrow', rotation: Math.PI / 2 },   // T-junction west (outside)
+            { type: 'street_sign', x: C + 18, z: C - 26, signType: 'arrow', rotation: -Math.PI / 2 }, // T-junction east (outside)
+            { type: 'street_sign', x: C - 80, z: C - 26, signType: 'info', rotation: Math.PI / 2 },   // West end (above T-bar)
+            { type: 'street_sign', x: C + 80, z: C - 26, signType: 'info', rotation: -Math.PI / 2 },  // East end (above T-bar)
+            { type: 'street_sign', x: C - 18, z: C + 58, signType: 'stop', rotation: 0 },             // Near dojo (outside stem)
+        );
+        
+        // ==================== WOODEN POSTS - PATH MARKERS ====================
+        // Along path edges (outside the gravel, stem path is x: C-14 to C+14)
+        props.push(
+            // T-stem path edge markers (outside the path)
+            { type: 'wooden_post', x: C - 18, z: C + 30, style: 'striped' },
+            { type: 'wooden_post', x: C + 18, z: C + 30, style: 'striped' },
+            { type: 'wooden_post', x: C - 18, z: C + 50, style: 'plain' },
+            { type: 'wooden_post', x: C + 18, z: C + 50, style: 'plain' },
+            // Near buildings (outside pizza/gift paths: C-46 to C-14 and C+14 to C+46)
+            { type: 'wooden_post', x: C - 48, z: C + 28, style: 'topped' },  // Outside pizza path
+            { type: 'wooden_post', x: C + 48, z: C + 28, style: 'topped' },  // Outside gift shop path
+        );
         
         return props;
     }
@@ -876,6 +975,51 @@ class TownCenter {
                     mesh.position.y = 0.15; // Elevated well above ice ground to avoid z-fighting
                     mesh.name = 'gravel_path';
                     break;
+                    
+                // ==================== NEW QUALITY OF LIFE PROPS ====================
+                case 'mailbox': {
+                    const mailboxProp = createProp(this.THREE, null, PROP_TYPES.MAILBOX, 0, 0, 0, { style: prop.style || 'classic' });
+                    mesh = attachPropData(mailboxProp, mailboxProp.group);
+                    break;
+                }
+                case 'trash_can': {
+                    const trashProp = createProp(this.THREE, null, PROP_TYPES.TRASH_CAN, 0, 0, 0, { withLid: true });
+                    mesh = attachPropData(trashProp, trashProp.group);
+                    break;
+                }
+                case 'barrel': {
+                    const barrelProp = createProp(this.THREE, null, PROP_TYPES.BARREL, 0, 0, 0, { size: prop.size || 'medium' });
+                    mesh = attachPropData(barrelProp, barrelProp.group);
+                    break;
+                }
+                case 'fire_hydrant': {
+                    const hydrantProp = createProp(this.THREE, null, PROP_TYPES.FIRE_HYDRANT, 0, 0, 0, { color: prop.color || 0xCC2222 });
+                    mesh = attachPropData(hydrantProp, hydrantProp.group);
+                    break;
+                }
+                case 'ice_sculpture': {
+                    const sculptureProp = createProp(this.THREE, null, PROP_TYPES.ICE_SCULPTURE, 0, 0, 0, { 
+                        sculptureType: prop.sculptureType || 'penguin',
+                        rotation: prop.rotation || 0
+                    });
+                    mesh = attachPropData(sculptureProp, sculptureProp.group);
+                    break;
+                }
+                case 'crate': {
+                    const crateProp = createProp(this.THREE, null, PROP_TYPES.CRATE, 0, 0, 0, { size: prop.size || 'medium' });
+                    mesh = attachPropData(crateProp, crateProp.group);
+                    break;
+                }
+                case 'street_sign': {
+                    const signProp = createProp(this.THREE, null, PROP_TYPES.STREET_SIGN, 0, 0, 0, { signType: prop.signType || 'arrow' });
+                    mesh = attachPropData(signProp, signProp.group);
+                    break;
+                }
+                case 'wooden_post': {
+                    const postProp = createProp(this.THREE, null, PROP_TYPES.WOODEN_POST, 0, 0, 0, { style: prop.style || 'plain' });
+                    mesh = attachPropData(postProp, postProp.group);
+                    break;
+                }
             }
             
             if (mesh) {

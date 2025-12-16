@@ -17,6 +17,14 @@ import Campfire from './Campfire';
 import LogSeat from './LogSeat';
 import ChristmasTree from './ChristmasTree';
 import Billboard from './Billboard';
+import Mailbox from './Mailbox';
+import TrashCan from './TrashCan';
+import Barrel from './Barrel';
+import FireHydrant from './FireHydrant';
+import IceSculpture from './IceSculpture';
+import Crate from './Crate';
+import StreetSign from './StreetSign';
+import WoodenPost from './WoodenPost';
 
 /**
  * Available prop types
@@ -36,6 +44,15 @@ export const PROP_TYPES = {
     LOG_SEAT: 'logSeat',
     CHRISTMAS_TREE: 'christmasTree',
     BILLBOARD: 'billboard',
+    // Quality of life props
+    MAILBOX: 'mailbox',
+    TRASH_CAN: 'trashCan',
+    BARREL: 'barrel',
+    FIRE_HYDRANT: 'fireHydrant',
+    ICE_SCULPTURE: 'iceSculpture',
+    CRATE: 'crate',
+    STREET_SIGN: 'streetSign',
+    WOODEN_POST: 'woodenPost',
 };
 
 /**
@@ -56,6 +73,14 @@ const propClasses = {
     [PROP_TYPES.LOG_SEAT]: LogSeat,
     [PROP_TYPES.CHRISTMAS_TREE]: ChristmasTree,
     [PROP_TYPES.BILLBOARD]: Billboard,
+    [PROP_TYPES.MAILBOX]: Mailbox,
+    [PROP_TYPES.TRASH_CAN]: TrashCan,
+    [PROP_TYPES.BARREL]: Barrel,
+    [PROP_TYPES.FIRE_HYDRANT]: FireHydrant,
+    [PROP_TYPES.ICE_SCULPTURE]: IceSculpture,
+    [PROP_TYPES.CRATE]: Crate,
+    [PROP_TYPES.STREET_SIGN]: StreetSign,
+    [PROP_TYPES.WOODEN_POST]: WoodenPost,
 };
 
 /**
@@ -127,6 +152,38 @@ export const createProp = (THREE, scene, type, x, y, z, options = {}) => {
             
         case PROP_TYPES.BILLBOARD:
             prop = new PropClass(THREE);
+            break;
+            
+        case PROP_TYPES.MAILBOX:
+            prop = new PropClass(THREE, options.style || 'classic');
+            break;
+            
+        case PROP_TYPES.TRASH_CAN:
+            prop = new PropClass(THREE, options.withLid !== false);
+            break;
+            
+        case PROP_TYPES.BARREL:
+            prop = new PropClass(THREE, options.size || 'medium');
+            break;
+            
+        case PROP_TYPES.FIRE_HYDRANT:
+            prop = new PropClass(THREE, options.color || 0xCC2222);
+            break;
+            
+        case PROP_TYPES.ICE_SCULPTURE:
+            prop = new PropClass(THREE, options.sculptureType || 'penguin', options.rotation || 0);
+            break;
+            
+        case PROP_TYPES.CRATE:
+            prop = new PropClass(THREE, options.size || 'medium');
+            break;
+            
+        case PROP_TYPES.STREET_SIGN:
+            prop = new PropClass(THREE, options.signType || 'arrow');
+            break;
+            
+        case PROP_TYPES.WOODEN_POST:
+            prop = new PropClass(THREE, options.style || 'plain');
             break;
             
         default:

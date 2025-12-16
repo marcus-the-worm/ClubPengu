@@ -30,6 +30,12 @@ for (let i = 1; i <= 10; i++) {
 // In production, this would be in a database
 const playerCoins = new Map();
 
+// Mount trail points storage (playerId -> [{ x, z, trailType, timestamp }, ...])
+// Stores recent trail points to sync to newly joined players
+const playerTrailPoints = new Map();
+const MAX_TRAIL_POINTS_PER_PLAYER = 100; // Keep last 100 points per player
+const TRAIL_EXPIRY_MS = 8000; // Trail points expire after 8 seconds
+
 // ==================== DAY/NIGHT CYCLE (Server-synchronized) ====================
 // Time of day: 0-1 (0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset)
 let worldTime = 0.35; // Start at morning
@@ -312,12 +318,20 @@ function getPlayersInRoom(roomId, excludeId = null) {
     const roomPlayers = rooms.get(roomId);
     if (!roomPlayers) return [];
     
+    const now = Date.now();
     const result = [];
     for (const playerId of roomPlayers) {
         if (playerId === excludeId) continue;
         
         const player = players.get(playerId);
         if (player) {
+            // Get non-expired trail points for this player
+            let trailPoints = null;
+            const trails = playerTrailPoints.get(playerId);
+            if (trails && trails.length > 0) {
+                trailPoints = trails.filter(t => (now - t.timestamp) < TRAIL_EXPIRY_MS);
+            }
+            
             result.push({
                 id: player.id,
                 name: player.name,
@@ -329,7 +343,8 @@ function getPlayersInRoom(roomId, excludeId = null) {
                 emote: player.emote,
                 seatedOnFurniture: player.seatedOnFurniture || false,
                 isAfk: player.isAfk || false,
-                afkMessage: player.afkMessage || null
+                afkMessage: player.afkMessage || null,
+                trailPoints: trailPoints // Include trail points for new players
             });
         }
     }
@@ -450,6 +465,9 @@ wss.on('connection', (ws, req) => {
         }
         
         players.delete(playerId);
+        
+        // Clean up trail points for this player
+        playerTrailPoints.delete(playerId);
     });
     
     ws.on('error', (error) => {
@@ -574,15 +592,43 @@ function handleMessage(playerId, message) {
                 console.log(`${player.name} is no longer AFK (moved)`);
             }
             
+            // Store and broadcast trail points for mount trails
+            if (message.trailPoints && message.trailPoints.length > 0) {
+                // Get or create trail array for this player
+                if (!playerTrailPoints.has(playerId)) {
+                    playerTrailPoints.set(playerId, []);
+                }
+                const trails = playerTrailPoints.get(playerId);
+                
+                // Add new trail points
+                trails.push(...message.trailPoints);
+                
+                // Trim to max count
+                while (trails.length > MAX_TRAIL_POINTS_PER_PLAYER) {
+                    trails.shift();
+                }
+                
+                // Remove expired trail points
+                const now = Date.now();
+                while (trails.length > 0 && (now - trails[0].timestamp) > TRAIL_EXPIRY_MS) {
+                    trails.shift();
+                }
+            }
+            
             // Only broadcast if something actually changed
             if ((posChanged || rotChanged) && player.room) {
-                broadcastToRoom(player.room, {
+                const moveMessage = {
                     type: 'player_moved',
                     playerId: playerId,
                     position: player.position, // Includes x, y, z
                     rotation: player.rotation,
                     pufflePosition: player.pufflePosition
-                }, playerId);
+                };
+                // Include trail points if present (for mount trails)
+                if (message.trailPoints && message.trailPoints.length > 0) {
+                    moveMessage.trailPoints = message.trailPoints;
+                }
+                broadcastToRoom(player.room, moveMessage, playerId);
             }
             break;
         }

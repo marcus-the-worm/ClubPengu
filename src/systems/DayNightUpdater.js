@@ -1,6 +1,6 @@
 /**
- * DayNightUpdater - Updates day/night cycle lighting
- * Extracted from VoxelWorld.jsx for better organization
+ * DayNightUpdater - Smooth, natural day/night cycle
+ * Simplified: Uses sine wave for smooth transitions
  */
 
 /**
@@ -23,70 +23,54 @@ export function updateDayNightCycle({
 }) {
     if (!sunLight || !ambientLight) return;
     
-    // Calculate sun position (arc across sky)
-    const sunAngle = t * Math.PI * 2 - Math.PI / 2;
-    const sunHeight = Math.sin(sunAngle);
-    const sunX = Math.cos(sunAngle) * 100;
-    const sunY = Math.max(5, sunHeight * 100 + 50);
+    // Smooth sun arc using sine wave
+    // t=0 midnight, t=0.25 sunrise, t=0.5 noon, t=0.75 sunset
+    const sunAngle = (t - 0.25) * Math.PI * 2;
+    const sunHeight = Math.sin(sunAngle); // -1 at midnight, +1 at noon
     
+    // Sun position - arc across the sky
+    const sunX = Math.cos(sunAngle) * 100;
+    const sunY = Math.max(5, sunHeight * 80 + 50);
     sunLight.position.set(sunX, sunY, 60);
     
-    // Day/night colors - reuse color objects
-    let sunIntensity, ambientIntensity;
-    const sunColor = sunLight.color;
-    const ambientColor = ambientLight.color;
+    // Daylight factor: 0 at night, 1 at noon (smooth sine curve)
+    const dayFactor = Math.max(0, sunHeight);
+    const nightFactor = 1 - dayFactor;
     
-    if (t < 0.2) {
-        // Night - bright enough to see clearly
-        const nightT = t / 0.2;
-        sunIntensity = 0.25 + nightT * 0.1;
-        ambientIntensity = 0.55 + nightT * 0.1;
-        sunColor.setHex(0x6688cc);
-        ambientColor.setHex(0x4a5a7a);
-        scene.background.lerpColors(scene.background.setHex(0x1a3045), ambientColor, nightT * 0.5);
-    } else if (t < 0.3) {
-        // Sunrise
-        const sunriseT = (t - 0.2) / 0.1;
-        sunIntensity = 0.15 + sunriseT * 0.45;
-        ambientIntensity = 0.35 + sunriseT * 0.15;
-        sunColor.setRGB(0.27 + sunriseT * 0.73, 0.4 + sunriseT * 0.27, 0.67 - sunriseT * 0.27);
-        ambientColor.setRGB(0.16 + sunriseT * 0.34, 0.23 + sunriseT * 0.33, 0.35 + sunriseT * 0.28);
-        scene.background.setRGB(0.1 + sunriseT * 0.9, 0.19 + sunriseT * 0.61, 0.31 + sunriseT * 0.22);
-    } else if (t < 0.7) {
-        // Day
-        const dayT = (t - 0.3) / 0.4;
-        const middayT = 1 - Math.abs(dayT - 0.5) * 2;
-        sunIntensity = 0.6 + middayT * 0.3;
-        ambientIntensity = 0.4 + middayT * 0.1;
-        sunColor.setHex(0xF8F8FF);
-        ambientColor.setHex(0xC0E0F0);
-        scene.background.setHex(0x87CEEB);
-    } else if (t < 0.8) {
-        // Sunset
-        const sunsetT = (t - 0.7) / 0.1;
-        sunIntensity = 0.6 - sunsetT * 0.4;
-        ambientIntensity = 0.45 - sunsetT * 0.1;
-        sunColor.setRGB(0.97 - sunsetT * 0.03, 0.97 - sunsetT * 0.57, 1 - sunsetT * 0.73);
-        ambientColor.setRGB(0.75 - sunsetT * 0.46, 0.88 - sunsetT * 0.63, 0.94 - sunsetT * 0.56);
-        scene.background.setRGB(0.53 + sunsetT * 0.47, 0.81 - sunsetT * 0.34, 0.92 - sunsetT * 0.59);
-    } else {
-        // Night - bright enough to see clearly
-        const nightT = (t - 0.8) / 0.2;
-        sunIntensity = 0.35 - nightT * 0.1;
-        ambientIntensity = 0.65 - nightT * 0.1;
-        sunColor.setRGB(1 - nightT * 0.6, 0.4 + nightT * 0.13, 0.27 + nightT * 0.53);
-        ambientColor.setRGB(0.35 - nightT * 0.06, 0.35 - nightT * 0, 0.48 - nightT * 0);
-        scene.background.setRGB(1 - nightT * 0.90, 0.47 - nightT * 0.28, 0.33 - nightT * 0.06);
-    }
+    // Colors - smooth interpolation between day and night
+    // Night colors brightened to reduce darkness
+    const dayAmbient = { r: 0.75, g: 0.88, b: 0.94 };
+    const nightAmbient = { r: 0.45, g: 0.50, b: 0.60 }; // Brighter night ambient
+    const daySun = { r: 1.0, g: 0.98, b: 0.95 };
+    const nightSun = { r: 0.5, g: 0.6, b: 0.85 }; // Brighter moonlight
+    const daySky = { r: 0.53, g: 0.81, b: 0.92 };
+    const nightSky = { r: 0.20, g: 0.25, b: 0.40 }; // Brighter night sky
     
-    sunLight.intensity = sunIntensity;
-    ambientLight.intensity = ambientIntensity;
+    // Lerp colors based on dayFactor
+    const lerpColor = (day, night, factor) => ({
+        r: day.r * factor + night.r * (1 - factor),
+        g: day.g * factor + night.g * (1 - factor),
+        b: day.b * factor + night.b * (1 - factor)
+    });
+    
+    const ambientC = lerpColor(dayAmbient, nightAmbient, dayFactor);
+    const sunC = lerpColor(daySun, nightSun, dayFactor);
+    const skyC = lerpColor(daySky, nightSky, dayFactor);
+    
+    // Apply colors
+    ambientLight.color.setRGB(ambientC.r, ambientC.g, ambientC.b);
+    sunLight.color.setRGB(sunC.r, sunC.g, sunC.b);
+    scene.background.setRGB(skyC.r, skyC.g, skyC.b);
+    
+    // Intensities - brighter during day, less dim at night (always visible)
+    sunLight.intensity = 0.45 + dayFactor * 0.5; // Night: 0.45, Day: 0.95
+    ambientLight.intensity = 0.5 + dayFactor * 0.15; // Night: 0.5, Day: 0.65
     
     // Update fog color to match sky
     if (scene.fog) scene.fog.color.copy(scene.background);
     
-    // Toggle prop lights (ON at night: t < 0.25 or t >= 0.75)
-    const shouldLightsBeOn = t < 0.25 || t >= 0.75;
+    // Toggle prop lights (ON when sun is below horizon)
+    const shouldLightsBeOn = nightFactor > 0.5;
     
     if (shouldLightsBeOn !== lightsOnRef.current && propLights.length > 0) {
         lightsOnRef.current = shouldLightsBeOn;
@@ -96,26 +80,26 @@ export function updateDayNightCycle({
                 if (light.userData.originalIntensity === undefined) {
                     light.userData.originalIntensity = light.intensity;
                 }
+                // Smooth transition for prop lights based on night factor
                 light.intensity = shouldLightsBeOn ? light.userData.originalIntensity : 0;
             }
         });
     }
     
-    return { sunIntensity, ambientIntensity, isNight: shouldLightsBeOn };
+    return { sunIntensity: sunLight.intensity, ambientIntensity: ambientLight.intensity, isNight: shouldLightsBeOn };
 }
 
 /**
  * Calculate night factor from time (0=day, 1=night)
+ * Smooth sine-based calculation
  * @param {number} t - Normalized time (0-1)
  * @returns {number} Night factor (0-1)
  */
 export function calculateNightFactor(t) {
-    if (t < 0.2) return 1.0;
-    if (t < 0.3) return 1.0 - (t - 0.2) / 0.1;
-    if (t < 0.7) return 0.0;
-    if (t < 0.8) return (t - 0.7) / 0.1;
-    return 1.0;
+    // Sine wave: t=0 midnight (night=1), t=0.5 noon (night=0)
+    const sunAngle = (t - 0.25) * Math.PI * 2;
+    const sunHeight = Math.sin(sunAngle);
+    return Math.max(0, -sunHeight); // 0 during day, peaks at 1 at midnight
 }
 
 export default { updateDayNightCycle, calculateNightFactor };
-

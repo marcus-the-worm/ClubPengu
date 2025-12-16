@@ -1,0 +1,427 @@
+/**
+ * MountTrailSystem - Manages ground trails left by mounts
+ * 
+ * Features:
+ * - Configurable trail types per mount (icy, fire, etc.)
+ * - Visual particle/decal rendering
+ * - Status effects when players walk on trails
+ * - Server-synchronized for multiplayer
+ * - Trails fade over time
+ * 
+ * Design: OOP with extensible trail types
+ */
+
+// Trail type configurations
+const TRAIL_TYPES = {
+    icy: {
+        color: 0x87CEEB,          // Icy light blue (sky blue)
+        emissive: 0xADD8E6,       // Light blue glow
+        opacity: 1.0,             // Fully opaque
+        fadeTime: 8000,           // 8 seconds to fully fade
+        particleSize: 0.8,
+        spawnInterval: 50,        // ms between trail points (smoother trail)
+        effect: null,             // Visual only - no status effect
+    },
+    fire: {
+        color: 0xFF4500,
+        emissive: 0xFF6600,
+        opacity: 0.8,
+        fadeTime: 5000,
+        particleSize: 0.6,
+        spawnInterval: 80,
+        effect: {
+            type: 'fire',
+            damagePerSecond: 5,
+            duration: 300,
+        }
+    },
+    sparkle: {
+        color: 0xFFD700,
+        emissive: 0xFFFF00,
+        opacity: 0.6,
+        fadeTime: 3000,
+        particleSize: 0.4,
+        spawnInterval: 50,
+        effect: null, // Visual only, no status effect
+    }
+};
+
+/**
+ * Individual trail point with position, age, and visual mesh
+ */
+class TrailPoint {
+    constructor(x, z, trailType, timestamp, THREE) {
+        this.x = x;
+        this.z = z;
+        this.trailType = trailType;
+        this.createdAt = timestamp;
+        this.config = TRAIL_TYPES[trailType];
+        this.mesh = null;
+        this.THREE = THREE;
+    }
+    
+    /**
+     * Create the visual mesh for this trail point
+     * @param {THREE.Scene} scene 
+     */
+    createMesh(scene) {
+        const THREE = this.THREE;
+        const config = this.config;
+        
+        // Create a flat circular decal on the ground
+        const geometry = new THREE.CircleGeometry(config.particleSize, 12);
+        const material = new THREE.MeshBasicMaterial({
+            color: config.color,
+            transparent: true,
+            opacity: config.opacity,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            depthTest: true,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+        });
+        
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.rotation.x = -Math.PI / 2; // Lay flat on ground
+        this.mesh.position.set(this.x, 0.1, this.z); // Higher above ground to avoid z-fighting with textured surfaces
+        this.mesh.renderOrder = 5; // Higher render order to ensure it draws on top
+        
+        scene.add(this.mesh);
+        return this.mesh;
+    }
+    
+    /**
+     * Update trail point (fade effect)
+     * @param {number} currentTime 
+     * @returns {boolean} true if should be removed
+     */
+    update(currentTime) {
+        const age = currentTime - this.createdAt;
+        const fadeProgress = age / this.config.fadeTime;
+        
+        if (fadeProgress >= 1) {
+            return true; // Should be removed
+        }
+        
+        // Fade out opacity
+        if (this.mesh && this.mesh.material) {
+            this.mesh.material.opacity = this.config.opacity * (1 - fadeProgress);
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Check if a position is within this trail point's effect radius
+     * @param {number} px - Player X
+     * @param {number} pz - Player Z
+     * @returns {boolean}
+     */
+    containsPoint(px, pz) {
+        const dx = px - this.x;
+        const dz = pz - this.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        return dist < this.config.particleSize * 1.2;
+    }
+    
+    /**
+     * Clean up mesh from scene
+     * @param {THREE.Scene} scene 
+     */
+    dispose(scene) {
+        if (this.mesh) {
+            scene.remove(this.mesh);
+            if (this.mesh.geometry) this.mesh.geometry.dispose();
+            if (this.mesh.material) this.mesh.material.dispose();
+            this.mesh = null;
+        }
+    }
+}
+
+/**
+ * MountTrailSystem - Main system class
+ */
+class MountTrailSystem {
+    constructor(THREE, scene) {
+        this.THREE = THREE;
+        this.scene = scene;
+        
+        // Trail points organized by owner ID (playerId or 'local')
+        this.trails = new Map(); // Map<ownerId, TrailPoint[]>
+        
+        // Last spawn time per owner (for spawn interval)
+        this.lastSpawnTime = new Map();
+        
+        // Active status effects on local player
+        this.activeEffects = new Map(); // Map<effectType, { expiresAt, config }>
+        
+        // Server sync buffer (pending trails to send)
+        this.pendingSync = [];
+        
+        // Configuration
+        this.maxTrailPointsPerPlayer = 150; // Enough points for full 8 second trail
+        this.enabled = true;
+    }
+    
+    /**
+     * Get trail type for a mount
+     * @param {string} mountName 
+     * @returns {string|null} Trail type name or null
+     */
+    static getTrailTypeForMount(mountName) {
+        const mountTrails = {
+            'penguMount': 'icy',
+            'minecraftBoat': null,  // No trail
+            // Future mounts can be added here
+        };
+        return mountTrails[mountName] ?? null;
+    }
+    
+    /**
+     * Check if a mount has a trail
+     * @param {string} mountName 
+     * @returns {boolean}
+     */
+    static mountHasTrail(mountName) {
+        return MountTrailSystem.getTrailTypeForMount(mountName) !== null;
+    }
+    
+    /**
+     * Spawn a trail point at position
+     * @param {string} ownerId - Player ID or 'local'
+     * @param {number} x 
+     * @param {number} z 
+     * @param {string} trailType 
+     * @param {number} timestamp 
+     * @param {boolean} fromServer - Whether this came from server (don't re-sync)
+     */
+    spawnTrailPoint(ownerId, x, z, trailType, timestamp = Date.now(), fromServer = false) {
+        if (!this.enabled || !TRAIL_TYPES[trailType]) return;
+        
+        const config = TRAIL_TYPES[trailType];
+        const lastSpawn = this.lastSpawnTime.get(ownerId) || 0;
+        
+        // Check spawn interval (skip for server-received trails)
+        if (!fromServer && timestamp - lastSpawn < config.spawnInterval) {
+            return;
+        }
+        
+        this.lastSpawnTime.set(ownerId, timestamp);
+        
+        // Create trail point
+        const point = new TrailPoint(x, z, trailType, timestamp, this.THREE);
+        point.createMesh(this.scene);
+        
+        // Add to trails map
+        if (!this.trails.has(ownerId)) {
+            this.trails.set(ownerId, []);
+        }
+        const ownerTrails = this.trails.get(ownerId);
+        ownerTrails.push(point);
+        
+        // Limit trail points per player
+        while (ownerTrails.length > this.maxTrailPointsPerPlayer) {
+            const oldest = ownerTrails.shift();
+            oldest.dispose(this.scene);
+        }
+        
+        // Queue for server sync (only local trails)
+        if (!fromServer && ownerId === 'local') {
+            this.pendingSync.push({ x, z, trailType, timestamp });
+        }
+    }
+    
+    /**
+     * Update from mounted player position
+     * Called each frame when player is on a mount with a trail
+     * @param {string} ownerId 
+     * @param {number} x 
+     * @param {number} z 
+     * @param {string} mountName 
+     * @param {boolean} isMoving 
+     */
+    updateFromMount(ownerId, x, z, mountName, isMoving) {
+        if (!isMoving) return;
+        
+        const trailType = MountTrailSystem.getTrailTypeForMount(mountName);
+        if (!trailType) return;
+        
+        this.spawnTrailPoint(ownerId, x, z, trailType);
+    }
+    
+    /**
+     * Main update loop - fade trails and check status effects
+     * @param {number} currentTime 
+     * @param {Object} playerPos - { x, z } local player position
+     */
+    update(currentTime, playerPos) {
+        // Update all trail points (fade and remove expired)
+        for (const [ownerId, points] of this.trails) {
+            for (let i = points.length - 1; i >= 0; i--) {
+                const point = points[i];
+                const shouldRemove = point.update(currentTime);
+                
+                if (shouldRemove) {
+                    point.dispose(this.scene);
+                    points.splice(i, 1);
+                }
+            }
+            
+            // Clean up empty trail arrays
+            if (points.length === 0) {
+                this.trails.delete(ownerId);
+            }
+        }
+        
+        // Check if local player is standing on any trail
+        if (playerPos) {
+            this.checkPlayerOnTrail(playerPos.x, playerPos.z, currentTime);
+        }
+        
+        // Clean up expired status effects
+        this.cleanupExpiredEffects(currentTime);
+    }
+    
+    /**
+     * Check if player is on a trail and apply status effect
+     * @param {number} px 
+     * @param {number} pz 
+     * @param {number} currentTime 
+     */
+    checkPlayerOnTrail(px, pz, currentTime) {
+        for (const [ownerId, points] of this.trails) {
+            for (const point of points) {
+                if (point.containsPoint(px, pz) && point.config.effect) {
+                    const effect = point.config.effect;
+                    this.applyEffect(effect, currentTime);
+                    return; // Only apply one effect at a time
+                }
+            }
+        }
+    }
+    
+    /**
+     * Apply a status effect to local player
+     * @param {Object} effectConfig 
+     * @param {number} currentTime 
+     */
+    applyEffect(effectConfig, currentTime) {
+        const expiresAt = currentTime + effectConfig.duration;
+        
+        // Update or add effect
+        this.activeEffects.set(effectConfig.type, {
+            expiresAt,
+            config: effectConfig
+        });
+    }
+    
+    /**
+     * Clean up expired effects
+     * @param {number} currentTime 
+     */
+    cleanupExpiredEffects(currentTime) {
+        for (const [type, effect] of this.activeEffects) {
+            if (currentTime > effect.expiresAt) {
+                this.activeEffects.delete(type);
+            }
+        }
+    }
+    
+    /**
+     * Get current speed multiplier from active effects
+     * @returns {number}
+     */
+    getSpeedMultiplier() {
+        let multiplier = 1.0;
+        for (const [type, effect] of this.activeEffects) {
+            if (effect.config.speedMultiplier) {
+                multiplier *= effect.config.speedMultiplier;
+            }
+        }
+        return multiplier;
+    }
+    
+    /**
+     * Get current friction multiplier from active effects
+     * @returns {number}
+     */
+    getFrictionMultiplier() {
+        let friction = 1.0;
+        for (const [type, effect] of this.activeEffects) {
+            if (effect.config.friction) {
+                friction = Math.min(friction, effect.config.friction);
+            }
+        }
+        return friction;
+    }
+    
+    /**
+     * Check if player has a specific effect active
+     * @param {string} effectType 
+     * @returns {boolean}
+     */
+    hasEffect(effectType) {
+        return this.activeEffects.has(effectType);
+    }
+    
+    /**
+     * Get pending sync data and clear buffer
+     * @returns {Array}
+     */
+    getPendingSyncAndClear() {
+        const data = [...this.pendingSync];
+        this.pendingSync = [];
+        return data;
+    }
+    
+    /**
+     * Receive trail data from server (other players' trails)
+     * @param {string} playerId 
+     * @param {Array} trailPoints - [{ x, z, trailType, timestamp }, ...]
+     */
+    receiveServerTrails(playerId, trailPoints) {
+        for (const point of trailPoints) {
+            this.spawnTrailPoint(
+                playerId,
+                point.x,
+                point.z,
+                point.trailType,
+                point.timestamp,
+                true // fromServer
+            );
+        }
+    }
+    
+    /**
+     * Remove all trails for a specific player (e.g., when they disconnect)
+     * @param {string} playerId 
+     */
+    removePlayerTrails(playerId) {
+        const trails = this.trails.get(playerId);
+        if (trails) {
+            for (const point of trails) {
+                point.dispose(this.scene);
+            }
+            this.trails.delete(playerId);
+        }
+    }
+    
+    /**
+     * Clean up all trails and dispose resources
+     */
+    dispose() {
+        for (const [ownerId, points] of this.trails) {
+            for (const point of points) {
+                point.dispose(this.scene);
+            }
+        }
+        this.trails.clear();
+        this.activeEffects.clear();
+        this.pendingSync = [];
+    }
+}
+
+export { MountTrailSystem, TRAIL_TYPES };
+export default MountTrailSystem;
+

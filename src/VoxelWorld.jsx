@@ -37,7 +37,7 @@ import {
     IGLOO_BANNER_STYLES,
     IGLOO_BANNER_CONTENT
 } from './config';
-import { createChatSprite, updateAIAgents, updateMatchBanners, createIglooOccupancySprite, updateIglooOccupancySprite, animateMesh, updateDayNightCycle, calculateNightFactor, SnowfallSystem, WizardTrailSystem, lerp, lerpRotation, calculateLerpFactor } from './systems';
+import { createChatSprite, updateAIAgents, updateMatchBanners, createIglooOccupancySprite, updateIglooOccupancySprite, animateMesh, updateDayNightCycle, calculateNightFactor, SnowfallSystem, WizardTrailSystem, MountTrailSystem, lerp, lerpRotation, calculateLerpFactor } from './systems';
 import { createDojo, createGiftShop, createPizzaParlor, generateDojoInterior, generatePizzaInterior } from './buildings';
 
 const VoxelWorld = ({ 
@@ -73,6 +73,7 @@ const VoxelWorld = ({
     const isInMatchRef = useRef(isInMatch); // Track match state for game loop
     const matchBannersRef = useRef(new Map()); // matchId -> { sprite, canvas, ctx }
     const wizardTrailSystemRef = useRef(null); // World-space wizard hat particle trail
+    const mountTrailSystemRef = useRef(null); // Mount trail system (icy trails, etc.)
     const mountEnabledRef = useRef(true); // Track if mount is equipped/enabled
     const mpUpdateAppearanceRef = useRef(null); // Ref for appearance update function
     const penguinDataRef = useRef(null); // Ref for current penguin data
@@ -381,6 +382,9 @@ const VoxelWorld = ({
         
         // Initialize wizard trail particle system
         wizardTrailSystemRef.current = new WizardTrailSystem(THREE, scene);
+        
+        // Initialize mount trail system (icy trails, etc.)
+        mountTrailSystemRef.current = new MountTrailSystem(THREE, scene);
         
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
         cameraRef.current = camera;
@@ -1325,11 +1329,14 @@ const VoxelWorld = ({
                     conversationLineIdx: 0,
                     conversationTurn: false,
                     target: null,
-                    actionTimer: 0,
+                    actionTimer: Date.now() + 2000 + Math.random() * 5000, // Stagger initial actions
                     emoteType: null,
                     emoteStart: 0,
                     bubble: null,
-                    bubbleTimer: 0
+                    bubbleTimer: 0,
+                    roomTransitionCooldown: Date.now() + 10000 + Math.random() * 20000, // Initial room stability
+                    stuckCounter: 0,
+                    lastRoomChange: Date.now()
                 });
             });
         } else {
@@ -1486,6 +1493,10 @@ const VoxelWorld = ({
             let speed = 10 * delta;
             if (playerRef.current?.userData?.mountData?.speedBoost && mountEnabledRef.current) {
                 speed *= playerRef.current.userData.mountData.speedBoost;
+            }
+            // Apply mount trail effects (icy = speed boost + slippery)
+            if (mountTrailSystemRef.current) {
+                speed *= mountTrailSystemRef.current.getSpeedMultiplier();
             }
             // PC rotation is faster for tighter turning with A/D keys
             const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -1694,8 +1705,19 @@ const VoxelWorld = ({
                     velRef.current.x = -Math.sin(rotRef.current) * speed;
                     moving = true;
                 } else {
-                    velRef.current.x = 0;
-                    velRef.current.z = 0;
+                    // Apply friction (slippery on icy trails)
+                    const friction = mountTrailSystemRef.current?.getFrictionMultiplier() ?? 1.0;
+                    if (friction < 1.0) {
+                        // Slippery - gradual slowdown
+                        velRef.current.x *= friction;
+                        velRef.current.z *= friction;
+                        // Stop completely when very slow
+                        if (Math.abs(velRef.current.x) < 0.01) velRef.current.x = 0;
+                        if (Math.abs(velRef.current.z) < 0.01) velRef.current.z = 0;
+                    } else {
+                        velRef.current.x = 0;
+                        velRef.current.z = 0;
+                    }
                 }
                 }
                 // === AIR MOVEMENT ===
@@ -2574,6 +2596,29 @@ const VoxelWorld = ({
                     wizardTrailSystemRef.current.update('localPlayer', playerRef.current.position, moving, time, delta);
                 }
                 
+                // --- MOUNT TRAIL SYSTEM (Icy trails, etc.) ---
+                if (mountTrailSystemRef.current) {
+                    const isMountedWithTrail = playerRef.current.userData?.mount && 
+                                               playerRef.current.userData?.mountData && 
+                                               mountEnabledRef.current &&
+                                               MountTrailSystem.mountHasTrail(playerRef.current.userData.mount);
+                    
+                    // Only draw trail when on ground (not airborne) and moving
+                    const isOnGround = !isAirborne && posRef.current.y < 0.1;
+                    if (isMountedWithTrail && moving && isOnGround) {
+                        mountTrailSystemRef.current.updateFromMount(
+                            'local',
+                            posRef.current.x,
+                            posRef.current.z,
+                            playerRef.current.userData.mount,
+                            moving
+                        );
+                    }
+                    
+                    // Update trail system (fade trails, check effects)
+                    mountTrailSystemRef.current.update(Date.now(), { x: posRef.current.x, z: posRef.current.z });
+                }
+                
                 // --- MOUNT ANIMATION ---
                 // Animate mount when player is moving (only if mount is enabled)
                 if (playerRef.current.userData?.mount && playerRef.current.userData?.mountData?.animated && mountEnabledRef.current) {
@@ -2583,23 +2628,34 @@ const VoxelWorld = ({
                     if (mountGroup) {
                         // Pengu mount waddle animation
                         if (mountData.animationType === 'penguin_waddle') {
+                            const leftFlipper = mountGroup.getObjectByName('left_flipper');
+                            const rightFlipper = mountGroup.getObjectByName('right_flipper');
+                            const leftFoot = mountGroup.getObjectByName('left_foot');
+                            const rightFoot = mountGroup.getObjectByName('right_foot');
+                            
                             if (moving) {
-                                const waddleSpeed = 12;
-                                const flapAngle = Math.sin(time * waddleSpeed) * 0.4;
-                                const feetAngle = Math.sin(time * waddleSpeed) * 0.3;
+                                const waddleSpeed = 10;
+                                const flapAmount = Math.sin(time * waddleSpeed) * 0.8; // Y offset for flapping
                                 
-                                // Flap flippers up and down (rotate on X axis)
-                                mountGroup.children.forEach(child => {
-                                    // The mount mesh contains all voxels - we animate the whole group slightly
-                                });
+                                // Flippers flap up and down (Y axis) - opposite of each other
+                                if (leftFlipper) leftFlipper.position.y = flapAmount;
+                                if (rightFlipper) rightFlipper.position.y = -flapAmount;
+                                
+                                // Feet paddle up and down (Y axis) - opposite of flippers
+                                if (leftFoot) leftFoot.position.y = -flapAmount * 0.6;
+                                if (rightFoot) rightFoot.position.y = flapAmount * 0.6;
                                 
                                 // Waddle the whole mount side to side and bob up/down
-                                mountGroup.rotation.z = Math.sin(time * waddleSpeed) * 0.08;
-                                mountGroup.position.y = 0.6 + Math.abs(Math.sin(time * waddleSpeed * 0.5)) * 0.1;
+                                mountGroup.rotation.z = Math.sin(time * waddleSpeed) * 0.06;
+                                mountGroup.position.y = 0.65 + Math.abs(Math.sin(time * waddleSpeed * 0.5)) * 0.08;
                             } else {
-                                // Return to rest position
+                                // Return to rest position smoothly
+                                if (leftFlipper) leftFlipper.position.y *= 0.85;
+                                if (rightFlipper) rightFlipper.position.y *= 0.85;
+                                if (leftFoot) leftFoot.position.y *= 0.85;
+                                if (rightFoot) rightFoot.position.y *= 0.85;
                                 mountGroup.rotation.z *= 0.9;
-                                mountGroup.position.y = 0.6 + (mountGroup.position.y - 0.6) * 0.9;
+                                mountGroup.position.y = 0.65 + (mountGroup.position.y - 0.65) * 0.9;
                             }
                         }
                         // Boat rowing animation
@@ -2709,20 +2765,34 @@ const VoxelWorld = ({
                 const playerData = playersData.get(id);
                 if (!playerData || !meshData.mesh) continue;
                 
-                // Check if player is seated - if so, DON'T interpolate position
+                // Check if player is seated - if so, handle position differently
                 const isSeated = playerData.seatedOnFurniture || 
                                 (meshData.currentEmote === 'Sit' && playerData.emote === 'Sit');
                 
-                // Position interpolation (skip if seated to prevent jitter/teleport)
-                if (playerData.position && !isSeated) {
-                    meshData.mesh.position.x = lerp(meshData.mesh.position.x, playerData.position.x, lerpFactor);
-                    meshData.mesh.position.z = lerp(meshData.mesh.position.z, playerData.position.z, lerpFactor);
-                    meshData.mesh.position.y = lerp(meshData.mesh.position.y, playerData.position.y ?? 0, yLerpFactor);
+                // Position interpolation
+                if (playerData.position) {
+                    if (isSeated) {
+                        // When seated, snap to the seat position immediately (no interpolation)
+                        // This ensures the player appears on the bench for other clients
+                        meshData.mesh.position.x = playerData.position.x;
+                        meshData.mesh.position.z = playerData.position.z;
+                        meshData.mesh.position.y = playerData.position.y ?? 0;
+                    } else {
+                        // Normal interpolation when walking
+                        meshData.mesh.position.x = lerp(meshData.mesh.position.x, playerData.position.x, lerpFactor);
+                        meshData.mesh.position.z = lerp(meshData.mesh.position.z, playerData.position.z, lerpFactor);
+                        meshData.mesh.position.y = lerp(meshData.mesh.position.y, playerData.position.y ?? 0, yLerpFactor);
+                    }
                 }
                 
-                // Rotation interpolation (also skip if seated)
-                if (playerData.rotation !== undefined && !isSeated) {
-                    meshData.mesh.rotation.y = lerpRotation(meshData.mesh.rotation.y, playerData.rotation, lerpFactor);
+                // Rotation interpolation
+                if (playerData.rotation !== undefined) {
+                    if (isSeated) {
+                        // Snap rotation when seated
+                        meshData.mesh.rotation.y = playerData.rotation;
+                    } else {
+                        meshData.mesh.rotation.y = lerpRotation(meshData.mesh.rotation.y, playerData.rotation, lerpFactor);
+                    }
                 }
                 
                 // Handle puffle creation/removal dynamically
@@ -2791,7 +2861,8 @@ const VoxelWorld = ({
                 }
                 
                 // Animate other player mesh (walking/emotes)
-                const isMoving = playerData.position && (
+                // If seated on furniture, never consider as "moving" (prevents walk animation overriding sit)
+                const isMoving = !isSeated && playerData.position && (
                     Math.abs(playerData.position.x - meshData.mesh.position.x) > 0.1 ||
                     Math.abs(playerData.position.z - meshData.mesh.position.z) > 0.1
                 );
@@ -2811,85 +2882,90 @@ const VoxelWorld = ({
                 // Mount animation for other players
                 if (meshData.mesh.userData?.mount && meshData.mesh.userData?.mountData?.animated) {
                     const mountGroup = meshData.mesh.getObjectByName('mount');
+                    const mountData = meshData.mesh.userData.mountData;
+                    
                     if (mountGroup) {
-                        const leftOarPivot = mountGroup.getObjectByName('left_oar_pivot');
-                        const rightOarPivot = mountGroup.getObjectByName('right_oar_pivot');
-                        
-                        if (leftOarPivot && rightOarPivot) {
+                        // Pengu mount waddle animation
+                        if (mountData.animationType === 'penguin_waddle') {
+                            const leftFlipper = mountGroup.getObjectByName('left_flipper');
+                            const rightFlipper = mountGroup.getObjectByName('right_flipper');
+                            const leftFoot = mountGroup.getObjectByName('left_foot');
+                            const rightFoot = mountGroup.getObjectByName('right_foot');
+                            
                             if (isMoving) {
-                                const rowSpeed = 8;
-                                const rowAngle = Math.sin(time * rowSpeed) * 0.5;
-                                leftOarPivot.rotation.y = rowAngle;
-                                rightOarPivot.rotation.y = -rowAngle;
-                                leftOarPivot.rotation.z = Math.sin(time * rowSpeed + Math.PI/2) * 0.15;
-                                rightOarPivot.rotation.z = -Math.sin(time * rowSpeed + Math.PI/2) * 0.15;
+                                const waddleSpeed = 10;
+                                const flapAmount = Math.sin(time * waddleSpeed) * 0.8;
+                                
+                                // Flippers flap up and down - opposite of each other
+                                if (leftFlipper) leftFlipper.position.y = flapAmount;
+                                if (rightFlipper) rightFlipper.position.y = -flapAmount;
+                                
+                                // Feet paddle up and down - opposite of flippers
+                                if (leftFoot) leftFoot.position.y = -flapAmount * 0.6;
+                                if (rightFoot) rightFoot.position.y = flapAmount * 0.6;
+                                
+                                // Waddle the whole mount side to side and bob up/down
+                                mountGroup.rotation.z = Math.sin(time * waddleSpeed) * 0.06;
+                                mountGroup.position.y = (mountData.positionY || 0.65) + Math.abs(Math.sin(time * waddleSpeed * 0.5)) * 0.08;
                             } else {
-                                leftOarPivot.rotation.y *= 0.9;
-                                rightOarPivot.rotation.y *= 0.9;
-                                leftOarPivot.rotation.z *= 0.9;
-                                rightOarPivot.rotation.z *= 0.9;
+                                // Return to rest position smoothly
+                                if (leftFlipper) leftFlipper.position.y *= 0.85;
+                                if (rightFlipper) rightFlipper.position.y *= 0.85;
+                                if (leftFoot) leftFoot.position.y *= 0.85;
+                                if (rightFoot) rightFoot.position.y *= 0.85;
+                                mountGroup.rotation.z *= 0.9;
+                                const restY = mountData.positionY || 0.65;
+                                mountGroup.position.y = restY + (mountGroup.position.y - restY) * 0.9;
+                            }
+                        }
+                        // Boat rowing animation
+                        else {
+                            const leftOarPivot = mountGroup.getObjectByName('left_oar_pivot');
+                            const rightOarPivot = mountGroup.getObjectByName('right_oar_pivot');
+                            
+                            if (leftOarPivot && rightOarPivot) {
+                                if (isMoving) {
+                                    const rowSpeed = 8;
+                                    const rowAngle = Math.sin(time * rowSpeed) * 0.5;
+                                    leftOarPivot.rotation.y = rowAngle;
+                                    rightOarPivot.rotation.y = -rowAngle;
+                                    leftOarPivot.rotation.z = Math.sin(time * rowSpeed + Math.PI/2) * 0.15;
+                                    rightOarPivot.rotation.z = -Math.sin(time * rowSpeed + Math.PI/2) * 0.15;
+                                } else {
+                                    leftOarPivot.rotation.y *= 0.9;
+                                    rightOarPivot.rotation.y *= 0.9;
+                                    leftOarPivot.rotation.z *= 0.9;
+                                    rightOarPivot.rotation.z *= 0.9;
+                                }
                             }
                         }
                     }
                 }
                 
-                // Wizard hat trail for other players
+                // Mount trail for other players (icy trail from pengu mount, etc.)
+                // Spawn locally based on other player's position - no server sync needed
+                if (meshData.mesh.userData?.mount && meshData.mesh.userData?.mountVisible !== false && mountTrailSystemRef.current) {
+                    const otherMountName = meshData.mesh.userData.mount;
+                    const otherIsOnGround = (playerData.position?.y ?? 0) < 0.1;
+                    
+                    if (isMoving && otherIsOnGround && MountTrailSystem.mountHasTrail(otherMountName)) {
+                        mountTrailSystemRef.current.updateFromMount(
+                            id, // Use player ID as owner
+                            meshData.mesh.position.x,
+                            meshData.mesh.position.z,
+                            otherMountName,
+                            true // isMoving
+                        );
+                    }
+                }
+                
+                // Wizard hat trail for other players - use the same system as local player
+                // Wizard hat trail for other players - use the same system as local player
                 const otherAppearance = playerData.appearance || {};
                 if (otherAppearance.hat === 'wizardHat' && wizardTrailSystemRef.current) {
                     const poolKey = `player_${id}`;
-                    let trailGroup = wizardTrailSystemRef.current.pools.get(poolKey);
-                    
-                    // Create pool if it doesn't exist
-                    if (!trailGroup) {
-                        trailGroup = wizardTrailSystemRef.current.createPool();
-                        wizardTrailSystemRef.current.pools.set(poolKey, trailGroup);
-                        sceneRef.current.add(trailGroup);
-                    }
-                    
-                    if (isMoving) {
-                        const spawnInterval = 1 / 12;
-                        const timeSinceLastSpawn = time - trailGroup.userData.lastSpawnTime;
-                        
-                        if (timeSinceLastSpawn >= spawnInterval) {
-                            let spawned = false;
-                            for (let attempts = 0; attempts < trailGroup.children.length && !spawned; attempts++) {
-                                const idx = (trailGroup.userData.nextParticleIndex + attempts) % trailGroup.children.length;
-                                const particle = trailGroup.children[idx];
-                                
-                                if (!particle.userData.active) {
-                                    particle.position.set(
-                                        meshData.mesh.position.x + (Math.random() - 0.5) * 0.4,
-                                        meshData.mesh.position.y + 2.2 + (Math.random() - 0.5) * 0.2,
-                                        meshData.mesh.position.z + (Math.random() - 0.5) * 0.4
-                                    );
-                                    particle.userData.active = true;
-                                    particle.userData.birthTime = time;
-                                    particle.visible = true;
-                                    particle.material.opacity = 0.9;
-                                    particle.scale.setScalar(0.8 + Math.random() * 0.4);
-                                    
-                                    trailGroup.userData.nextParticleIndex = (idx + 1) % trailGroup.children.length;
-                                    trailGroup.userData.lastSpawnTime = time;
-                                    spawned = true;
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Update particles
-                    for (const particle of trailGroup.children) {
-                        if (particle.userData.active) {
-                            const age = time - particle.userData.birthTime;
-                            if (age > 1.0) {
-                                particle.userData.active = false;
-                                particle.visible = false;
-                            } else {
-                                particle.position.y += delta * 0.8;
-                                particle.material.opacity = 0.9 * (1 - age);
-                                particle.scale.multiplyScalar(0.98);
-                            }
-                        }
-                    }
+                    wizardTrailSystemRef.current.getOrCreatePool(poolKey);
+                    wizardTrailSystemRef.current.update(poolKey, meshData.mesh.position, isMoving, time, delta);
                 }
             }
 
@@ -2928,6 +3004,17 @@ const VoxelWorld = ({
                         }
                     }
                 });
+                
+                // Hide nightclub title sign when player is on the roof (y > 12)
+                if (townCenterRef.current?.propMeshes) {
+                    const nightclubMesh = townCenterRef.current.propMeshes.find(m => m.name === 'nightclub');
+                    if (nightclubMesh) {
+                        const titleSign = nightclubMesh.getObjectByName('nightclub_title_sign');
+                        if (titleSign) {
+                            titleSign.visible = posRef.current.y < 12;
+                        }
+                    }
+                }
             }
             
             // Room-specific updates (self-contained in room modules)
@@ -3016,6 +3103,11 @@ const VoxelWorld = ({
             if (wizardTrailSystemRef.current) {
                 wizardTrailSystemRef.current.dispose();
                 wizardTrailSystemRef.current = null;
+            }
+            // Cleanup Mount trail system
+            if (mountTrailSystemRef.current) {
+                mountTrailSystemRef.current.dispose();
+                mountTrailSystemRef.current = null;
             }
         };
     }, [penguinData, room]); // Rebuild scene when room changes
@@ -4027,6 +4119,10 @@ const VoxelWorld = ({
                 if (data.mesh) scene.remove(data.mesh);
                 if (data.bubble) scene.remove(data.bubble);
                 if (data.puffleMesh) scene.remove(data.puffleMesh);
+                // Clean up their trail points
+                if (mountTrailSystemRef.current) {
+                    mountTrailSystemRef.current.removePlayerTrails(id);
+                }
                 meshes.delete(id);
             }
         }

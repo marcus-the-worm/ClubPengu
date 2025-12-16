@@ -170,6 +170,7 @@ export function updateAIAgents(params) {
 
 /**
  * Handle AI room transitions
+ * AI must respect roomTransitionCooldown to prevent rapid flipping
  */
 function updateAIRoomTransition(ai, ctx) {
     const {
@@ -181,39 +182,49 @@ function updateAIRoomTransition(ai, ctx) {
         aiPuffleEntry
     } = ctx;
 
-    if (ai.currentRoom === 'town') {
-        // Check if AI is at the dojo door
-        const doorWidth = 4;
-        const atDojoDoor = Math.abs(ai.pos.x - dojoBx) < doorWidth && 
-                           Math.abs(ai.pos.z - dojoDoorZ) < 4;
-        
-        // Check if AI is at the pizza door
-        const atPizzaDoor = Math.abs(ai.pos.x - pizzaBx) < 5 && 
-                            Math.abs(ai.pos.z - pizzaDoorZ) < 4;
-        
-        // Check if AI is at the nightclub door
-        const atNightclubDoor = Math.abs(ai.pos.x - nightclubDoorX) < 5 && 
-                                Math.abs(ai.pos.z - nightclubDoorZ) < 5;
+    // Initialize cooldown if not set
+    if (!ai.roomTransitionCooldown) {
+        ai.roomTransitionCooldown = 0;
+    }
+    
+    // Don't allow room transitions during cooldown
+    if (now < ai.roomTransitionCooldown) {
+        return;
+    }
 
-        // When at dojo door, chance to enter
-        if (atDojoDoor && Math.random() < 0.03) {
+    if (ai.currentRoom === 'town') {
+        // Check if AI is at the dojo door (tighter detection)
+        const doorWidth = 3;
+        const atDojoDoor = Math.abs(ai.pos.x - dojoBx) < doorWidth && 
+                           Math.abs(ai.pos.z - dojoDoorZ) < 3;
+        
+        // Check if AI is at the pizza door (tighter detection)
+        const atPizzaDoor = Math.abs(ai.pos.x - pizzaBx) < 4 && 
+                            Math.abs(ai.pos.z - pizzaDoorZ) < 3;
+        
+        // Check if AI is at the nightclub door (tighter detection)
+        const atNightclubDoor = Math.abs(ai.pos.x - nightclubDoorX) < 4 && 
+                                Math.abs(ai.pos.z - nightclubDoorZ) < 4;
+
+        // When at dojo door, small chance to enter (only if intentionally walking there)
+        if (atDojoDoor && ai.action === 'walk' && Math.random() < 0.02) {
             ai.currentRoom = 'dojo';
             ai.pos.x = (Math.random() - 0.5) * 10;
-            ai.pos.z = 12 + Math.random() * 3;
+            ai.pos.z = 10 + Math.random() * 2; // Spawn further inside
             resetAIAfterTransition(ai, now, aiPuffleEntry);
         }
-        // When at pizza door, chance to enter
-        else if (atPizzaDoor && Math.random() < 0.03) {
+        // When at pizza door, small chance to enter
+        else if (atPizzaDoor && ai.action === 'walk' && Math.random() < 0.02) {
             ai.currentRoom = 'pizza';
             ai.pos.x = (Math.random() - 0.5) * 8;
-            ai.pos.z = 12 + Math.random() * 2;
+            ai.pos.z = 10 + Math.random() * 2; // Spawn further inside
             resetAIAfterTransition(ai, now, aiPuffleEntry);
         }
-        // When at nightclub door, chance to enter
-        else if (atNightclubDoor && Math.random() < 0.04) {
+        // When at nightclub door, small chance to enter
+        else if (atNightclubDoor && ai.action === 'walk' && Math.random() < 0.025) {
             ai.currentRoom = 'nightclub';
             ai.pos.x = 20 + (Math.random() - 0.5) * 6;
-            ai.pos.z = 28 + Math.random() * 4;
+            ai.pos.z = 24 + Math.random() * 3; // Spawn further inside
             resetAIAfterTransition(ai, now, aiPuffleEntry);
         }
         // If stuck at door too long without entering, move away
@@ -227,33 +238,33 @@ function updateAIRoomTransition(ai, ctx) {
             ai.stuckCounter = 0;
         }
     } else if (ai.currentRoom === 'dojo') {
-        // AI in dojo can exit
-        const atExit = ai.pos.z > 13 && Math.abs(ai.pos.x) < 6;
+        // AI in dojo can exit - but only near the actual exit
+        const atExit = ai.pos.z > 14 && Math.abs(ai.pos.x) < 5;
         
-        if (atExit && Math.random() < 0.02) {
+        if (atExit && ai.action === 'walk' && Math.random() < 0.015) {
             ai.currentRoom = 'town';
             ai.pos.x = dojoBx + (Math.random() - 0.5) * 6;
-            ai.pos.z = dojoDoorZ + 3 + Math.random() * 3;
+            ai.pos.z = dojoDoorZ + 4 + Math.random() * 3;
             resetAIAfterTransition(ai, now, aiPuffleEntry);
         }
     } else if (ai.currentRoom === 'pizza') {
-        // AI in pizza can exit
-        const atExit = ai.pos.z > 13 && Math.abs(ai.pos.x) < 6;
+        // AI in pizza can exit - but only near the actual exit
+        const atExit = ai.pos.z > 14 && Math.abs(ai.pos.x) < 5;
         
-        if (atExit && Math.random() < 0.015) {
+        if (atExit && ai.action === 'walk' && Math.random() < 0.012) {
             ai.currentRoom = 'town';
             ai.pos.x = pizzaBx + (Math.random() - 0.5) * 6;
-            ai.pos.z = pizzaDoorZ + 3 + Math.random() * 3;
+            ai.pos.z = pizzaDoorZ + 4 + Math.random() * 3;
             resetAIAfterTransition(ai, now, aiPuffleEntry);
         }
     } else if (ai.currentRoom === 'nightclub') {
-        // AI in nightclub can exit
-        const atExit = ai.pos.z > 28 && ai.pos.x < 8;
+        // AI in nightclub can exit - but only near the actual exit
+        const atExit = ai.pos.z > 29 && ai.pos.x < 6;
         
-        if (atExit && Math.random() < 0.01) {
+        if (atExit && ai.action === 'walk' && Math.random() < 0.008) {
             ai.currentRoom = 'town';
             ai.pos.x = nightclubDoorX + (Math.random() - 0.5) * 6;
-            ai.pos.z = nightclubDoorZ + 5 + Math.random() * 3;
+            ai.pos.z = nightclubDoorZ + 6 + Math.random() * 3;
             resetAIAfterTransition(ai, now, aiPuffleEntry);
             ai.emoteType = null;
         }
@@ -268,6 +279,9 @@ function resetAIAfterTransition(ai, now, aiPuffleEntry) {
     ai.actionTimer = now + 2000 + Math.random() * 3000;
     ai.target = null;
     ai.stuckCounter = 0;
+    // Prevent rapid room transitions - must stay in room for at least 15-30 seconds
+    ai.roomTransitionCooldown = now + 15000 + Math.random() * 15000;
+    ai.lastRoomChange = now;
     if (aiPuffleEntry && aiPuffleEntry.puffle) {
         aiPuffleEntry.puffle.position.x = ai.pos.x + 1.5;
         aiPuffleEntry.puffle.position.z = ai.pos.z + 1.5;

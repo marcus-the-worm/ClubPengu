@@ -83,21 +83,26 @@ class Billboard extends BaseProp {
         brace2.position.set(0, poleHeight * 0.7, 0);
         this.addMesh(brace2, group);
         
-        // Diagonal braces
-        const diagLength = Math.sqrt(Math.pow(boardWidth / 3, 2) + Math.pow(poleHeight * 0.4, 2));
+        // Diagonal braces - form proper X between the two horizontal braces
+        // Distance between poles (boardWidth * 2/3), height between braces (poleHeight * 0.4)
+        const diagHorizontal = boardWidth * 2 / 3;
+        const diagVertical = poleHeight * 0.4;
+        const diagLength = Math.sqrt(diagHorizontal * diagHorizontal + diagVertical * diagVertical);
         const diagGeo = new THREE.CylinderGeometry(0.08, 0.08, diagLength, 6);
         this.geometries.push(diagGeo);
         
-        const diagAngle = Math.atan2(poleHeight * 0.4, boardWidth / 3);
+        const diagAngle = Math.atan2(diagVertical, diagHorizontal);
         
+        // Diagonal from bottom-left to top-right
         const diag1 = new THREE.Mesh(diagGeo, braceMat);
-        diag1.rotation.z = diagAngle;
-        diag1.position.set(-boardWidth / 6, poleHeight * 0.5, 0);
+        diag1.rotation.z = Math.PI / 2 - diagAngle;
+        diag1.position.set(0, poleHeight * 0.5, 0);
         this.addMesh(diag1, group);
         
+        // Diagonal from bottom-right to top-left
         const diag2 = new THREE.Mesh(diagGeo, braceMat);
-        diag2.rotation.z = -diagAngle;
-        diag2.position.set(boardWidth / 6, poleHeight * 0.5, 0);
+        diag2.rotation.z = Math.PI / 2 + diagAngle;
+        diag2.position.set(0, poleHeight * 0.5, 0);
         this.addMesh(diag2, group);
         
         // ==================== BILLBOARD FRAME ====================

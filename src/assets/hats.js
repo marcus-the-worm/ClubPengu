@@ -185,15 +185,15 @@ export const HATS = {
     // EPIC: Wizard Hat
     wizardHat: (() => {
         let v = [];
-        for(let x=-6; x<=6; x++) for(let z=-6; z<=6; z++) if(x*x+z*z < 40) v.push({x, y:10, z, c:'#4B0082'});
-        for(let y=11; y<18; y++) {
-            const r = Math.max(1, 5 - (y-11)*0.6);
+        for(let x=-6; x<=6; x++) for(let z=-6; z<=6; z++) if(x*x+z*z < 40) v.push({x, y:9, z, c:'#4B0082'});
+        for(let y=10; y<17; y++) {
+            const r = Math.max(1, 5 - (y-10)*0.6);
             for(let x=-r; x<=r; x++) for(let z=-r; z<=r; z++) if(x*x+z*z < r*r) v.push({x, y, z, c:'#4B0082'});
         }
-        v.push({x:2, y:13, z:3, c:'gold', glow: true});
-        v.push({x:-1, y:15, z:2, c:'gold', glow: true});
-        v.push({x:0, y:17, z:1, c:'gold', glow: true});
-        v.push({x:0, y:18, z:0, c:'#FF69B4', glow: true, fx: 'magicTrail', emitter: true});
+        v.push({x:2, y:12, z:3, c:'gold', glow: true});
+        v.push({x:-1, y:14, z:2, c:'gold', glow: true});
+        v.push({x:0, y:16, z:1, c:'gold', glow: true});
+        v.push({x:0, y:17, z:0, c:'#FF69B4', glow: true, fx: 'magicTrail', emitter: true});
         return v;
     })(),
     

@@ -666,46 +666,85 @@ class PropsFactory {
         entranceLight.position.set(0, 3, d / 2 + 2);
         group.add(entranceLight);
         
-        // ==================== HUGE NIGHTCLUB SIGN ====================
+        // ==================== NIGHTCLUB SIGN (Animated Canvas Text Sprite) ====================
         const signBackMat = this.getMaterial(0x0a0a15, { roughness: 0.9 });
-        const signBackGeo = new THREE.BoxGeometry(18, 4, 0.5);
+        const signBackGeo = new THREE.BoxGeometry(26, 6, 0.5);
         const signBack = new THREE.Mesh(signBackGeo, signBackMat);
-        signBack.position.set(0, h + 3, d / 2 - 2);
+        signBack.position.set(0, h + 3.5, d / 2 - 2);
         group.add(signBack);
         
-        const letterMat = this.getMaterial(neonBlue, {
-            emissive: neonBlue,
-            emissiveIntensity: 1.0,
-            roughness: 0.2,
-            metalness: 0.3
-        });
+        // Create canvas for animated NIGHTCLUB text (larger for bigger text)
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 1536;
+        signCanvas.height = 320;
+        const signCtx = signCanvas.getContext('2d');
         
-        const letters = 'NIGHTCLUB';
-        const letterWidth = 1.5;
-        const letterHeight = 2.5;
-        const letterDepth = 0.4;
-        const letterSpacing = 1.7;
-        const startX = -((letters.length - 1) * letterSpacing) / 2;
-        
-        for (let i = 0; i < letters.length; i++) {
-            const letterGeo = new THREE.BoxGeometry(letterWidth, letterHeight, letterDepth);
-            const letter = new THREE.Mesh(letterGeo, letterMat);
-            letter.position.set(startX + i * letterSpacing, h + 3, d / 2 - 1.5);
-            letter.userData.isNeonLetter = true;
-            letter.userData.letterIndex = i;
-            group.add(letter);
+        // Function to draw sign with given hue offset (for color animation)
+        const drawNightclubSign = (hueOffset = 0) => {
+            signCtx.clearRect(0, 0, 1536, 320);
+            signCtx.textAlign = 'center';
+            signCtx.textBaseline = 'middle';
+            signCtx.font = 'bold 140px "Impact", "Haettenschweiler", "Arial Narrow Bold", sans-serif';
             
-            if (i % 3 === 0) {
-                const notchGeo = new THREE.BoxGeometry(0.3, 0.8, letterDepth + 0.1);
-                const notchMat = this.getMaterial(0x0a0a15, { roughness: 0.9 });
-                const notch = new THREE.Mesh(notchGeo, notchMat);
-                notch.position.set(startX + i * letterSpacing, h + 2.5, d / 2 - 1.5);
-                group.add(notch);
-            }
-        }
+            // Calculate animated color (cycling through cyan -> blue -> purple -> pink -> cyan)
+            const hue = (180 + hueOffset) % 360; // Start at cyan (180)
+            const mainColor = `hsl(${hue}, 100%, 50%)`;
+            const glowColor = `hsl(${hue}, 100%, 60%)`;
+            const coreColor = `hsl(${hue}, 80%, 70%)`;
+            
+            // Spaced out text: "N I G H T C L U B"
+            const spacedText = 'N I G H T C L U B';
+            
+            // Outer glow (dimmed)
+            signCtx.shadowColor = mainColor;
+            signCtx.shadowBlur = 50;
+            signCtx.fillStyle = mainColor;
+            signCtx.globalAlpha = 0.7;
+            signCtx.fillText(spacedText, 768, 160);
+            
+            // Inner glow
+            signCtx.shadowBlur = 25;
+            signCtx.fillStyle = glowColor;
+            signCtx.globalAlpha = 0.8;
+            signCtx.fillText(spacedText, 768, 160);
+            
+            // Core text (not pure white - slightly tinted)
+            signCtx.shadowBlur = 12;
+            signCtx.fillStyle = coreColor;
+            signCtx.globalAlpha = 0.9;
+            signCtx.fillText(spacedText, 768, 160);
+            
+            signCtx.globalAlpha = 1.0;
+        };
         
-        const signLight = new THREE.PointLight(neonBlue, 3, 25);
-        signLight.position.set(0, h + 3, d / 2 + 2);
+        // Initial draw
+        drawNightclubSign(0);
+        
+        const signTexture = new THREE.CanvasTexture(signCanvas);
+        signTexture.needsUpdate = true;
+        
+        const signSpriteMat = new THREE.SpriteMaterial({ 
+            map: signTexture, 
+            depthTest: false,
+            transparent: true
+        });
+        const signSprite = new THREE.Sprite(signSpriteMat);
+        signSprite.name = 'nightclub_title_sign';
+        signSprite.scale.set(28, 7, 1);
+        signSprite.position.set(0, h + 3.5, d / 2 - 1);
+        signSprite.renderOrder = 100;
+        signSprite.userData.isNightclubSign = true;
+        signSprite.userData.signCanvas = signCanvas;
+        signSprite.userData.signCtx = signCtx;
+        signSprite.userData.signTexture = signTexture;
+        signSprite.userData.drawSign = drawNightclubSign;
+        signSprite.userData.baseY = h + 3.5;
+        signSprite.userData.baseScale = 28;
+        group.add(signSprite);
+        
+        // Add neon accent lights under sign (dimmed)
+        const signLight = new THREE.PointLight(neonBlue, 2.5, 25);
+        signLight.position.set(0, h + 3.5, d / 2 + 2);
         group.add(signLight);
         
         // ==================== HUGE SPEAKERS ====================
@@ -1064,14 +1103,23 @@ class PropsFactory {
             const beamMat = new THREE.MeshBasicMaterial({
                 color: color,
                 transparent: true,
-                opacity: 0.3,
+                opacity: 0.15,
                 side: THREE.DoubleSide
             });
-            const beamGeo = new THREE.ConeGeometry(8, 40, 8, 1, true);
+            const beamGeo = new THREE.ConeGeometry(8, 40, 16, 1, true);
             const beam = new THREE.Mesh(beamGeo, beamMat);
-            beam.position.y = 20;
+            beam.position.y = 21;
             beam.rotation.x = Math.PI;
+            beam.userData.isSearchBeam = true;
+            beam.userData.beamIndex = i;
             searchlightGroup.add(beam);
+            
+            // Actual spotlight (from original)
+            const spotlight = new THREE.SpotLight(color, 3, 60, Math.PI / 12, 0.3);
+            spotlight.position.y = 1;
+            searchlightGroup.add(spotlight);
+            searchlightGroup.add(spotlight.target);
+            spotlight.target.position.y = 50;
             
             // Position searchlights on roof corners
             const positions = [
@@ -1117,7 +1165,7 @@ class PropsFactory {
             size: 1.5,
             transparent: true,
             opacity: 0.3,
-            blending: THREE.AdditiveBlending
+            sizeAttenuation: true
         });
         const smokeGeo = new THREE.BufferGeometry();
         const smokePositions = new Float32Array(smokeCount * 3);
@@ -1161,65 +1209,132 @@ class PropsFactory {
             stem.position.set(0.15, 0.25, 0);
             noteGroup.add(stem);
             
+            noteGroup.position.set(
+                (Math.random() - 0.5) * w,
+                h + Math.random() * 5,
+                d / 2 + Math.random() * 3
+            );
             noteGroup.userData.isMusicNote = true;
             noteGroup.userData.noteIndex = i;
-            noteGroup.userData.baseY = h + 2 + Math.random() * 3;
-            noteGroup.userData.baseX = (Math.random() - 0.5) * w * 0.8;
-            noteGroup.position.set(
-                noteGroup.userData.baseX,
-                noteGroup.userData.baseY,
-                d / 2 + 3 + Math.random() * 2
-            );
+            noteGroup.userData.baseY = noteGroup.position.y;
+            noteGroup.userData.floatSpeed = 0.5 + Math.random() * 0.5;
+            noteGroup.userData.swaySpeed = 1 + Math.random();
             musicNotes.push(noteGroup);
             group.add(noteGroup);
         }
         
-        // ==================== OPEN SIGN ====================
-        const openSignGroup = new THREE.Group();
+        // ==================== BOUNCER PENGUINS ====================
+        // Buff penguin bouncers with proper penguin coloring
+        const bouncerBodyMat = this.getMaterial(0x1a1a1a, { roughness: 0.7 }); // Black body
+        const bouncerBellyMat = this.getMaterial(0xF5F5F5, { roughness: 0.8 }); // White belly
+        const bouncerOrangeMat = this.getMaterial(0xFF8C00, { roughness: 0.6 }); // Orange beak/feet
+        const glassesMat = this.getMaterial(0x000000, { roughness: 0.1, metalness: 0.9 });
         
-        // Sign backing
-        const openBackMat = this.getMaterial(0x111111, { roughness: 0.9 });
-        const openBackGeo = new THREE.BoxGeometry(3, 1.2, 0.2);
-        const openBack = new THREE.Mesh(openBackGeo, openBackMat);
-        openSignGroup.add(openBack);
-        
-        // OPEN letters with neon glow
-        const openLetterMat = this.getMaterial(neonRed, {
-            emissive: neonRed,
-            emissiveIntensity: 1.0
+        [-6, 6].forEach((xPos, idx) => {
+            const bouncerGroup = new THREE.Group();
+            const isLeft = xPos < 0;
+            
+            // Buff penguin body (wider, more muscular ellipsoid)
+            const bodyGeo = new THREE.SphereGeometry(1, 12, 10);
+            bodyGeo.scale(1.2, 1.4, 0.9); // Wide shoulders, tall, flat
+            const body = new THREE.Mesh(bodyGeo, bouncerBodyMat);
+            body.position.y = 1.8;
+            bouncerGroup.add(body);
+            
+            // White belly patch (clearly visible)
+            const bellyGeo = new THREE.SphereGeometry(0.75, 10, 8);
+            bellyGeo.scale(0.85, 1.2, 0.6);
+            const belly = new THREE.Mesh(bellyGeo, bouncerBellyMat);
+            belly.position.set(0, 1.65, 0.55);
+            bouncerGroup.add(belly);
+            
+            // Penguin head (round) - black
+            const headGeo = new THREE.SphereGeometry(0.6, 10, 10);
+            const head = new THREE.Mesh(headGeo, bouncerBodyMat);
+            head.position.y = 3.4;
+            bouncerGroup.add(head);
+            
+            // White face patch (cheeks)
+            const faceGeo = new THREE.SphereGeometry(0.35, 8, 8);
+            faceGeo.scale(1, 0.8, 0.5);
+            const face = new THREE.Mesh(faceGeo, bouncerBellyMat);
+            face.position.set(0, 3.3, 0.45);
+            bouncerGroup.add(face);
+            
+            // Orange beak
+            const beakGeo = new THREE.ConeGeometry(0.18, 0.4, 6);
+            const beak = new THREE.Mesh(beakGeo, bouncerOrangeMat);
+            beak.rotation.x = Math.PI / 2;
+            beak.position.set(0, 3.2, 0.7);
+            bouncerGroup.add(beak);
+            
+            // Sunglasses (cool bouncer shades)
+            const glassGeo = new THREE.BoxGeometry(0.9, 0.2, 0.12);
+            const glasses = new THREE.Mesh(glassGeo, glassesMat);
+            glasses.position.set(0, 3.45, 0.55);
+            bouncerGroup.add(glasses);
+            
+            
+            // Orange penguin feet (webbed look)
+            const footGeo = new THREE.BoxGeometry(0.55, 0.12, 0.75);
+            const footL = new THREE.Mesh(footGeo, bouncerOrangeMat);
+            footL.position.set(-0.4, 0.06, 0.2);
+            footL.rotation.y = -0.15;
+            bouncerGroup.add(footL);
+            
+            const footR = new THREE.Mesh(footGeo, bouncerOrangeMat);
+            footR.position.set(0.4, 0.06, 0.2);
+            footR.rotation.y = 0.2;
+            bouncerGroup.add(footR);
+            
+            // Scale and position
+            bouncerGroup.scale.set(1.3, 1.3, 1.3);
+            bouncerGroup.position.set(xPos, 0, d / 2 + 5);
+            bouncerGroup.rotation.y = xPos > 0 ? -Math.PI / 12 : Math.PI / 12;
+            group.add(bouncerGroup);
         });
-        const openLetters = 'OPEN';
-        for (let i = 0; i < openLetters.length; i++) {
-            const letterGeo = new THREE.BoxGeometry(0.5, 0.7, 0.15);
-            const letter = new THREE.Mesh(letterGeo, openLetterMat.clone());
-            letter.position.set(-1 + i * 0.65, 0, 0.15);
-            letter.userData.isOpenLetter = true;
-            letter.userData.letterIndex = i;
-            openSignGroup.add(letter);
-        }
         
-        // Border glow
-        const borderMat = this.getMaterial(neonRed, {
-            emissive: neonRed,
-            emissiveIntensity: 0.8
-        });
-        const borders = [
-            { x: 0, y: 0.7, w: 3.2, h: 0.1 },
-            { x: 0, y: -0.7, w: 3.2, h: 0.1 },
-            { x: -1.55, y: 0, w: 0.1, h: 1.4 },
-            { x: 1.55, y: 0, w: 0.1, h: 1.4 }
-        ];
-        borders.forEach(b => {
-            const borderGeo = new THREE.BoxGeometry(b.w, b.h, 0.15);
-            const border = new THREE.Mesh(borderGeo, borderMat);
-            border.position.set(b.x, b.y, 0.15);
-            openSignGroup.add(border);
+        // ==================== ROOF LOUNGE COUCH ====================
+        // Same style as interior nightclub couch (blue velvet)
+        const roofCouchGroup = new THREE.Group();
+        const couchMat = this.getMaterial(0x2E4A62, { roughness: 0.8 });
+        const cushionMat = this.getMaterial(0x3D5A80, { roughness: 0.9 });
+        
+        // Couch base
+        const couchBaseGeo = new THREE.BoxGeometry(5, 0.8, 2);
+        const couchBase = new THREE.Mesh(couchBaseGeo, couchMat);
+        couchBase.position.y = 0.4;
+        couchBase.castShadow = true;
+        roofCouchGroup.add(couchBase);
+        
+        // Couch back
+        const couchBackGeo = new THREE.BoxGeometry(5, 1.5, 0.5);
+        const couchBack = new THREE.Mesh(couchBackGeo, couchMat);
+        couchBack.position.set(0, 1.15, -0.75);
+        couchBack.castShadow = true;
+        roofCouchGroup.add(couchBack);
+        
+        // Armrests
+        const armGeo = new THREE.BoxGeometry(0.5, 1, 2);
+        [-2.5, 2.5].forEach(xOffset => {
+            const arm = new THREE.Mesh(armGeo, couchMat);
+            arm.position.set(xOffset, 0.7, 0);
+            arm.castShadow = true;
+            roofCouchGroup.add(arm);
         });
         
-        openSignGroup.position.set(w / 2 + 0.5, 4, d / 2);
-        openSignGroup.rotation.y = -Math.PI / 2;
-        openSignGroup.userData.isOpenSign = true;
-        group.add(openSignGroup);
+        // Cushions
+        [-1.5, 0, 1.5].forEach(xOffset => {
+            const cushionGeo = new THREE.BoxGeometry(1.4, 0.3, 1.6);
+            const cushion = new THREE.Mesh(cushionGeo, cushionMat);
+            cushion.position.set(xOffset, 0.95, 0.1);
+            roofCouchGroup.add(cushion);
+        });
+        
+        // Position on roof
+        roofCouchGroup.position.set(0, h + 1, 0);
+        roofCouchGroup.rotation.y = 0; // Face toward front (south)
+        group.add(roofCouchGroup);
         
         // ==================== STAR BURST AROUND SIGN ====================
         const starBurstColors = [neonPink, neonBlue, neonYellow, neonGreen];
@@ -1252,33 +1367,50 @@ class PropsFactory {
         group.userData.musicNotes = musicNotes;
         
         // ==================== UPDATE FUNCTION ====================
-        const update = (time, bassLevel = 0) => {
-            const bassIntensity = bassLevel || Math.sin(time * 8) * 0.3 + 0.5;
+        // EPIC Animation update function (ORIGINAL from commit 1a99d74)
+        const update = (time) => {
+            // Animate speaker woofers - bass "bounce" (MORE INTENSE)
+            const bassIntensity = Math.sin(time * 15) * 0.5 + 0.5;
+            const bassOffset = bassIntensity * 0.25; // Bigger bounce!
             
-            // Disco ball rotation
-            discoBallGroup.rotation.y = time * 0.3;
-            
-            // Speaker woofer animation
-            speakers.forEach(speaker => {
+            speakers.forEach((speaker, idx) => {
                 speaker.traverse(child => {
                     if (child.userData.isWoofer) {
-                        const bass = bassIntensity;
-                        child.position.z = child.userData.baseZ + bass * 0.15;
+                        child.position.z = child.userData.baseZ + bassOffset * (0.8 + idx * 0.15);
+                    }
+                    if (child.userData.isLED) {
+                        child.material.emissiveIntensity = 0.4 + bassIntensity * 1.0;
                     }
                 });
+                // Subtle speaker shake
+                speaker.rotation.z = Math.sin(time * 20 + idx) * 0.01 * bassIntensity;
             });
             
-            // Ground lights color cycling
-            groundLights.forEach((light, idx) => {
-                const hue = ((time * 0.1) + (idx * 0.15)) % 1;
-                light.color.setHSL(hue, 1, 0.5);
-            });
+            // Disco ball rotation and sparkle
+            if (discoBallGroup) {
+                discoBallGroup.rotation.y = time * 0.8;
+                
+                // Animate all disco ball children
+                discoBallGroup.children.forEach(child => {
+                    // Main disco light - color cycling and pulsing
+                    if (child.isLight) {
+                        const hue = (time * 0.3) % 1;
+                        child.color.setHSL(hue, 1.0, 0.6);
+                        child.intensity = 3.0 + bassIntensity * 3.0;
+                    }
+                    // Mirror tiles sparkle effect
+                    if (child.userData.isMirrorTile && child.material) {
+                        const sparkle = Math.sin(time * 12 + (child.userData.tileIndex || 0) * 0.3);
+                        child.material.emissiveIntensity = 0.3 + sparkle * 0.3 + bassIntensity * 0.2;
+                    }
+                });
+            }
             
             // Searchlight sweep
             searchlights.forEach((sl, idx) => {
                 const sweepAngle = time * 0.5 + idx * Math.PI / 2;
-                sl.rotation.y = Math.sin(sweepAngle) * Math.PI / 4;
-                sl.rotation.z = Math.cos(sweepAngle * 0.7) * Math.PI / 6;
+                sl.rotation.y = Math.sin(sweepAngle) * Math.PI / 3;
+                sl.rotation.x = Math.sin(time * 0.3 + idx) * 0.2;
             });
             
             // Laser animation
@@ -1299,11 +1431,11 @@ class PropsFactory {
                     positions[i * 3 + 1] += velocities[i].y;
                     positions[i * 3 + 2] += velocities[i].z;
                     
-                    // Reset if too high
-                    if (positions[i * 3 + 1] > 10) {
+                    // Reset when too high
+                    if (positions[i * 3 + 1] > 8) {
                         positions[i * 3] = (Math.random() - 0.5) * 6;
                         positions[i * 3 + 1] = 0;
-                        positions[i * 3 + 2] = d / 2 + 2 + Math.random() * 3;
+                        positions[i * 3 + 2] = d / 2 + 2 + Math.random() * 2;
                     }
                 }
                 smoke.geometry.attributes.position.needsUpdate = true;
@@ -1312,35 +1444,54 @@ class PropsFactory {
             
             // Music notes float and sway
             musicNotes.forEach((note, idx) => {
-                const floatSpeed = 0.5 + idx * 0.1;
-                note.position.y = note.userData.baseY + Math.sin(time * floatSpeed + idx) * 0.5;
-                note.position.x = note.userData.baseX + Math.sin(time * 0.3 + idx * 0.5) * 0.3;
-                note.rotation.z = Math.sin(time * 2 + idx) * 0.2;
+                note.position.y = note.userData.baseY + Math.sin(time * note.userData.floatSpeed + idx) * 1.5;
+                note.position.x += Math.sin(time * note.userData.swaySpeed + idx * 2) * 0.01;
+                note.rotation.z = Math.sin(time + idx) * 0.3;
+                
+                // Reset if too high
+                if (note.position.y > h + 12) {
+                    note.position.y = h;
+                    note.userData.baseY = h;
+                    note.position.x = (Math.random() - 0.5) * w;
+                }
             });
             
-            // Animate neon elements
+            // Ground lights pulse with bass
+            groundLights.forEach((light, idx) => {
+                const phase = time * 3 + idx * 0.5;
+                light.intensity = 2 + bassIntensity * 3 + Math.sin(phase) * 0.5;
+            });
+            
+            // Sign animation (color cycling + dramatic wave movement)
             group.traverse(child => {
-                // Blink effect for OPEN sign letters
-                if (child.userData.isOpenLetter) {
-                    const blinkPhase = time * 5 + child.userData.letterIndex * 0.5;
-                    child.material.emissiveIntensity = 0.7 + Math.sin(blinkPhase) * 0.3;
+                if (child.userData.isNightclubSign && child.userData.drawSign) {
+                    // Color cycling animation (faster hue shift for more energy)
+                    const hueOffset = (time * 45) % 360; // Full cycle every 8 seconds
+                    child.userData.drawSign(hueOffset);
+                    child.userData.signTexture.needsUpdate = true;
+                    
+                    // Dramatic wave movement (more intense bob + sway)
+                    const baseY = child.userData.baseY || (h + 3.5);
+                    const baseScale = child.userData.baseScale || 28;
+                    child.position.y = baseY + Math.sin(time * 2.5) * 0.35 + Math.sin(time * 5) * 0.1;
+                    child.position.x = Math.sin(time * 1.8) * 0.25;
+                    
+                    // More dramatic pulse with bass-like beat
+                    const pulse = 1 + Math.sin(time * 6) * 0.04 + Math.abs(Math.sin(time * 12)) * 0.02;
+                    child.scale.set(baseScale * pulse, 7 * pulse, 1);
                 }
-                // Star burst twinkle
+                if (child.userData.isStageLight) {
+                    const lightPhase = time * 5 + child.userData.lightIndex * 0.8;
+                    child.material.emissiveIntensity = 0.5 + Math.sin(lightPhase) * 0.5;
+                }
                 if (child.userData.isStarBurst) {
-                    const twinkle = Math.sin(time * 8 + child.userData.starIndex) * 0.5 + 0.5;
+                    // Twinkle stars
+                    const twinkle = Math.sin(time * 8 + child.userData.starIndex * 0.8);
                     child.material.emissiveIntensity = 0.5 + twinkle * 0.5;
-                    child.rotation.y = time * 2;
-                    child.rotation.x = time * 1.5;
+                    child.scale.setScalar(0.8 + twinkle * 0.3);
                 }
-                // Neon letters wave animation
-                if (child.userData.isNeonLetter) {
-                    const letterPhase = time * 3 + child.userData.letterIndex * 0.5;
-                    child.material.emissiveIntensity = 0.6 + Math.sin(letterPhase) * 0.4;
-                    child.position.y = (h + 3) + Math.sin(letterPhase * 2) * 0.1;
-                }
-                // Neon strip pulse
-                if (child.userData.isNeonStrip) {
-                    child.material.emissiveIntensity = 0.6 + bassIntensity * 0.4;
+                if (child.userData.isGroundLens) {
+                    child.material.emissiveIntensity = 0.5 + bassIntensity * 0.8;
                 }
             });
         };

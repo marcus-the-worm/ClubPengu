@@ -176,9 +176,12 @@ export const MOUNTS = {
                 }
             }
             
-            // Eyes (on head, facing forward +Z) - white, 1x1 each
-            addVoxel(-2, 1, 10, eyeWhite); // Left eye
-            addVoxel(2, 1, 10, eyeWhite);  // Right eye
+            // Eyes (on head, facing forward +Z) - white, positioned in front of head
+            addVoxel(-2, 1, 11, eyeWhite); // Left eye
+            addVoxel(2, 1, 11, eyeWhite);  // Right eye
+            // Eye pupils (black dots)
+            addVoxel(-2, 1, 12, eyeBlack); // Left pupil
+            addVoxel(2, 1, 12, eyeBlack);  // Right pupil
             
             // Beak (pointing forward/outward from face at +Z)
             // Beak base on face
@@ -191,43 +194,66 @@ export const MOUNTS = {
             addVoxel(0, -0.5, 11, beakOrange);
             addVoxel(0, 0, 12, beakOrange);
             
-            // Flippers (spread out to sides for balance)
-            for(let z = -4; z <= 2; z++) {
-                addVoxel(-5, -1, z, bodyBlack);
-                addVoxel(-6, -2, z, bodyBlack);
-                addVoxel(5, -1, z, bodyBlack);
-                addVoxel(6, -2, z, bodyBlack);
-            }
-            // Flipper tips
-            addVoxel(-7, -2, 0, bodyBlack);
-            addVoxel(-7, -2, -1, bodyBlack);
-            addVoxel(7, -2, 0, bodyBlack);
-            addVoxel(7, -2, -1, bodyBlack);
-            
-            // Feet (tucked back behind body at -Z)
-            for(let x = -2; x <= -1; x++) {
-                addVoxel(x, -3, -9, feetOrange);
-                addVoxel(x, -3, -10, feetOrange);
-                addVoxel(x, -3, -11, feetOrange);
-            }
-            for(let x = 1; x <= 2; x++) {
-                addVoxel(x, -3, -9, feetOrange);
-                addVoxel(x, -3, -10, feetOrange);
-                addVoxel(x, -3, -11, feetOrange);
-            }
-            
-            // Tail (small bump at back -Z)
+            // Tail (small bump at back -Z) - stays with body
             addVoxel(0, -1, -9, bodyBlack);
             addVoxel(0, -1, -10, bodyBlack);
             
             return Array.from(voxelMap.values());
+        })(),
+        // Left flipper - separate for animation
+        leftFlipper: (() => {
+            const v = [];
+            const bodyBlack = '#1a1a1a';
+            for(let z = -4; z <= 2; z++) {
+                v.push({x: -5, y: -1, z, c: bodyBlack});
+                v.push({x: -6, y: -2, z, c: bodyBlack});
+            }
+            v.push({x: -7, y: -2, z: 0, c: bodyBlack});
+            v.push({x: -7, y: -2, z: -1, c: bodyBlack});
+            return v;
+        })(),
+        // Right flipper - separate for animation
+        rightFlipper: (() => {
+            const v = [];
+            const bodyBlack = '#1a1a1a';
+            for(let z = -4; z <= 2; z++) {
+                v.push({x: 5, y: -1, z, c: bodyBlack});
+                v.push({x: 6, y: -2, z, c: bodyBlack});
+            }
+            v.push({x: 7, y: -2, z: 0, c: bodyBlack});
+            v.push({x: 7, y: -2, z: -1, c: bodyBlack});
+            return v;
+        })(),
+        // Left foot - separate for animation
+        leftFoot: (() => {
+            const v = [];
+            const feetOrange = '#FF6600';
+            for(let x = -2; x <= -1; x++) {
+                v.push({x, y: -3, z: -9, c: feetOrange});
+                v.push({x, y: -3, z: -10, c: feetOrange});
+                v.push({x, y: -3, z: -11, c: feetOrange});
+            }
+            return v;
+        })(),
+        // Right foot - separate for animation
+        rightFoot: (() => {
+            const v = [];
+            const feetOrange = '#FF6600';
+            for(let x = 1; x <= 2; x++) {
+                v.push({x, y: -3, z: -9, c: feetOrange});
+                v.push({x, y: -3, z: -10, c: feetOrange});
+                v.push({x, y: -3, z: -11, c: feetOrange});
+            }
+            return v;
         })(),
         animated: true,
         animationType: 'penguin_waddle', // Custom animation for pengu mount
         hidesFeet: true,
         seatOffset: { y: 0 },
         riderOffset: { y: -1 },
-        speedBoost: 1.05 // 5% movement speed buff
+        speedBoost: 1.05, // 5% movement speed buff
+        scale: 0.3125, // 25% bigger again (0.25 * 1.25)
+        positionY: 0.65 // Higher to compensate for larger size
     }
 };
 

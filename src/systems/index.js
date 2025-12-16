@@ -54,3 +54,6 @@ export { default as SnowfallSystem } from './SnowfallSystem';
 // Wizard trail particle system
 export { default as WizardTrailSystem } from './WizardTrailSystem';
 
+// Mount trail system (icy trails, etc.)
+export { default as MountTrailSystem, TRAIL_TYPES } from './MountTrailSystem';
+

@@ -24,5 +24,15 @@ export { default as LogSeat } from './LogSeat';
 export { default as ChristmasTree } from './ChristmasTree';
 export { default as Billboard } from './Billboard';
 
+// Quality of life props
+export { default as Mailbox } from './Mailbox';
+export { default as TrashCan } from './TrashCan';
+export { default as Barrel } from './Barrel';
+export { default as FireHydrant } from './FireHydrant';
+export { default as IceSculpture } from './IceSculpture';
+export { default as Crate } from './Crate';
+export { default as StreetSign } from './StreetSign';
+export { default as WoodenPost } from './WoodenPost';
+
 // Prop registry for factory pattern
 export { createProp, PROP_TYPES } from './PropRegistry';
