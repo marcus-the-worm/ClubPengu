@@ -116,7 +116,7 @@ export function updateAIAgents(params) {
         });
 
         // --- AI Behavior (conversation, walking, etc.) ---
-        updateAIBehavior(ai, {
+        aiMoving = updateAIBehavior(ai, {
             now,
             aiAgents,
             aiMap,
@@ -127,8 +127,7 @@ export function updateAIAgents(params) {
             nightclubDoorX, nightclubDoorZ,
             CITY_SIZE, BUILDING_SCALE, BUILDINGS,
             THREE,
-            createChatSprite,
-            aiMoving
+            createChatSprite
         });
 
         // OPTIMIZATION: Skip expensive mesh updates for invisible AIs
