@@ -1,0 +1,301 @@
+/**
+ * PhantomWallet - Handles Phantom wallet connection and signing
+ * Supports both desktop (extension) and mobile (deep links)
+ * For Solana wallet authentication
+ */
+
+import bs58 from 'bs58';
+
+// Detect mobile device
+const isMobile = () => {
+    if (typeof window === 'undefined') return false;
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+};
+
+// Check if we're inside Phantom's in-app browser
+const isPhantomBrowser = () => {
+    if (typeof window === 'undefined') return false;
+    return window.solana && window.solana.isPhantom;
+};
+
+// Generate a random string for session
+const generateNonce = () => {
+    return Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+};
+
+class PhantomWallet {
+    static instance = null;
+    
+    constructor() {
+        if (PhantomWallet.instance) {
+            return PhantomWallet.instance;
+        }
+        
+        this.connected = false;
+        this.publicKey = null;
+        this.listeners = new Map();
+        this.isMobile = isMobile();
+        
+        PhantomWallet.instance = this;
+    }
+    
+    static getInstance() {
+        if (!PhantomWallet.instance) {
+            PhantomWallet.instance = new PhantomWallet();
+        }
+        return PhantomWallet.instance;
+    }
+    
+    /**
+     * Check if Phantom extension is installed (desktop) or in Phantom browser (mobile)
+     */
+    isPhantomInstalled() {
+        return typeof window !== 'undefined' && 
+               window.solana && 
+               window.solana.isPhantom;
+    }
+    
+    /**
+     * Get the Phantom provider
+     */
+    getProvider() {
+        if (this.isPhantomInstalled()) {
+            return window.solana;
+        }
+        return null;
+    }
+    
+    /**
+     * Check if mobile deep link connection is needed
+     */
+    needsMobileDeepLink() {
+        return this.isMobile && !this.isPhantomInstalled();
+    }
+    
+    /**
+     * Get Phantom mobile deep link URL
+     * Opens Phantom app on mobile if installed
+     */
+    getPhantomDeepLink(action = 'connect') {
+        const currentUrl = encodeURIComponent(window.location.href);
+        
+        // Phantom universal link for mobile
+        // This will open Phantom app if installed, or App Store/Play Store if not
+        if (action === 'connect') {
+            return `https://phantom.app/ul/browse/${currentUrl}`;
+        }
+        
+        return `https://phantom.app/ul/browse/${currentUrl}`;
+    }
+    
+    /**
+     * Open Phantom app on mobile (redirect)
+     */
+    openPhantomMobile() {
+        const deepLink = this.getPhantomDeepLink();
+        console.log('📱 Opening Phantom mobile app...');
+        window.location.href = deepLink;
+    }
+    
+    /**
+     * Connect to Phantom wallet
+     * @returns {Promise<{ success: boolean, publicKey?: string, error?: string, mobileRedirect?: boolean }>}
+     */
+    async connect() {
+        // Desktop or Phantom in-app browser - use direct provider
+        const provider = this.getProvider();
+        
+        if (provider) {
+            try {
+                // Request connection
+                const response = await provider.connect();
+                this.publicKey = response.publicKey.toString();
+                this.connected = true;
+                
+                // Set up event listeners
+                provider.on('disconnect', () => {
+                    this.connected = false;
+                    this.publicKey = null;
+                    this.emit('disconnect');
+                });
+                
+                provider.on('accountChanged', (publicKey) => {
+                    if (publicKey) {
+                        this.publicKey = publicKey.toString();
+                        this.emit('accountChanged', this.publicKey);
+                    } else {
+                        this.connected = false;
+                        this.publicKey = null;
+                        this.emit('disconnect');
+                    }
+                });
+                
+                this.emit('connect', this.publicKey);
+                console.log(`🔐 Phantom connected: ${this.publicKey.slice(0, 8)}...`);
+                
+                return {
+                    success: true,
+                    publicKey: this.publicKey
+                };
+            } catch (error) {
+                console.error('Phantom connect error:', error);
+                
+                // User rejected
+                if (error.code === 4001) {
+                    return {
+                        success: false,
+                        error: 'USER_REJECTED',
+                        message: 'Connection rejected by user'
+                    };
+                }
+                
+                return {
+                    success: false,
+                    error: error.code || 'CONNECTION_FAILED',
+                    message: error.message || 'Failed to connect to Phantom'
+                };
+            }
+        }
+        
+        // Mobile - need to redirect to Phantom app
+        if (this.isMobile) {
+            return {
+                success: false,
+                error: 'MOBILE_REDIRECT_NEEDED',
+                message: 'Please open this site in the Phantom app browser',
+                mobileRedirect: true,
+                phantomUrl: this.getPhantomDeepLink()
+            };
+        }
+        
+        // Desktop - Phantom not installed
+        return {
+            success: false,
+            error: 'PHANTOM_NOT_INSTALLED',
+            message: 'Phantom wallet extension is not installed',
+            installUrl: 'https://phantom.app/'
+        };
+    }
+    
+    /**
+     * Disconnect from Phantom
+     */
+    async disconnect() {
+        const provider = this.getProvider();
+        
+        if (provider && this.connected) {
+            try {
+                await provider.disconnect();
+            } catch (e) {
+                // Ignore disconnect errors
+            }
+        }
+        
+        this.connected = false;
+        this.publicKey = null;
+        this.emit('disconnect');
+    }
+    
+    /**
+     * Sign a message for authentication
+     * @param {string} message - The message to sign (from server challenge)
+     * @returns {Promise<{ success: boolean, signature?: string, error?: string }>}
+     */
+    async signMessage(message) {
+        const provider = this.getProvider();
+        
+        if (!provider || !this.connected) {
+            return {
+                success: false,
+                error: 'NOT_CONNECTED',
+                message: 'Wallet not connected'
+            };
+        }
+        
+        try {
+            // Encode message to bytes
+            const messageBytes = new TextEncoder().encode(message);
+            
+            // Sign the message
+            const signedMessage = await provider.signMessage(messageBytes, 'utf8');
+            
+            // Convert signature to base58
+            const signature = bs58.encode(signedMessage.signature);
+            
+            return {
+                success: true,
+                signature
+            };
+        } catch (error) {
+            console.error('Sign message error:', error);
+            
+            // User rejected the signature
+            if (error.code === 4001) {
+                return {
+                    success: false,
+                    error: 'USER_REJECTED',
+                    message: 'User rejected the signature request'
+                };
+            }
+            
+            return {
+                success: false,
+                error: error.code || 'SIGN_FAILED',
+                message: error.message || 'Failed to sign message'
+            };
+        }
+    }
+    
+    /**
+     * Get the current public key
+     */
+    getPublicKey() {
+        return this.publicKey;
+    }
+    
+    /**
+     * Check if wallet is connected
+     */
+    isConnected() {
+        return this.connected && this.publicKey !== null;
+    }
+    
+    /**
+     * Get mobile status
+     */
+    getMobileStatus() {
+        return {
+            isMobile: this.isMobile,
+            isPhantomBrowser: isPhantomBrowser(),
+            needsRedirect: this.needsMobileDeepLink()
+        };
+    }
+    
+    // Event system
+    on(event, callback) {
+        if (!this.listeners.has(event)) {
+            this.listeners.set(event, []);
+        }
+        this.listeners.get(event).push(callback);
+        return () => this.off(event, callback);
+    }
+    
+    off(event, callback) {
+        if (this.listeners.has(event)) {
+            const callbacks = this.listeners.get(event);
+            const index = callbacks.indexOf(callback);
+            if (index > -1) callbacks.splice(index, 1);
+        }
+    }
+    
+    emit(event, data) {
+        if (this.listeners.has(event)) {
+            this.listeners.get(event).forEach(cb => cb(data));
+        }
+    }
+}
+
+export default PhantomWallet;

@@ -5,223 +5,284 @@ import { generateBaseBody, generateFlippers, generateFeet, generateHead } from '
 import { IconSettings, IconChevronLeft, IconChevronRight, IconCamera, IconWorld } from './Icons';
 import { useMultiplayer } from './multiplayer';
 import { characterRegistry, MarcusGenerators, MARCUS_PALETTE } from './characters';
+import WalletAuth from './components/WalletAuth';
 
 function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     const mountRef = useRef(null);
     const [scriptsLoaded, setScriptsLoaded] = useState(false);
     
-    // Multiplayer context for username
-    const { setName } = useMultiplayer();
+    // Track layout for responsive design
+    const [layoutState, setLayoutState] = useState(() => ({
+        isPortrait: typeof window !== 'undefined' && window.innerWidth < window.innerHeight,
+        isMobileView: typeof window !== 'undefined' && window.innerWidth < 768
+    }));
     
-    // Username state with localStorage persistence
-    const [username, setUsername] = useState(() => {
-        return localStorage.getItem('penguin_name') || '';
-    });
+    // Update layout on resize/orientation change
+    useEffect(() => {
+        const handleResize = () => {
+            const newIsPortrait = window.innerWidth < window.innerHeight;
+            const newIsMobileView = window.innerWidth < 768;
+            
+            setLayoutState(prev => {
+                if (prev.isPortrait !== newIsPortrait || prev.isMobileView !== newIsMobileView) {
+                    return { isPortrait: newIsPortrait, isMobileView: newIsMobileView };
+                }
+                return prev;
+            });
+            
+            // Resize renderer if it exists
+            if (rendererRef.current && cameraRef.current && mountRef.current) {
+                const width = mountRef.current.clientWidth || window.innerWidth;
+                const height = mountRef.current.clientHeight || window.innerHeight;
+                rendererRef.current.setSize(width, height);
+                cameraRef.current.aspect = width / height;
+                cameraRef.current.updateProjectionMatrix();
+            }
+        };
+        
+        window.addEventListener('resize', handleResize);
+        window.addEventListener('orientationchange', () => setTimeout(handleResize, 100));
+        
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            window.removeEventListener('orientationchange', handleResize);
+        };
+    }, []);
     
-    // Character type state - 'penguin' is default, can unlock others via promo codes
-    const [characterType, setCharacterType] = useState(() => {
-        return localStorage.getItem('character_type') || 'penguin';
-    });
+    const { isPortrait, isMobileView } = layoutState;
     
-    // Promo code input state
+    // Multiplayer context
+    const { setName, isAuthenticated, userData, checkUsername, registerCallbacks, isRestoringSession, redeemPromoCode, promoLoading } = useMultiplayer();
+    
+    // Username state
+    const [username, setUsername] = useState('');
+    const [usernameStatus, setUsernameStatus] = useState(null); // 'available', 'taken', 'checking', null
+    const usernameCheckTimeout = useRef(null);
+    
+    // Is this a NEW user who needs to pick a username? (authenticated but never entered world)
+    // Use isEstablishedUser flag from server - handles migration cases
+    const isNewUser = isAuthenticated && userData && !userData.isEstablishedUser;
+    
+    // Is this a returning user with a locked username? (has entered world before)
+    const isReturningUser = isAuthenticated && userData?.isEstablishedUser;
+    
+    // Can the user edit the username field? Only new users can
+    const canEditUsername = isAuthenticated && isNewUser;
+    
+    // Character type - session only
+    const [characterType, setCharacterType] = useState(currentData?.characterType || 'penguin');
+    
+    // Promo code input (server-authoritative - NO code data stored in client)
     const [promoCode, setPromoCode] = useState('');
-    const [promoMessage, setPromoMessage] = useState(null); // { type: 'success'|'error', text: string }
+    const [promoMessage, setPromoMessage] = useState(null);
     
+    // Customization state - from props (synced from server for auth users)
     const [skinColor, setSkinColor] = useState(currentData?.skin || 'blue');
     const [hat, setHat] = useState(currentData?.hat || 'none');
     const [eyes, setEyes] = useState(currentData?.eyes || 'normal');
     const [mouth, setMouth] = useState(currentData?.mouth || 'beak');
     const [bodyItem, setBodyItem] = useState(currentData?.bodyItem || 'none');
+    const [mount, setMount] = useState(currentData?.mount || 'none');
     
-    // Mount unlock system - BOATCOIN promo code required
-    const [unlockedMounts, setUnlockedMounts] = useState(() => {
-        try {
-            const saved = localStorage.getItem('unlocked_mounts');
-            return saved ? JSON.parse(saved) : ['none'];
-        } catch {
-            return ['none'];
+    // Sync state when currentData changes (from server restore)
+    useEffect(() => {
+        if (currentData) {
+            setSkinColor(currentData.skin || 'blue');
+            setHat(currentData.hat || 'none');
+            setEyes(currentData.eyes || 'normal');
+            setMouth(currentData.mouth || 'beak');
+            setBodyItem(currentData.bodyItem || 'none');
+            setMount(currentData.mount || 'none');
+            setCharacterType(currentData.characterType || 'penguin');
         }
-    });
+    }, [currentData]);
     
-    // Cosmetic unlock system - promo code required for special items
-    const [unlockedCosmetics, setUnlockedCosmetics] = useState(() => {
-        try {
-            const saved = localStorage.getItem('unlocked_cosmetics');
-            return saved ? JSON.parse(saved) : [];
-        } catch {
-            return [];
+    // Sync username from server when authenticated
+    useEffect(() => {
+        if (isAuthenticated && userData?.username) {
+            setUsername(userData.username);
+            localStorage.setItem('penguin_name', userData.username);
         }
-    });
+    }, [isAuthenticated, userData]);
     
-    // Check if current mount is unlocked, reset to none if not
-    const [mount, setMount] = useState(() => {
-        const savedMount = currentData?.mount || 'none';
-        const saved = localStorage.getItem('unlocked_mounts');
-        const unlocked = saved ? JSON.parse(saved) : ['none'];
-        // If mount is not unlocked, reset to none
-        if (savedMount !== 'none' && !unlocked.includes(savedMount)) {
-            return 'none';
+    // Register callback for username status
+    useEffect(() => {
+        registerCallbacks({
+            onUsernameStatus: (status) => {
+                if (status.username === username) {
+                    setUsernameStatus(status.reason);
+                }
+            }
+        });
+    }, [registerCallbacks, username]);
+    
+    // Check username availability when typing (debounced)
+    useEffect(() => {
+        if (!canEditUsername || !username || username.length < 3) {
+            setUsernameStatus(null);
+            return;
         }
-        return savedMount;
-    });
+        
+        // Don't check if it matches the server username
+        if (username === userData?.username) {
+            setUsernameStatus('current');
+            return;
+        }
+        
+        setUsernameStatus('checking');
+        
+        // Debounce the check
+        clearTimeout(usernameCheckTimeout.current);
+        usernameCheckTimeout.current = setTimeout(() => {
+            checkUsername(username);
+        }, 500);
+        
+        return () => clearTimeout(usernameCheckTimeout.current);
+    }, [username, canEditUsername, checkUsername, userData?.username]);
+    
+    // Unlocked items come from server (userData.unlockedMounts, userData.unlockedCosmetics, userData.unlockedCharacters)
+    // NO client-side promo code data - everything is server-authoritative
+    
+    // Get unlocked items from server data (or defaults for guests)
+    const unlockedMounts = useMemo(() => {
+        if (isAuthenticated && userData?.unlockedMounts) {
+            return ['none', ...userData.unlockedMounts];
+        }
+        return ['none']; // Guests only get 'none'
+    }, [isAuthenticated, userData?.unlockedMounts]);
+    
+    const unlockedCosmetics = useMemo(() => {
+        if (isAuthenticated && userData?.unlockedCosmetics) {
+            return userData.unlockedCosmetics;
+        }
+        return []; // Guests have no promo cosmetics
+    }, [isAuthenticated, userData?.unlockedCosmetics]);
     
     // Check if a mount is unlocked
     const isMountUnlocked = (mountId) => {
-        return mountId === 'none' || unlockedMounts.includes(mountId);
+        return unlockedMounts.includes(mountId);
     };
     
-    // Save username to localStorage and multiplayer context when it changes
+    // Handle username change (only for new authenticated users)
     const handleUsernameChange = (value) => {
-        // Limit to 20 characters
+        if (!canEditUsername) return;
         const trimmed = value.slice(0, 20);
         setUsername(trimmed);
-        localStorage.setItem('penguin_name', trimmed);
         if (setName) setName(trimmed);
     };
     
-    // Mount promo codes (case-sensitive)
-    const MOUNT_PROMO_CODES = {
-        'BOATCOIN': 'minecraftBoat',
-        'PENGU': 'penguMount'
-    };
-    
-    // Cosmetic promo codes (case-sensitive) - { code: { id, category, name } } or { code: { items: [...], name } }
-    const COSMETIC_PROMO_CODES = {
-        'LMAO': { id: 'lmao', category: 'eyes', name: '😂 LMAO Face' },
-        'JOE': { id: 'joe', category: 'bodyItem', name: '👻 Invisible Body' },
-        'MISTORGOAT': { 
-            items: [
-                { id: 'mistorHair', category: 'hat' },
-                { id: 'mistorEyes', category: 'eyes' },
-                { id: 'mistorShirt', category: 'bodyItem' }
-            ],
-            skin: 'silver',  // Set feathers to soft grey/cream
-            name: '🐐 Mistor Goat Set'
-        },
-        'PENGU': { id: 'penguShirt', category: 'bodyItem', name: '🐧 $PENGU Shirt' },
-        'BONK': { 
-            items: [
-                { id: 'bonkExclamation', category: 'hat' },
-                { id: 'bonkEyes', category: 'eyes' },
-                { id: 'bonkShirt', category: 'bodyItem' }
-            ],
-            skin: 'orange',  // Shiba orange color
-            name: '🐕 BONK Set'
-        }
-    };
+    // PROMO CODE IDS THAT REQUIRE UNLOCKING
+    // These IDs are checked against server data - NO code strings stored client-side
+    const PROMO_COSMETIC_IDS = [
+        'lmao', 'joe', 'mistorHair', 'mistorEyes', 'mistorShirt',
+        'bonkExclamation', 'bonkEyes', 'bonkShirt', 'penguShirt'
+    ];
     
     // Check if a cosmetic is unlocked (or doesn't require unlock)
     const isCosmeticUnlocked = (cosmeticId) => {
         // Check if this cosmetic requires a promo code
-        const requiresCode = Object.values(COSMETIC_PROMO_CODES).some(c => 
-            c.id === cosmeticId || (c.items && c.items.some(i => i.id === cosmeticId))
-        );
-        if (!requiresCode) return true; // Doesn't require promo code
+        if (!PROMO_COSMETIC_IDS.includes(cosmeticId)) {
+            return true; // Doesn't require promo code - always available
+        }
         return unlockedCosmetics.includes(cosmeticId);
     };
     
-    // Handle promo code submission
-    const handlePromoCodeSubmit = () => {
+    // Handle promo code submission - SERVER HANDLES ALL VALIDATION
+    const handlePromoCodeSubmit = async () => {
         if (!promoCode.trim()) return;
         
-        // Check character promo codes first
-        const result = characterRegistry.redeemPromoCode(promoCode);
-        if (result) {
-            setPromoMessage({ type: 'success', text: `🎉 Unlocked: ${result.name}!` });
-            setCharacterType(result.id);
-            localStorage.setItem('character_type', result.id);
-            setPromoCode('');
+        if (!isAuthenticated) {
+            setPromoMessage({ type: 'error', text: 'Login to redeem promo codes' });
             setTimeout(() => setPromoMessage(null), 3000);
             return;
         }
         
-        // Check mount promo codes (case-sensitive)
-        const trimmedCode = promoCode.trim();
-        const mountId = MOUNT_PROMO_CODES[trimmedCode];
-        const cosmeticData = COSMETIC_PROMO_CODES[trimmedCode];
+        // Send to server - server handles ALL validation and unlocking
+        const result = await redeemPromoCode(promoCode.trim());
         
-        // Handle combo promo codes (mount + cosmetic like PENGU)
-        if (mountId && cosmeticData) {
-            // Unlock mount
-            const newUnlockedMounts = [...unlockedMounts, mountId];
-            setUnlockedMounts(newUnlockedMounts);
-            localStorage.setItem('unlocked_mounts', JSON.stringify(newUnlockedMounts));
-            setMount(mountId);
+        if (result.success) {
+            // Server returns what was unlocked
+            const unlocked = result.unlocked || {};
+            const parts = [];
             
-            // Unlock cosmetic
-            const newUnlockedCosmetics = [...unlockedCosmetics, cosmeticData.id];
-            setUnlockedCosmetics(newUnlockedCosmetics);
-            localStorage.setItem('unlocked_cosmetics', JSON.stringify(newUnlockedCosmetics));
-            if (cosmeticData.category === 'bodyItem') setBodyItem(cosmeticData.id);
+            if (unlocked.mounts?.length > 0) parts.push(`${unlocked.mounts.length} mount(s)`);
+            if (unlocked.cosmetics?.length > 0) parts.push(`${unlocked.cosmetics.length} cosmetic(s)`);
+            if (unlocked.characters?.length > 0) parts.push(`${unlocked.characters.length} character(s)`);
+            if (unlocked.coinsAwarded > 0) parts.push(`${unlocked.coinsAwarded} coins`);
             
-            setPromoMessage({ type: 'success', text: `🐧 Unlocked: Pengu Mount + ${cosmeticData.name}!` });
+            const unlockedText = parts.length > 0 ? parts.join(', ') : 'items';
+            setPromoMessage({ type: 'success', text: `🎉 ${result.codeName || 'Code'}: Unlocked ${unlockedText}!` });
             setPromoCode('');
-            setTimeout(() => setPromoMessage(null), 3000);
-            return;
-        }
-        
-        if (mountId) {
-            const newUnlocked = [...unlockedMounts, mountId];
-            setUnlockedMounts(newUnlocked);
-            localStorage.setItem('unlocked_mounts', JSON.stringify(newUnlocked));
-            setMount(mountId); // Auto-equip the unlocked mount
-            setPromoMessage({ type: 'success', text: `🚣 Unlocked: Minecraft Boat!` });
-            setPromoCode('');
-            setTimeout(() => setPromoMessage(null), 3000);
-            return;
-        }
-        
-        // Check cosmetic promo codes (case-sensitive)
-        if (cosmeticData) {
-            // Handle multi-item promo codes
-            if (cosmeticData.items) {
-                const itemIds = cosmeticData.items.map(i => i.id);
-                const newUnlocked = [...unlockedCosmetics, ...itemIds];
-                setUnlockedCosmetics(newUnlocked);
-                localStorage.setItem('unlocked_cosmetics', JSON.stringify(newUnlocked));
-                // Auto-equip all items
-                cosmeticData.items.forEach(item => {
-                    if (item.category === 'eyes') setEyes(item.id);
-                    else if (item.category === 'hat') setHat(item.id);
-                    else if (item.category === 'mouth') setMouth(item.id);
-                    else if (item.category === 'bodyItem') setBodyItem(item.id);
-                });
-                // Set skin color if specified
-                if (cosmeticData.skin) {
-                    setSkinColor(cosmeticData.skin);
-                }
-            } else {
-                // Single item promo code
-                const newUnlocked = [...unlockedCosmetics, cosmeticData.id];
-                setUnlockedCosmetics(newUnlocked);
-                localStorage.setItem('unlocked_cosmetics', JSON.stringify(newUnlocked));
-                // Auto-equip based on category
-                if (cosmeticData.category === 'eyes') setEyes(cosmeticData.id);
-                else if (cosmeticData.category === 'hat') setHat(cosmeticData.id);
-                else if (cosmeticData.category === 'mouth') setMouth(cosmeticData.id);
-                else if (cosmeticData.category === 'bodyItem') setBodyItem(cosmeticData.id);
+            
+            // === AUTO-EQUIP ALL UNLOCKED ITEMS ===
+            
+            // Auto-equip mount
+            if (unlocked.mounts?.length > 0) {
+                setMount(unlocked.mounts[0]);
             }
-            setPromoMessage({ type: 'success', text: `🎉 Unlocked: ${cosmeticData.name}!` });
-            setPromoCode('');
-            setTimeout(() => setPromoMessage(null), 3000);
-            return;
+            
+            // Auto-equip character
+            if (unlocked.characters?.length > 0) {
+                setCharacterType(unlocked.characters[0]);
+            }
+            
+            // Auto-equip cosmetics by category
+            if (unlocked.cosmetics?.length > 0) {
+                for (const cosmetic of unlocked.cosmetics) {
+                    // cosmetic is { id, category }
+                    const { id, category } = cosmetic;
+                    switch (category) {
+                        case 'hat':
+                            setHat(id);
+                            break;
+                        case 'eyes':
+                            setEyes(id);
+                            break;
+                        case 'mouth':
+                            setMouth(id);
+                            break;
+                        case 'bodyItem':
+                            setBodyItem(id);
+                            break;
+                    }
+                }
+            }
+            
+            // Auto-set skin color if included (for themed sets)
+            if (unlocked.skinColor) {
+                setSkinColor(unlocked.skinColor);
+            }
+        } else {
+            setPromoMessage({ type: 'error', text: result.message || 'Invalid promo code' });
         }
         
-        setPromoMessage({ type: 'error', text: 'Invalid promo code' });
-        setTimeout(() => setPromoMessage(null), 2000);
+        setTimeout(() => setPromoMessage(null), 4000);
     };
     
     // Handle character type change
     const handleCharacterTypeChange = (typeId) => {
-        if (characterRegistry.isUnlocked(typeId)) {
+        // Check if character is unlocked (penguin always available, others from server)
+        if (typeId === 'penguin' || unlockedCharactersList.includes(typeId)) {
             setCharacterType(typeId);
-            localStorage.setItem('character_type', typeId);
         }
     };
     
     // Get current character config
     const currentCharacter = characterRegistry.getCharacter(characterType);
-    const unlockedCharacters = characterRegistry.getAvailableCharacterIds();
+    
+    // Get unlocked characters from server (penguin always available)
+    const unlockedCharactersList = useMemo(() => {
+        const chars = ['penguin']; // Penguin always unlocked
+        if (isAuthenticated && userData?.unlockedCharacters) {
+            userData.unlockedCharacters.forEach(c => {
+                if (!chars.includes(c)) chars.push(c);
+            });
+        }
+        return chars;
+    }, [isAuthenticated, userData?.unlockedCharacters]);
+    
+    // Filter to only include characters that exist in registry
+    const unlockedCharacters = unlockedCharactersList.filter(id => characterRegistry.getCharacter(id));
     
     useEffect(() => {
         if(updateData) updateData({skin: skinColor, hat, eyes, mouth, bodyItem, mount, characterType});
@@ -236,6 +297,7 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     const spinRef = useRef(0); 
     const reqRef = useRef(null);
     const rendererRef = useRef(null);
+    const cameraRef = useRef(null);
 
     // --- SCRIPT LOADING ---
     useEffect(() => {
@@ -307,8 +369,13 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
         scene.background = new THREE.Color('#2c3e50');
         scene.fog = new THREE.Fog('#2c3e50', 20, 60);
         
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // Get actual container dimensions (for portrait mode support)
+        const containerWidth = mountRef.current.clientWidth || window.innerWidth;
+        const containerHeight = mountRef.current.clientHeight || window.innerHeight;
+        
+        const camera = new THREE.PerspectiveCamera(45, containerWidth / containerHeight, 0.1, 1000);
         camera.position.set(20, 20, 30);
+        cameraRef.current = camera;
         
         // Mobile: disable antialias for performance
         const rendererOptions = {
@@ -319,7 +386,7 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
             rendererOptions.precision = 'mediump';
         }
         const renderer = new THREE.WebGLRenderer(rendererOptions);
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(containerWidth, containerHeight);
         // Mobile: cap DPR at 1.0 to avoid rendering 4-9x more pixels
         const dpr = isMobileGPU ? Math.min(window.devicePixelRatio, 1.0) : Math.min(window.devicePixelRatio, 2);
         renderer.setPixelRatio(dpr);
@@ -883,32 +950,50 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
 
     return (
         <div className="relative w-full h-full bg-gray-900 overflow-hidden font-sans">
-            <div ref={mountRef} className="absolute inset-0 z-0" />
+            {/* 3D Canvas - in portrait mode, only show top portion */}
+            <div 
+                ref={mountRef} 
+                className="absolute left-0 right-0 z-0" 
+                style={{
+                    top: 0,
+                    height: isPortrait && isMobileView ? '35%' : '100%'
+                }}
+            />
             
-            <div className="absolute top-0 left-0 p-6 z-10 w-full pointer-events-none">
-                <h1 className="retro-text text-4xl text-white drop-shadow-lg" style={{textShadow: '4px 4px 0px #000'}}>
-                    PENGUIN MAKER <span className="text-yellow-400 text-sm align-top">DELUXE</span>
+            {/* Title - smaller on mobile portrait */}
+            <div className={`absolute top-0 left-0 z-10 w-full pointer-events-none ${isPortrait && isMobileView ? 'p-3' : 'p-6'}`}>
+                <h1 className={`retro-text text-white drop-shadow-lg ${isPortrait && isMobileView ? 'text-2xl' : 'text-4xl'}`} style={{textShadow: '4px 4px 0px #000'}}>
+                    PENGUIN MAKER <span className={`text-yellow-400 align-top ${isPortrait && isMobileView ? 'text-xs' : 'text-sm'}`}>DELUXE</span>
                 </h1>
             </div>
 
-            <div className="absolute bottom-10 right-10 z-10 w-80 pointer-events-auto">
-                <div className="glass-panel p-6 rounded-2xl flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
-                    <h2 className="text-white font-bold text-lg mb-2 flex items-center gap-2 sticky top-0 bg-gray-900/50 p-2 rounded backdrop-blur-md z-20">
-                        <IconSettings size={20} /> {characterType === 'penguin' ? 'Wardrobe' : currentCharacter?.name || 'Character'}
+            {/* Settings Panel - bottom sheet on mobile portrait, side panel on landscape/desktop */}
+            <div className={`absolute z-10 pointer-events-auto ${
+                isPortrait && isMobileView 
+                    ? 'bottom-0 left-0 right-0 w-full px-3 pb-3' 
+                    : 'bottom-10 right-10 w-80'
+            }`}>
+                <div className={`glass-panel rounded-2xl flex flex-col gap-3 overflow-y-auto ${
+                    isPortrait && isMobileView 
+                        ? 'p-4 max-h-[60vh] rounded-b-none' 
+                        : 'p-6 max-h-[80vh]'
+                }`}>
+                    <h2 className={`text-white font-bold flex items-center gap-2 sticky top-0 bg-gray-900/50 p-2 rounded backdrop-blur-md z-20 ${isPortrait && isMobileView ? 'text-base mb-1' : 'text-lg mb-2'}`}>
+                        <IconSettings size={isPortrait && isMobileView ? 16 : 20} /> {characterType === 'penguin' ? 'Wardrobe' : currentCharacter?.name || 'Character'}
                     </h2>
 
                     {/* Customization options - ONLY for penguin character */}
                     {characterType === 'penguin' ? (
                         <>
-                            <div className="flex flex-col gap-2 text-white">
-                                <span className="font-semibold text-xs text-gray-300 uppercase tracking-wider">Feathers ({options.skin.length})</span>
-                                <div className="grid grid-cols-6 gap-2">
+                            <div className="flex flex-col gap-1 text-white">
+                                <span className={`font-semibold text-gray-300 uppercase tracking-wider ${isPortrait && isMobileView ? 'text-[10px]' : 'text-xs'}`}>Feathers ({options.skin.length})</span>
+                                <div className={`grid gap-1.5 ${isPortrait && isMobileView ? 'grid-cols-8' : 'grid-cols-6 gap-2'}`}>
                                     {options.skin.map(c => (
                                         <button 
                                             key={c}
                                             onClick={() => setSkinColor(c)}
                                             title={c}
-                                            className={`w-8 h-8 rounded-full border-2 ${skinColor === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-70'} transition-all hover:scale-105`}
+                                            className={`rounded-full border-2 ${skinColor === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-70'} transition-all hover:scale-105 ${isPortrait && isMobileView ? 'w-6 h-6' : 'w-8 h-8'}`}
                                             style={{backgroundColor: PALETTE[c] || c}}
                                         />
                                     ))}
@@ -994,19 +1079,96 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                         </div>
                     )}
                     
-                    {/* Username Input */}
-                    <div className="mt-4">
-                        <label className="block text-xs text-yellow-400 mb-1 retro-text">USERNAME</label>
-                        <input
-                            type="text"
-                            value={username}
-                            onChange={(e) => handleUsernameChange(e.target.value)}
-                            maxLength={20}
-                            placeholder="Enter your name..."
-                            className="w-full px-3 py-2 bg-black/50 border-2 border-yellow-500/50 rounded-lg text-white text-sm focus:border-yellow-400 focus:outline-none placeholder-white/30"
-                        />
-                        <p className="text-xs text-white/40 mt-1 text-right">{username.length}/20</p>
-                    </div>
+                    {/* Username Section - Only show after authentication */}
+                    {!isAuthenticated && !isRestoringSession && (
+                        <div className="mt-4 p-3 bg-black/30 rounded-lg border border-gray-500/30">
+                            <p className="text-xs text-gray-400 text-center">
+                                🔐 Connect wallet to set your username
+                            </p>
+                        </div>
+                    )}
+                    
+                    {isRestoringSession && (
+                        <div className="mt-4 p-3 bg-black/30 rounded-lg border border-cyan-500/30">
+                            <p className="text-xs text-cyan-400 text-center animate-pulse">
+                                🔄 Restoring session...
+                            </p>
+                        </div>
+                    )}
+                    
+                    {isAuthenticated && (
+                        <div className="mt-4">
+                            <label className="block text-xs text-yellow-400 mb-1 retro-text">
+                                {isReturningUser ? '🔒 USERNAME (LOCKED)' : '✏️ CHOOSE USERNAME'}
+                            </label>
+                            
+                            {/* Returning user - locked username display */}
+                            {isReturningUser && (
+                                <>
+                                    <div className="w-full px-3 py-2 bg-black/30 border-2 border-gray-500/50 rounded-lg text-white text-sm">
+                                        {username}
+                                    </div>
+                                    <p className="text-xs text-orange-400 mt-1">
+                                        🔒 Username locked for 30 days after first entry
+                                    </p>
+                                </>
+                            )}
+                            
+                            {/* New user - editable username */}
+                            {!isReturningUser && (
+                                <>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={username}
+                                            onChange={(e) => handleUsernameChange(e.target.value)}
+                                            maxLength={20}
+                                            minLength={3}
+                                            placeholder="Choose a unique name (3-20 chars)..."
+                                            className={`w-full px-3 py-2 pr-24 bg-black/50 border-2 rounded-lg text-white text-sm focus:outline-none placeholder-white/30 ${
+                                                usernameStatus === 'taken' 
+                                                    ? 'border-red-500/50 focus:border-red-400'
+                                                    : usernameStatus === 'available'
+                                                        ? 'border-green-500/50 focus:border-green-400'
+                                                        : username.length > 0 && username.length < 3 
+                                                            ? 'border-red-500/50 focus:border-red-400' 
+                                                            : 'border-yellow-500/50 focus:border-yellow-400'
+                                            }`}
+                                        />
+                                        {/* Availability status badge */}
+                                        {username.length >= 3 && (
+                                            <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2 py-0.5 rounded ${
+                                                usernameStatus === 'checking' 
+                                                    ? 'bg-gray-500/50 text-gray-300'
+                                                    : usernameStatus === 'available'
+                                                        ? 'bg-green-500/50 text-green-300'
+                                                        : usernameStatus === 'taken'
+                                                            ? 'bg-red-500/50 text-red-300'
+                                                            : usernameStatus === 'current'
+                                                                ? 'bg-blue-500/50 text-blue-300'
+                                                                : 'bg-gray-500/50 text-gray-300'
+                                            }`}>
+                                                {usernameStatus === 'checking' && '⏳ Checking...'}
+                                                {usernameStatus === 'available' && '✓ Available'}
+                                                {usernameStatus === 'taken' && '✗ Taken'}
+                                                {usernameStatus === 'current' && '✓ Current'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex justify-between mt-1">
+                                        <p className="text-xs text-amber-400">
+                                            ⚠️ Cannot be changed for 30 days after entering world
+                                        </p>
+                                        <p className={`text-xs ${
+                                            username.length > 0 && username.length < 3 ? 'text-red-400' : 'text-white/40'
+                                        }`}>
+                                            {username.length}/20
+                                        </p>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
                     
                     {/* Promo Code Input */}
                     <div className="mt-2">
@@ -1016,21 +1178,32 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                                 type="text"
                                 value={promoCode}
                                 onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                                onKeyDown={(e) => e.key === 'Enter' && handlePromoCodeSubmit()}
+                                onKeyDown={(e) => e.key === 'Enter' && !promoLoading && handlePromoCodeSubmit()}
                                 maxLength={20}
-                                placeholder="Enter code..."
-                                className="flex-1 px-3 py-2 bg-black/50 border-2 border-purple-500/50 rounded-lg text-white text-sm focus:border-purple-400 focus:outline-none placeholder-white/30 uppercase"
+                                placeholder={isAuthenticated ? "Enter code..." : "Login to redeem"}
+                                disabled={promoLoading || !isAuthenticated}
+                                className={`flex-1 px-3 py-2 bg-black/50 border-2 border-purple-500/50 rounded-lg text-white text-sm focus:border-purple-400 focus:outline-none placeholder-white/30 uppercase ${!isAuthenticated ? 'opacity-50' : ''}`}
                             />
                             <button
                                 onClick={handlePromoCodeSubmit}
-                                className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-colors"
+                                disabled={promoLoading || !isAuthenticated}
+                                className={`px-3 py-2 text-white rounded-lg text-xs font-bold transition-colors ${
+                                    promoLoading || !isAuthenticated 
+                                        ? 'bg-gray-600 cursor-not-allowed' 
+                                        : 'bg-purple-600 hover:bg-purple-500'
+                                }`}
                             >
-                                REDEEM
+                                {promoLoading ? '...' : 'REDEEM'}
                             </button>
                         </div>
                         {promoMessage && (
                             <p className={`text-xs mt-1 ${promoMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
                                 {promoMessage.text}
+                            </p>
+                        )}
+                        {!isAuthenticated && (
+                            <p className="text-xs mt-1 text-amber-400/70">
+                                Connect wallet to redeem promo codes
                             </p>
                         )}
                     </div>
@@ -1061,18 +1234,48 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                         </div>
                     )}
                     
-                    <button 
-                        onClick={onEnterWorld}
-                        className="mt-4 w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg shadow-lg transform active:scale-95 transition-all retro-text text-xs border-b-4 border-yellow-700 flex justify-center items-center gap-2"
-                    >
-                        <IconWorld size={16} /> ENTER WORLD
-                    </button>
+                    {/* Wallet Authentication */}
+                    <div className="mt-4">
+                        <WalletAuth />
+                    </div>
+                    
+                    {/* Enter World Button */}
+                    {isAuthenticated && isNewUser && (!username || username.length < 3 || usernameStatus === 'taken') ? (
+                        <div className="mt-4">
+                            <button 
+                                disabled
+                                className="w-full py-3 bg-gray-600 text-gray-400 font-bold rounded-lg retro-text text-xs border-b-4 border-gray-700 flex justify-center items-center gap-2 cursor-not-allowed"
+                            >
+                                <IconWorld size={16} /> {usernameStatus === 'taken' ? 'USERNAME TAKEN' : 'CHOOSE A USERNAME'}
+                            </button>
+                            <p className="text-xs text-amber-400 text-center mt-2">
+                                Pick an available username to continue
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="mt-4">
+                            <button 
+                                onClick={onEnterWorld}
+                                className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg shadow-lg transform active:scale-95 transition-all retro-text text-xs border-b-4 border-yellow-700 flex justify-center items-center gap-2"
+                            >
+                                <IconWorld size={16} /> {isAuthenticated ? 'ENTER WORLD' : 'PLAY AS GUEST'}
+                            </button>
+                            {!isAuthenticated && (
+                                <p className="text-xs text-amber-400 text-center mt-2">
+                                    ⚠️ Guest mode: Progress won't be saved
+                                </p>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
             
-            <div className="absolute bottom-4 left-6 text-white/30 text-xs flex items-center gap-2">
-                <IconCamera size={14} /> Click & Drag to Rotate • Scroll to Zoom
-            </div>
+            {/* Help text - hide on mobile portrait to save space */}
+            {!(isPortrait && isMobileView) && (
+                <div className="absolute bottom-4 left-6 text-white/30 text-xs flex items-center gap-2">
+                    <IconCamera size={14} /> Click & Drag to Rotate • Scroll to Zoom
+                </div>
+            )}
 
             {!scriptsLoaded && (
                 <div className="absolute inset-0 bg-black flex items-center justify-center text-white retro-text z-50">

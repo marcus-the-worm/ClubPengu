@@ -1,6 +1,14 @@
 # Club Pengu Database Schema
 ## MongoDB Atlas Collections (16 Total)
 
+> ✅ **Implementation Status**: Core collections (users, auth_sessions, matches, challenges, puffles, transactions) have been implemented in `server/db/models/`. Additional collections (promo_codes, friendships, cosmetics, etc.) can be added as features are developed.
+
+> ⚙️ **Environment Setup**: Add your MongoDB Atlas connection string to `server/.env`:
+> ```
+> MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/clubpenguin
+> JWT_SECRET=your-secure-jwt-secret
+> ```
+
 ---
 
 ## 📑 Table of Contents
@@ -86,16 +94,16 @@ Primary player accounts linked to Solana wallets.
     // Based on EmoteSystem.js EMOTE_WHEEL_ITEMS + LOOPING_EMOTES
     emotes: {
       // Emote Wheel (keyboard 1-7, mouse wheel selector)
-      wave: Number,                   // 👋 Wave - non-looping
-      laugh: Number,                  // 😂 Laugh - non-looping
-      breakdance: Number,             // 🤸 Breakdance (looping)
-      dance: Number,                  // 💃 Dance (looping)
-      sit: Number,                    // 🧘 Sit (looping) - can trigger seatedOnFurniture
-      sixtySeven: Number,             // ⚖️ "67" balance emote (looping)
-      headbang: Number,               // 🎸 Headbang/rock emote (looping)
+      wave: Number,                   // 👋 Wave - non-looping (id: 'Wave')
+      laugh: Number,                  // 😂 Laugh - non-looping (id: 'Laugh')
+      breakdance: Number,             // 🤸 Breakdance (looping) (id: 'Breakdance')
+      dance: Number,                  // 💃 Dance (looping) (id: 'Dance')
+      sit: Number,                    // 🧘 Sit (looping) (id: 'Sit') - can trigger seatedOnFurniture
+      '67': Number,                   // ⚖️ "67" balance emote (looping) (id: '67')
+      headbang: Number,               // 🎸 Headbang/rock emote (looping) (id: 'Headbang')
       
       // Context-triggered emotes (not in wheel)
-      dj: Number,                     // 🎧 DJ (looping) - triggered by DJ booth interaction
+      dj: Number,                     // 🎧 DJ (looping) (id: 'DJ') - triggered by DJ booth interaction
     },
     
     // --- ECONOMY ---
@@ -140,21 +148,21 @@ Primary player accounts linked to Solana wallets.
     },
     
     // --- ROOMS VISITED (time spent per room) ---
-    // Complete room list from roomConfig.js
+    // Complete room list from roomConfig.js ROOM_PORTALS
     roomTime: {
       // Outdoor areas
       town: Number,                   // Main T-shaped street outdoor area
       
-      // Building interiors
+      // Building interiors (use room IDs from ROOM_PORTALS.targetRoom)
       nightclub: Number,              // Dance club interior
       dojo: Number,                   // Card Jitsu training area
-      pizzaParlor: Number,            // Pizza Parlor interior (future)
-      giftShop: Number,               // Gift Shop interior (future)
+      pizza: Number,                  // Pizza Parlor interior (targetRoom: 'pizza')
+      market: Number,                 // Gift Shop interior (targetRoom: null currently)
       
-      // Individual igloo interiors (tracked separately for leaderboards)
+      // Individual igloo interiors (targetRoom: 'igloo1'-'igloo10')
       igloo1: Number,
       igloo2: Number,
-      igloo3: Number,                 // SKNY igloo
+      igloo3: Number,                 // SKNY igloo (special banner style)
       igloo4: Number,
       igloo5: Number,
       igloo6: Number,
@@ -169,6 +177,10 @@ Primary player accounts linked to Solana wallets.
   },
   
   // --- PER-GAME STATISTICS ---
+  // NOTE: Game types use camelCase here, but server/MatchService uses snake_case
+  // Server: 'card_jitsu', 'tic_tac_toe', 'connect4'
+  // DB: 'cardJitsu', 'ticTacToe', 'connect4'
+  // Normalize on write to DB
   gameStats: {
     cardJitsu: { 
       played: Number,

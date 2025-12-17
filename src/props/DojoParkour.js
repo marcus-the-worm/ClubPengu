@@ -28,3 +28,4 @@ export function createDojoParkour(THREE, config = {}) {
 
 export default { createDojoParkour };
 
+

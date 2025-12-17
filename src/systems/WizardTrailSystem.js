@@ -174,3 +174,4 @@ class WizardTrailSystem {
 
 export default WizardTrailSystem;
 
+

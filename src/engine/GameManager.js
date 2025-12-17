@@ -1,6 +1,7 @@
 /**
  * GameManager - Singleton class managing global game state
- * Handles coins, inventory, progression, and persistence
+ * Server-authoritative for authenticated users
+ * NO persistence for guests - fresh start every session
  */
 class GameManager {
     static instance = null;
@@ -10,6 +11,7 @@ class GameManager {
             return GameManager.instance;
         }
         
+        // Core state - defaults for guests
         this.coins = 0;
         this.inventory = [];
         this.stamps = [];
@@ -19,11 +21,22 @@ class GameManager {
             distanceWalked: 0,
             chatsSent: 0
         };
-        this.unlockedItems = ['none']; // Default unlocked items
+        this.gameStats = null;
+        this.unlockedItems = ['none']; // Only base items for guests
         this.currentRoom = 'town';
         this.listeners = new Map();
         
-        this.load();
+        // Server sync state
+        this.isServerAuthoritative = false;
+        this.serverData = null;
+        this.lastSyncTime = null;
+        
+        // Appearance cache (temporary for guests)
+        this.appearance = {};
+        
+        // DON'T load from localStorage - guests start fresh
+        // Only authenticated users get their data (from server)
+        
         GameManager.instance = this;
     }
     
@@ -34,21 +47,179 @@ class GameManager {
         return GameManager.instance;
     }
     
-    // --- COINS ---
+    // ==================== MIGRATION SUPPORT ====================
+    
+    /**
+     * Get localStorage data for migration to server (first-time auth)
+     * This is called ONCE when user authenticates for the first time
+     */
+    getMigrationData() {
+        try {
+            const saved = localStorage.getItem('clubpenguin_save');
+            if (!saved) return null;
+            
+            const data = JSON.parse(saved);
+            console.log('📦 Found localStorage data for migration:', data);
+            return {
+                coins: data.coins || 0,
+                stamps: data.stamps || [],
+                stats: data.stats || {},
+                unlockedItems: data.unlockedItems || []
+            };
+        } catch (e) {
+            console.warn('Failed to read migration data:', e);
+            return null;
+        }
+    }
+    
+    /**
+     * Clear localStorage game data after successful migration
+     * Called after auth_success for first-time users
+     */
+    clearMigrationData() {
+        try {
+            // Clear game save data
+            localStorage.removeItem('clubpenguin_save');
+            // Clear cosmetic unlocks (now server-managed)
+            localStorage.removeItem('unlocked_mounts');
+            localStorage.removeItem('unlocked_cosmetics');
+            console.log('🧹 Cleared localStorage migration data');
+        } catch (e) {
+            console.warn('Failed to clear migration data:', e);
+        }
+    }
+    
+    // ==================== SERVER SYNC ====================
+    
+    /**
+     * Sync all data from server (called on auth success)
+     */
+    syncFromServer(userData, isNewUser = false) {
+        this.isServerAuthoritative = true;
+        this.serverData = userData;
+        this.lastSyncTime = Date.now();
+        
+        // Update local state from server
+        this.coins = userData.coins || 0;
+        this.inventory = userData.inventory || [];
+        this.stamps = userData.stamps || [];
+        this.unlockedItems = [
+            'none', // Always include base
+            ...(userData.unlockedCosmetics || []),
+            ...(userData.unlockedMounts || [])
+        ];
+        this.gameStats = userData.gameStats || null;
+        this.appearance = userData.customization || {};
+        
+        // Merge server stats
+        if (userData.stats) {
+            this.stats = {
+                ...this.stats,
+                gamesPlayed: userData.gameStats?.overall?.totalGamesPlayed || 0,
+                gamesWon: userData.gameStats?.overall?.totalGamesWon || 0,
+                ...userData.stats.session
+            };
+        }
+        
+        // Clear migration data after first successful sync
+        if (isNewUser) {
+            this.clearMigrationData();
+        }
+        
+        console.log(`📦 GameManager synced from server: ${this.coins} coins`);
+        this.emit('serverSync', { userData });
+        this.emit('coinsChanged', { coins: this.coins, delta: 0, reason: 'sync' });
+    }
+    
+    /**
+     * Set coins from server (authoritative update)
+     */
+    setCoinsFromServer(coins) {
+        if (!this.isServerAuthoritative) return;
+        
+        const delta = coins - this.coins;
+        this.coins = coins;
+        this.emit('coinsChanged', { coins: this.coins, delta, reason: 'server' });
+    }
+    
+    /**
+     * Update stats from server
+     */
+    updateStats(serverStats) {
+        if (serverStats) {
+            if (serverStats.cardJitsuWins !== undefined) {
+                this.stats = {
+                    ...this.stats,
+                    cardJitsuWins: serverStats.cardJitsuWins,
+                    cardJitsuLosses: serverStats.cardJitsuLosses,
+                    ticTacToeWins: serverStats.ticTacToeWins,
+                    ticTacToeLosses: serverStats.ticTacToeLosses,
+                    connect4Wins: serverStats.connect4Wins,
+                    connect4Losses: serverStats.connect4Losses,
+                    totalWins: serverStats.totalWins,
+                    totalLosses: serverStats.totalLosses
+                };
+            }
+            this.emit('statsUpdated', serverStats);
+        }
+    }
+    
+    /**
+     * Clear server data (on logout)
+     */
+    clearServerData() {
+        this.isServerAuthoritative = false;
+        this.serverData = null;
+        this.lastSyncTime = null;
+        
+        // Reset to guest defaults - no persistence
+        this.coins = 0;
+        this.inventory = [];
+        this.stamps = [];
+        this.unlockedItems = ['none'];
+        this.gameStats = null;
+        this.stats = {
+            gamesPlayed: 0,
+            gamesWon: 0,
+            distanceWalked: 0,
+            chatsSent: 0
+        };
+        
+        // CRITICAL: Clear appearance to prevent data leaking between wallets
+        this.appearance = {};
+        
+        this.emit('serverSync', { userData: null });
+        this.emit('dataCleared', {});
+    }
+    
+    // ==================== COINS ====================
+    
+    /**
+     * Add coins - ONLY works for authenticated users via server
+     */
     addCoins(amount, reason = 'unknown') {
-        this.coins += amount;
-        this.emit('coinsChanged', { coins: this.coins, delta: amount, reason });
-        this.save();
+        if (this.isServerAuthoritative) {
+            // Server-authoritative: don't modify locally, wait for server update
+            console.log(`💰 Coins will be updated by server: ${reason}`);
+            return this.coins;
+        }
+        
+        // Guests can't earn coins - log and ignore
+        console.log(`⚠️ Guest tried to earn coins: ${amount} (${reason}) - ignored`);
         return this.coins;
     }
     
+    /**
+     * Spend coins - ONLY for authenticated users via server
+     */
     spendCoins(amount) {
-        if (this.coins >= amount) {
-            this.coins -= amount;
-            this.emit('coinsChanged', { coins: this.coins, delta: -amount, reason: 'purchase' });
-            this.save();
-            return true;
+        if (this.isServerAuthoritative) {
+            console.log('💰 Purchases handled by server');
+            return false;
         }
+        
+        // Guests can't spend coins
+        console.log('⚠️ Guest tried to spend coins - ignored');
         return false;
     }
     
@@ -56,27 +227,44 @@ class GameManager {
         return this.coins;
     }
     
-    // --- INVENTORY ---
+    /**
+     * Check if player can afford something
+     */
+    canAfford(amount) {
+        return this.isServerAuthoritative && this.coins >= amount;
+    }
+    
+    // ==================== INVENTORY & UNLOCKS ====================
+    
     addItem(item) {
+        if (!this.isServerAuthoritative) {
+            console.log('⚠️ Guest tried to add item - ignored');
+            return;
+        }
         if (!this.inventory.includes(item)) {
             this.inventory.push(item);
             this.emit('inventoryChanged', { inventory: this.inventory, added: item });
-            this.save();
         }
     }
     
     hasItem(item) {
+        // Base items always available
+        if (item === 'none') return true;
         return this.inventory.includes(item) || this.unlockedItems.includes(item);
     }
     
-    // --- STAMPS ---
+    // ==================== STAMPS ====================
+    
     earnStamp(stampId, name) {
+        if (!this.isServerAuthoritative) {
+            console.log('⚠️ Guest tried to earn stamp - ignored');
+            return false;
+        }
+        
         if (!this.stamps.find(s => s.id === stampId)) {
             const stamp = { id: stampId, name, earnedAt: Date.now() };
             this.stamps.push(stamp);
             this.emit('stampEarned', stamp);
-            this.addCoins(50, 'stamp'); // Bonus coins for stamps
-            this.save();
             return true;
         }
         return false;
@@ -86,11 +274,14 @@ class GameManager {
         return this.stamps.some(s => s.id === stampId);
     }
     
-    // --- STATS ---
+    // ==================== STATS ====================
+    
     incrementStat(statName, amount = 1) {
+        // Stats only matter for authenticated users
+        if (!this.isServerAuthoritative) return;
+        
         if (this.stats[statName] !== undefined) {
             this.stats[statName] += amount;
-            this.save();
         }
     }
     
@@ -98,7 +289,22 @@ class GameManager {
         return this.stats[statName] || 0;
     }
     
-    // --- ROOM MANAGEMENT ---
+    getGameStats() {
+        return this.gameStats;
+    }
+    
+    // ==================== APPEARANCE ====================
+    
+    setAppearance(appearance) {
+        this.appearance = appearance || {};
+    }
+    
+    getAppearance() {
+        return this.appearance;
+    }
+    
+    // ==================== ROOM ====================
+    
     setRoom(roomId) {
         const previousRoom = this.currentRoom;
         this.currentRoom = roomId;
@@ -109,7 +315,8 @@ class GameManager {
         return this.currentRoom;
     }
     
-    // --- EVENT SYSTEM ---
+    // ==================== EVENTS ====================
+    
     on(event, callback) {
         if (!this.listeners.has(event)) {
             this.listeners.set(event, []);
@@ -132,42 +339,28 @@ class GameManager {
         }
     }
     
-    // --- PERSISTENCE ---
-    save() {
-        try {
-            const data = {
-                coins: this.coins,
-                inventory: this.inventory,
-                stamps: this.stamps,
-                stats: this.stats,
-                unlockedItems: this.unlockedItems,
-                savedAt: Date.now()
-            };
-            localStorage.setItem('clubpenguin_save', JSON.stringify(data));
-        } catch (e) {
-            console.warn('Failed to save game:', e);
-        }
+    // ==================== NO PERSISTENCE FOR GUESTS ====================
+    // Removed save() and load() - guests don't persist, auth users use server
+    
+    /**
+     * Check if game is in server-authoritative mode
+     */
+    isAuthenticatedMode() {
+        return this.isServerAuthoritative;
     }
     
-    load() {
-        try {
-            const saved = localStorage.getItem('clubpenguin_save');
-            if (saved) {
-                const data = JSON.parse(saved);
-                this.coins = data.coins || 0;
-                this.inventory = data.inventory || [];
-                this.stamps = data.stamps || [];
-                this.stats = { ...this.stats, ...data.stats };
-                this.unlockedItems = data.unlockedItems || ['none'];
-                console.log('Game loaded! Coins:', this.coins);
-            }
-        } catch (e) {
-            console.warn('Failed to load game:', e);
-        }
+    /**
+     * Get user data (for display)
+     */
+    getUserData() {
+        return this.serverData;
     }
     
+    /**
+     * Reset to fresh state (for testing)
+     */
     reset() {
-        this.coins = 0; // New players start with 0 coins
+        this.coins = 0;
         this.inventory = [];
         this.stamps = [];
         this.stats = {
@@ -176,13 +369,12 @@ class GameManager {
             distanceWalked: 0,
             chatsSent: 0
         };
-        this.save();
+        this.gameStats = null;
+        this.unlockedItems = ['none'];
+        this.isServerAuthoritative = false;
+        this.serverData = null;
         this.emit('gameReset', {});
     }
 }
 
 export default GameManager;
-
-
-
-

@@ -697,7 +697,7 @@ export const BODY = {
         voxels: [] 
     },
     
-    // PROMO: BONK shirt - unlocked with BONK promo code
+    // EXCLUSIVE: BONK shirt
     bonkShirt: (() => {
         // Baseball bat voxels - attached to right flipper, pointing forward
         const batVoxels = [];
@@ -757,7 +757,7 @@ export const BODY = {
         };
     })(),
     
-    // PROMO: $PENGU shirt - unlocked with PENGU promo code
+    // EXCLUSIVE: $PENGU shirt
     penguShirt: { 
         textDecal: {
             text: '$PENGU',

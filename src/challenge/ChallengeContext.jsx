@@ -161,11 +161,9 @@ export function ChallengeProvider({ children }) {
                     setShowInbox(false);
                     setSelectedPlayer(null);
                     
-                    // Update local coins and persist
+                    // Update local coins from server
                     if (message.coins !== undefined) {
-                        const gm = GameManager.getInstance();
-                        gm.coins = message.coins;
-                        gm.save();
+                        GameManager.getInstance().setCoinsFromServer(message.coins);
                     }
                     
                     showNotification(`🎮 Match started against ${message.match.yourRole === 'player1' ? message.match.player2.name : message.match.player1.name}!`, 'success');
@@ -179,16 +177,9 @@ export function ChallengeProvider({ children }) {
                     const result = message.result;
                     setIsInMatch(false);
                     
-                    // Update local coins and persist
+                    // Update local coins from server
                     if (result.yourCoins !== undefined) {
-                        const gm = GameManager.getInstance();
-                        gm.coins = result.yourCoins;
-                        gm.save();
-                        gm.emit('coinsChanged', { 
-                            coins: result.yourCoins, 
-                            delta: result.coinsWon || (result.refunded ? result.refunded : 0),
-                            reason: result.reason 
-                        });
+                        GameManager.getInstance().setCoinsFromServer(result.yourCoins);
                     }
                     
                     // Set dance flag if we won
@@ -287,14 +278,7 @@ export function ChallengeProvider({ children }) {
                     break;
                     
                 case 'coins_update':
-                    const gmCoins = GameManager.getInstance();
-                    gmCoins.coins = message.coins;
-                    gmCoins.save();
-                    gmCoins.emit('coinsChanged', { 
-                        coins: message.coins, 
-                        delta: 0,
-                        reason: 'sync' 
-                    });
+                    GameManager.getInstance().setCoinsFromServer(message.coins);
                     break;
             }
         } catch (e) {
@@ -323,9 +307,11 @@ export function ChallengeProvider({ children }) {
                 handleMessage(event);
             };
             
-            // Request initial data (coins are synced via 'join' message, not separately)
-            ws.send(JSON.stringify({ type: 'inbox_sync' }));
-            ws.send(JSON.stringify({ type: 'active_matches_request' }));
+            // Request initial data only if WebSocket is open
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'inbox_sync' }));
+                ws.send(JSON.stringify({ type: 'active_matches_request' }));
+            }
             
             return () => {
                 ws.onmessage = originalHandler;
@@ -357,10 +343,11 @@ export function ChallengeProvider({ children }) {
         return () => unsubscribe();
     }, [connected]);
     
-    // Send message helper
+    // Send message helper - only send if WebSocket is fully open
     const send = useCallback((message) => {
-        if (window.__multiplayerWs?.readyState === WebSocket.OPEN) {
-            window.__multiplayerWs.send(JSON.stringify(message));
+        const ws = window.__multiplayerWs;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(message));
         }
     }, []);
     

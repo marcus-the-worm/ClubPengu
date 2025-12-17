@@ -465,7 +465,7 @@ export const HATS = {
         return v;
     })(),
     
-    // PROMO: BONK "!!!" - Three simple exclamation marks (shaft + dot)
+    // EXCLUSIVE: BONK "!!!" - Three simple exclamation marks (shaft + dot)
     bonkExclamation: (() => {
         const v = [];
         const red = '#E53935';
@@ -495,7 +495,7 @@ export const HATS = {
         return v;
     })(),
     
-    // PROMO: Mistor Goat White Hair
+    // EXCLUSIVE: Mistor Goat White Hair
     mistorHair: (() => {
         const v = [];
         const hairLight = '#FFFFFF';

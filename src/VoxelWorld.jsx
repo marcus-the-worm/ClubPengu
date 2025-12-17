@@ -37,7 +37,7 @@ import {
     IGLOO_BANNER_STYLES,
     IGLOO_BANNER_CONTENT
 } from './config';
-import { createChatSprite, updateAIAgents, updateMatchBanners, createIglooOccupancySprite, updateIglooOccupancySprite, animateMesh, updateDayNightCycle, calculateNightFactor, SnowfallSystem, WizardTrailSystem, MountTrailSystem, LocalizedParticleSystem, lerp, lerpRotation, calculateLerpFactor } from './systems';
+import { createChatSprite, updateAIAgents, updateMatchBanners, createIglooOccupancySprite, updateIglooOccupancySprite, animateMesh, updateDayNightCycle, calculateNightFactor, SnowfallSystem, WizardTrailSystem, MountTrailSystem, LocalizedParticleSystem, CameraController, lerp, lerpRotation, calculateLerpFactor } from './systems';
 import { createDojo, createGiftShop, createPizzaParlor, generateDojoInterior, generatePizzaInterior } from './buildings';
 
 const VoxelWorld = ({ 
@@ -52,7 +52,8 @@ const VoxelWorld = ({
     onPlayerClick,   // Callback when clicking another player (for challenge system)
     isInMatch = false, // True when player is in a P2P match (disable movement input)
     activeMatches = [], // Active matches in the room (for spectator banners)
-    spectatingMatch = {} // Real-time match state data for spectating
+    spectatingMatch = {}, // Real-time match state data for spectating
+    onRequestAuth    // Callback to redirect to penguin maker for auth
 }) => {
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
@@ -78,6 +79,7 @@ const VoxelWorld = ({
     const mountTrailSystemRef = useRef(null); // Mount trail system (icy trails, etc.)
     const mountEnabledRef = useRef(true); // Track if mount is equipped/enabled
     const mpUpdateAppearanceRef = useRef(null); // Ref for appearance update function
+    const cameraControllerRef = useRef(null); // Smooth third-person camera controller
     const penguinDataRef = useRef(null); // Ref for current penguin data
     
     // Keep isInMatch ref up to date
@@ -147,7 +149,8 @@ const VoxelWorld = ({
         requestBallSync: mpRequestBallSync,
         registerCallbacks,
         chatMessages,
-        worldTimeRef: serverWorldTimeRef // Server-synchronized world time
+        worldTimeRef: serverWorldTimeRef, // Server-synchronized world time
+        isAuthenticated // For determining persistence mode
     } = useMultiplayer();
     
     // Keep refs updated for use in event handlers (must be after useMultiplayer destructuring)
@@ -208,22 +211,31 @@ const VoxelWorld = ({
     const aiPufflesRef = useRef([]); // { id, puffle }
     
     // Multi-puffle ownership system
-    const [ownedPuffles, setOwnedPuffles] = useState(() => {
-        // Load from localStorage
-        const saved = localStorage.getItem('owned_puffles');
-        if (saved) {
-            try {
-                const data = JSON.parse(saved);
-                return data.map(p => Puffle.fromJSON(p));
-            } catch { return []; }
-        }
-        return [];
-    });
+    // For guests: empty array (no persistence)
+    // For authenticated: loaded from server via GameManager sync
+    const [ownedPuffles, setOwnedPuffles] = useState([]);
     
-    // Save owned puffles when they change
+    // Sync puffles from server when authentication state changes
     useEffect(() => {
-        localStorage.setItem('owned_puffles', JSON.stringify(ownedPuffles.map(p => p.toJSON())));
-    }, [ownedPuffles]);
+        if (isAuthenticated) {
+            const gm = GameManager.getInstance();
+            const serverData = gm.getUserData?.();
+            if (serverData?.puffles?.length > 0) {
+                try {
+                    setOwnedPuffles(serverData.puffles.map(p => Puffle.fromJSON(p)));
+                    console.log('🐾 Loaded puffles from server:', serverData.puffles.length);
+                } catch (e) {
+                    console.warn('Failed to load puffles from server:', e);
+                }
+            }
+        } else {
+            // Guest mode - no puffles persistence
+            setOwnedPuffles([]);
+        }
+    }, [isAuthenticated]);
+    
+    // DON'T persist puffles to localStorage - server is authoritative for auth users
+    // Guests don't get persistence
     
     // Mobile detection and orientation handling
     useEffect(() => {
@@ -475,15 +487,22 @@ const VoxelWorld = ({
         const clock = new THREE.Clock();
         clockRef.current = clock;
 
-        // Controls
+        // Controls - OrbitControls for traditional drag-to-rotate and scroll-to-zoom
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.dampingFactor = 0.1;
+        controls.dampingFactor = 0.08;  // Smooth damping
         controls.minDistance = 5;
         controls.maxDistance = 50;
-        controls.maxPolarAngle = Math.PI / 2 - 0.1; 
-        controls.enablePan = false; 
+        controls.maxPolarAngle = Math.PI / 2 - 0.1; // Prevent going below ground
+        controls.minPolarAngle = 0.1;               // Prevent going directly overhead
+        controls.enablePan = false;
+        controls.rotateSpeed = 0.5;     // Slower rotation for smoother feel
+        controls.zoomSpeed = 0.8;       // Smooth zoom
         controlsRef.current = controls;
+        
+        // Initialize smooth camera controller (works alongside OrbitControls)
+        const cameraController = new CameraController(THREE, camera, controls);
+        cameraControllerRef.current = cameraController;
         
         // Window resize handler (important for iOS URL bar showing/hiding)
         const handleResize = () => {
@@ -1249,7 +1268,7 @@ const VoxelWorld = ({
             AI_NAMES.forEach((name, i) => {
                 const skins = Object.keys(PALETTE).filter(k => !['floorLight','floorDark','wood','rug','glass','beerGold','mirrorFrame','mirrorGlass', 'asphalt', 'roadLine', 'buildingBrickRed', 'buildingBrickYellow', 'buildingBrickBlue', 'windowLight', 'windowDark', 'grass', 'snow', 'water', 'waterDeep', 'butterfly1', 'butterfly2', 'butterfly3'].includes(k));
                 const hats = Object.keys(ASSETS.HATS);
-                // Filter out promo-code-only items like "joe" from AI clothing
+                // Filter out exclusive items like "joe" (invisible body) from AI clothing
                 const bodyItems = Object.keys(ASSETS.BODY).filter(k => !ASSETS.BODY[k]?.hideBody);
                 
                 const aiData = {
@@ -1513,11 +1532,16 @@ const VoxelWorld = ({
             
             // Check keyboard input (disabled during P2P match)
             const inMatch = isInMatchRef.current;
-            const keyForward = !inMatch && (keysRef.current['KeyW'] || keysRef.current['ArrowUp']);
-            const keyBack = !inMatch && (keysRef.current['KeyS'] || keysRef.current['ArrowDown']);
-            const keyLeft = !inMatch && (keysRef.current['KeyA'] || keysRef.current['ArrowLeft']);
-            const keyRight = !inMatch && (keysRef.current['KeyD'] || keysRef.current['ArrowRight']);
+            // WASD for player movement, Arrow keys for camera rotation
+            const keyForward = !inMatch && keysRef.current['KeyW'];
+            const keyBack = !inMatch && keysRef.current['KeyS'];
+            const keyLeft = !inMatch && keysRef.current['KeyA'];
+            const keyRight = !inMatch && keysRef.current['KeyD'];
             const keyJump = !inMatch && keysRef.current['Space'];
+            
+            // Arrow keys rotate camera (horizontal only)
+            const arrowLeft = !inMatch && keysRef.current['ArrowLeft'];
+            const arrowRight = !inMatch && keysRef.current['ArrowRight'];
             
             // Check mobile button input (legacy D-pad)
             const mobile = mobileControlsRef.current;
@@ -1533,12 +1557,23 @@ const VoxelWorld = ({
             const joystickBack = !inMatch && joystick.y < -0.1;
             const joystickMagnitude = Math.sqrt(joystick.x * joystick.x + joystick.y * joystick.y);
             
-            // Apply touch camera rotation with sensitivity
-            const camDelta = cameraRotationRef.current;
+            // Apply camera controller inputs
+            const camController = cameraControllerRef.current;
             const camSensitivity = gameSettingsRef.current?.cameraSensitivity || 0.3;
-            if (camDelta.deltaX !== 0 && !inMatch) {
-                rotRef.current -= camDelta.deltaX * 0.015 * (camSensitivity * 2);
-                cameraRotationRef.current.deltaX = 0;
+            
+            // Arrow key camera rotation
+            if (camController && !inMatch) {
+                const arrowDir = (arrowLeft ? 1 : 0) - (arrowRight ? 1 : 0);
+                camController.applyArrowKeyRotation(arrowDir);
+            }
+            
+            // Touch/mouse camera rotation
+            const camDelta = cameraRotationRef.current;
+            if (camDelta.deltaX !== 0 || camDelta.deltaY !== 0) {
+                if (camController && !inMatch) {
+                    camController.applyRotationInput(camDelta.deltaX, camDelta.deltaY, camSensitivity * 2);
+                }
+                cameraRotationRef.current = { deltaX: 0, deltaY: 0 };
             }
             
             // Handle jumping
@@ -3158,14 +3193,24 @@ const VoxelWorld = ({
             // Match banners are updated in a separate useEffect that responds to prop changes
             // (not in the game loop, since activeMatches/spectatingMatch are props that change)
 
-            // OPTIMIZED: Reuse vectors instead of creating new ones every frame
-            const offset = tempOffsetRef.current.copy(camera.position).sub(controls.target);
-            // Follow player's actual Y position (add slight offset for eye level)
-            const playerY = posRef.current.y + 1.2;
-            const targetPos = tempVec3Ref.current.set(posRef.current.x, playerY, posRef.current.z);
-            camera.position.copy(targetPos).add(offset);
-            controls.target.copy(targetPos);
-            controls.update();
+            // ==================== SMOOTH CAMERA UPDATE ====================
+            // Update camera controller with player state
+            if (cameraControllerRef.current) {
+                cameraControllerRef.current.setPlayerState(
+                    posRef.current,
+                    rotRef.current,
+                    moving // True when player is actively moving
+                );
+                cameraControllerRef.current.update(delta);
+            } else {
+                // Fallback: simple camera follow if controller not initialized
+                const offset = tempOffsetRef.current.copy(camera.position).sub(controls.target);
+                const playerY = posRef.current.y + 1.2;
+                const targetPos = tempVec3Ref.current.set(posRef.current.x, playerY, posRef.current.z);
+                camera.position.copy(targetPos).add(offset);
+                controls.target.copy(targetPos);
+                controls.update();
+            }
             
             // ==================== DAY/NIGHT CYCLE (Town only, Server-synchronized) ====================
             // OPTIMIZED: Only update lighting every 3rd frame (still smooth at 60fps = 20 updates/sec)
@@ -3246,6 +3291,11 @@ const VoxelWorld = ({
             if (playerGoldRainRef.current) {
                 playerGoldRainRef.current.dispose();
                 playerGoldRainRef.current = null;
+            }
+            // Cleanup camera controller
+            if (cameraControllerRef.current) {
+                cameraControllerRef.current.dispose();
+                cameraControllerRef.current = null;
             }
             // Cleanup player name sprite ref
             playerNameSpriteRef.current = null;
@@ -3563,11 +3613,8 @@ const VoxelWorld = ({
             setActiveBubble(latestMsg.text);
         }
         
-        // Earn coins for chatting
+        // Track chat stat (coins are awarded server-side in chat handler)
         GameManager.getInstance().incrementStat('chatsSent');
-        if (Math.random() > 0.7) {
-            GameManager.getInstance().addCoins(5, 'chat');
-        }
     }, [chatMessages, playerId, playerName]);
 
     // Puffle management - supports multiple ownership, 1 equipped at a time
@@ -4694,32 +4741,22 @@ const VoxelWorld = ({
                 </div>
              )}
              
-             {/* Mobile Portrait Mode Warning */}
-             {isMobile && !isLandscape && (
-                <div className="absolute inset-0 bg-black/95 z-50 flex flex-col items-center justify-center p-8">
-                    <div className="text-6xl mb-6 animate-bounce">📱</div>
-                    <h2 className="text-white text-xl retro-text text-center mb-4">Rotate Your Device</h2>
-                    <p className="text-gray-400 text-center text-sm">
-                        Please rotate your device to landscape mode for the best experience
-                    </p>
-                    <div className="mt-8 w-20 h-12 border-2 border-white/50 rounded-lg relative animate-pulse">
-                        <div className="absolute inset-1 bg-cyan-500/30 rounded"></div>
-                    </div>
-                </div>
-             )}
+             {/* Mobile Portrait Mode - No longer blocking, game works in portrait now */}
              
              {/* Mobile PUBG-style Joystick - LEFT side (or right if left-handed) */}
-             {isMobile && isLandscape && (
+             {/* Supports both portrait and landscape modes */}
+             {isMobile && (
                 <VirtualJoystick
                     onMove={(input) => { joystickInputRef.current = input; }}
-                    size={window.innerWidth >= 768 ? 150 : 120}
+                    size={isLandscape ? (window.innerWidth >= 768 ? 150 : 120) : 100}
                     position={gameSettings.leftHanded ? 'right' : 'left'}
                     deadzone={0.1}
+                    isPortrait={!isLandscape}
                 />
              )}
              
              {/* Mobile Touch Camera Control - covers entire screen, joystick handles its own touches */}
-             {isMobile && isLandscape && (
+             {isMobile && (
                 <TouchCameraControl
                     onRotate={(delta) => { cameraRotationRef.current = delta; }}
                     sensitivity={gameSettings.cameraSensitivity || 0.3}
@@ -4727,165 +4764,36 @@ const VoxelWorld = ({
              )}
              
              {/* Mobile Jump Button - positioned above action buttons on opposite side of joystick */}
-             {isMobile && isLandscape && (
+             {/* 50% larger for better touch targets */}
+             {isMobile && (
                 <button 
-                    className={`absolute bottom-[200px] ${gameSettings.leftHanded ? 'left-6' : 'right-6'} w-16 h-16 rounded-full bg-green-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 active:bg-green-500 transition-all z-30 touch-none`}
+                    className={`absolute ${isLandscape ? 'bottom-[200px]' : 'bottom-[200px]'} ${gameSettings.leftHanded ? 'left-3' : 'right-3'} ${isLandscape ? 'w-24 h-24' : 'w-[72px] h-[72px]'} rounded-full bg-green-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 active:bg-green-500 transition-all z-30 touch-none`}
                     onTouchStart={(e) => { e.preventDefault(); jumpRequestedRef.current = true; }}
                     onTouchEnd={(e) => { e.preventDefault(); jumpRequestedRef.current = false; }}
                 >
-                    <span className="text-2xl">⬆️</span>
+                    <span className={isLandscape ? 'text-3xl' : 'text-2xl'}>⬆️</span>
                 </button>
              )}
              
              {/* Mobile Action Buttons - positioned on opposite side of joystick */}
-             {isMobile && isLandscape && (
-                <div className={`absolute bottom-[70px] ${gameSettings.leftHanded ? 'left-6' : 'right-6'} flex flex-col gap-2 z-30`}>
+             {/* Supports both portrait and landscape modes */}
+             {isMobile && (
+                <div className={`absolute ${isLandscape ? 'bottom-[70px]' : 'bottom-[80px]'} ${gameSettings.leftHanded ? 'left-3' : 'right-3'} flex flex-col gap-1.5 z-30`}>
                     {/* Chat Button */}
                     <button 
-                        className="w-12 h-12 rounded-full bg-cyan-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none"
+                        className={`${isLandscape ? 'w-12 h-12' : 'w-11 h-11'} rounded-full bg-cyan-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none`}
                         onClick={() => setShowMobileChat(true)}
                     >
-                        <span className="text-xl">💬</span>
+                        <span className={isLandscape ? 'text-xl' : 'text-lg'}>💬</span>
                     </button>
                     
                     {/* Emote Button */}
                     <button 
-                        className="w-12 h-12 rounded-full bg-purple-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none"
+                        className={`${isLandscape ? 'w-12 h-12' : 'w-11 h-11'} rounded-full bg-purple-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform touch-none`}
                         onClick={() => { setEmoteWheelOpen(true); emoteSelectionRef.current = -1; setEmoteWheelSelection(-1); }}
                     >
-                        <span className="text-xl">😄</span>
+                        <span className={isLandscape ? 'text-xl' : 'text-lg'}>😄</span>
                     </button>
-                    
-                    {/* Interact Button (E key) */}
-                    {(nearbyPortal || nearbyInteraction) && (
-                        <button 
-                            className="w-12 h-12 rounded-full bg-yellow-600/80 border-2 border-white/40 flex items-center justify-center active:scale-90 transition-transform animate-pulse touch-none"
-                            onClick={() => {
-                                if (nearbyPortal) {
-                                    handlePortalEnter();
-                                } else if (nearbyInteraction) {
-                                    // Handle bench sitting with snap points
-                                    if (nearbyInteraction.action === 'sit' && nearbyInteraction.benchData) {
-                                        const benchData = nearbyInteraction.benchData;
-                                        const snapPoints = benchData.snapPoints || [{ x: 0, z: 0, rotation: 0 }];
-                                        const benchX = benchData.worldX;
-                                        const benchZ = benchData.worldZ;
-                                        const benchRotation = benchData.worldRotation || 0;
-                                        const playerX = posRef.current.x;
-                                        const playerZ = posRef.current.z;
-                                        
-                                        // Find closest snap point with rotation
-                                        let closestPoint = snapPoints[0];
-                                        let closestDist = Infinity;
-                                        let closestWorldX = benchX;
-                                        let closestWorldZ = benchZ;
-                                        
-                                        for (const point of snapPoints) {
-                                            const rotatedX = point.x * Math.cos(benchRotation) - point.z * Math.sin(benchRotation);
-                                            const rotatedZ = point.x * Math.sin(benchRotation) + point.z * Math.cos(benchRotation);
-                                            const worldX = benchX + rotatedX;
-                                            const worldZ = benchZ + rotatedZ;
-                                            const dist = Math.sqrt((playerX - worldX) ** 2 + (playerZ - worldZ) ** 2);
-                                            if (dist < closestDist) {
-                                                closestDist = dist;
-                                                closestPoint = point;
-                                                closestWorldX = worldX;
-                                                closestWorldZ = worldZ;
-                                            }
-                                        }
-                                        
-                                        // Determine facing direction
-                                        let finalRotation = benchRotation;
-                                        
-                                        // BIDIRECTIONAL SIT (log seats only): Face based on approach side
-                                        if (benchData.bidirectionalSit) {
-                                            const logForwardX = Math.sin(benchRotation);
-                                            const logForwardZ = Math.cos(benchRotation);
-                                            const toPlayerX = playerX - benchX;
-                                            const toPlayerZ = playerZ - benchZ;
-                                            const dotProduct = toPlayerX * logForwardX + toPlayerZ * logForwardZ;
-                                            if (dotProduct < 0) {
-                                                finalRotation = benchRotation + Math.PI;
-                                            }
-                                        }
-                                        
-                                        const seatData = {
-                                            snapPoint: closestPoint,
-                                            worldPos: { x: closestWorldX, z: closestWorldZ },
-                                            seatHeight: benchData.seatHeight || 0.8,
-                                            benchRotation: finalRotation,
-                                            benchDepth: benchData.benchDepth || 0.8,
-                                            dismountBack: benchData.dismountBack || false, // For bar stools
-                                            platformHeight: benchData.platformHeight || benchData.data?.platformHeight || 0 // For rooftop benches
-                                        };
-                                        setSeatedOnBench(seatData);
-                                        seatedRef.current = seatData;
-                                        
-                                        posRef.current.x = closestWorldX;
-                                        posRef.current.z = closestWorldZ;
-                                        posRef.current.y = seatData.seatHeight; // SET Y TO SEAT HEIGHT!
-                                        velRef.current.y = 0; // Stop any falling
-                                        rotRef.current = finalRotation; // Face based on approach
-                                        
-                                        if (playerRef.current) {
-                                            playerRef.current.position.x = closestWorldX;
-                                            playerRef.current.position.z = closestWorldZ;
-                                            playerRef.current.position.y = seatData.seatHeight; // SET Y TO SEAT HEIGHT!
-                                            playerRef.current.rotation.y = rotRef.current;
-                                        }
-                                        
-                                        emoteRef.current = { type: 'Sit', startTime: Date.now() };
-                                        mpSendEmote('Sit', true); // true = seatedOnFurniture
-                                        setNearbyInteraction(null);
-                                    }
-                                    else if (nearbyInteraction.action === 'dj' && nearbyInteraction.benchData) {
-                                        // DJ at the turntable (mobile)
-                                        const djData = nearbyInteraction.benchData;
-                                        const djX = djData.worldX;
-                                        const djZ = djData.worldZ;
-                                        const djRotation = djData.worldRotation !== undefined ? djData.worldRotation : 0;
-                                        const djHeight = djData.seatHeight || 0.75;
-                                        
-                                        const seatData = {
-                                            snapPoint: { x: 0, z: 0 },
-                                            worldPos: { x: djX, z: djZ },
-                                            seatHeight: djHeight,
-                                            benchRotation: djRotation,
-                                            benchDepth: 1,
-                                            dismountBack: true,
-                                            platformHeight: djHeight
-                                        };
-                                        setSeatedOnBench(seatData);
-                                        seatedRef.current = seatData;
-                                        
-                                        posRef.current.x = djX;
-                                        posRef.current.z = djZ;
-                                        posRef.current.y = djHeight;
-                                        velRef.current.y = 0;
-                                        rotRef.current = djRotation;
-                                        
-                                        if (playerRef.current) {
-                                            playerRef.current.position.set(djX, djHeight, djZ);
-                                            playerRef.current.rotation.y = djRotation;
-                                        }
-                                        
-                                        emoteRef.current = { type: 'DJ', startTime: Date.now() };
-                                        mpSendEmote('DJ', true);
-                                        setNearbyInteraction(null);
-                                    }
-                                    else if (nearbyInteraction.emote) {
-                                        emoteRef.current = { type: nearbyInteraction.emote, startTime: Date.now() };
-                                        mpSendEmote(nearbyInteraction.emote, false); // Ground emote
-                                    }
-                                    if (nearbyInteraction.action === 'interact_snowman') {
-                                        setActiveBubble(nearbyInteraction.message);
-                                    }
-                                }
-                            }}
-                        >
-                            <span className="text-xl retro-text text-white">E</span>
-                        </button>
-                    )}
                 </div>
              )}
              
@@ -4896,6 +4804,7 @@ const VoxelWorld = ({
                 isMobile={isMobile}
                 playerCount={playerCount}
                 totalPlayerCount={totalPlayerCount}
+                onRequestAuth={onRequestAuth}
              />
              
              {/* Chat Log - Desktop: bottom-left, Mobile: toggleable overlay */}
@@ -4916,11 +4825,174 @@ const VoxelWorld = ({
                 hasGame={!!(nearbyPortal?.targetRoom || nearbyPortal?.minigame || nearbyPortal?.teleportToRoof)}
              />
              
-             {/* Town Interaction Prompt */}
+             {/* Town Interaction Prompt - Clickable like dojo enter */}
              {nearbyInteraction && !nearbyPortal && (
-                <div className={`absolute ${isMobile ? 'bottom-[180px] right-28' : 'bottom-24 left-1/2 -translate-x-1/2'} bg-black/70 backdrop-blur-sm px-4 py-2 rounded-xl border border-white/20 text-center animate-bounce-subtle z-20`}>
-                    <p className="text-white retro-text text-sm">{nearbyInteraction.message}</p>
-                    <p className="text-yellow-400 text-xs mt-1 retro-text">{isMobile ? 'Tap E' : 'Press E'}</p>
+                <div 
+                    className={`absolute bg-black/80 backdrop-blur-sm rounded-xl border border-white/20 text-center z-20 ${
+                        isMobile 
+                            ? isLandscape 
+                                ? 'bottom-[180px] right-28 p-3' 
+                                : 'bottom-[170px] left-1/2 -translate-x-1/2 p-3'
+                            : 'bottom-24 left-1/2 -translate-x-1/2 p-4'
+                    }`}
+                >
+                    {/* Mobile-friendly message without "Press E" */}
+                    <p className="text-white retro-text text-sm mb-2">
+                        {isMobile 
+                            ? nearbyInteraction.message.replace('Press E to ', 'Tap to ').replace('(Press E)', '')
+                            : nearbyInteraction.message
+                        }
+                    </p>
+                    
+                    {/* Action Button */}
+                    <button
+                        className="w-full px-4 py-2 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-black font-bold rounded-lg retro-text text-sm transition-all active:scale-95"
+                        onClick={() => {
+                            // Handle bench sitting with snap points
+                            if (nearbyInteraction.action === 'sit' && nearbyInteraction.benchData) {
+                                const benchData = nearbyInteraction.benchData;
+                                const snapPoints = benchData.snapPoints || [{ x: 0, z: 0, rotation: 0 }];
+                                const benchX = benchData.worldX;
+                                const benchZ = benchData.worldZ;
+                                const benchRotation = benchData.worldRotation || 0;
+                                const playerX = posRef.current.x;
+                                const playerZ = posRef.current.z;
+                                
+                                // Find closest snap point with rotation
+                                let closestPoint = snapPoints[0];
+                                let closestDist = Infinity;
+                                let closestWorldX = benchX;
+                                let closestWorldZ = benchZ;
+                                
+                                for (const point of snapPoints) {
+                                    const rotatedX = point.x * Math.cos(benchRotation) - point.z * Math.sin(benchRotation);
+                                    const rotatedZ = point.x * Math.sin(benchRotation) + point.z * Math.cos(benchRotation);
+                                    const worldX = benchX + rotatedX;
+                                    const worldZ = benchZ + rotatedZ;
+                                    const dist = Math.sqrt((playerX - worldX) ** 2 + (playerZ - worldZ) ** 2);
+                                    if (dist < closestDist) {
+                                        closestDist = dist;
+                                        closestPoint = point;
+                                        closestWorldX = worldX;
+                                        closestWorldZ = worldZ;
+                                    }
+                                }
+                                
+                                // Determine facing direction
+                                let finalRotation = benchRotation;
+                                
+                                // BIDIRECTIONAL SIT (log seats only): Face based on approach side
+                                if (benchData.bidirectionalSit) {
+                                    const logForwardX = Math.sin(benchRotation);
+                                    const logForwardZ = Math.cos(benchRotation);
+                                    const toPlayerX = playerX - benchX;
+                                    const toPlayerZ = playerZ - benchZ;
+                                    const dotProduct = toPlayerX * logForwardX + toPlayerZ * logForwardZ;
+                                    if (dotProduct < 0) {
+                                        finalRotation = benchRotation + Math.PI;
+                                    }
+                                }
+                                
+                                const seatData = {
+                                    snapPoint: closestPoint,
+                                    worldPos: { x: closestWorldX, z: closestWorldZ },
+                                    seatHeight: benchData.seatHeight || 0.8,
+                                    benchRotation: finalRotation,
+                                    benchDepth: benchData.benchDepth || 0.8,
+                                    dismountBack: benchData.dismountBack || false,
+                                    platformHeight: benchData.platformHeight || benchData.data?.platformHeight || 0
+                                };
+                                setSeatedOnBench(seatData);
+                                seatedRef.current = seatData;
+                                
+                                posRef.current.x = closestWorldX;
+                                posRef.current.z = closestWorldZ;
+                                posRef.current.y = seatData.seatHeight;
+                                velRef.current.y = 0;
+                                rotRef.current = finalRotation;
+                                
+                                if (playerRef.current) {
+                                    playerRef.current.position.x = closestWorldX;
+                                    playerRef.current.position.z = closestWorldZ;
+                                    playerRef.current.position.y = seatData.seatHeight;
+                                    playerRef.current.rotation.y = rotRef.current;
+                                }
+                                
+                                emoteRef.current = { type: 'Sit', startTime: Date.now() };
+                                mpSendEmote('Sit', true);
+                                setNearbyInteraction(null);
+                            }
+                            else if (nearbyInteraction.action === 'dj' && nearbyInteraction.benchData) {
+                                // DJ at the turntable
+                                const djData = nearbyInteraction.benchData;
+                                const djX = djData.worldX;
+                                const djZ = djData.worldZ;
+                                const djRotation = djData.worldRotation !== undefined ? djData.worldRotation : 0;
+                                const djHeight = djData.seatHeight || 0.75;
+                                
+                                const seatData = {
+                                    snapPoint: { x: 0, z: 0 },
+                                    worldPos: { x: djX, z: djZ },
+                                    seatHeight: djHeight,
+                                    benchRotation: djRotation,
+                                    benchDepth: 1,
+                                    dismountBack: true,
+                                    platformHeight: djHeight
+                                };
+                                setSeatedOnBench(seatData);
+                                seatedRef.current = seatData;
+                                
+                                posRef.current.x = djX;
+                                posRef.current.z = djZ;
+                                posRef.current.y = djHeight;
+                                velRef.current.y = 0;
+                                rotRef.current = djRotation;
+                                
+                                if (playerRef.current) {
+                                    playerRef.current.position.set(djX, djHeight, djZ);
+                                    playerRef.current.rotation.y = djRotation;
+                                }
+                                
+                                emoteRef.current = { type: 'DJ', startTime: Date.now() };
+                                mpSendEmote('DJ', true);
+                                setNearbyInteraction(null);
+                            }
+                            else if (nearbyInteraction.action === 'climb_roof') {
+                                // Teleport to nightclub roof
+                                const roofX = CENTER_X;
+                                const roofZ = CENTER_Z - 75;
+                                const roofY = 15;
+                                
+                                posRef.current.x = roofX;
+                                posRef.current.z = roofZ;
+                                posRef.current.y = roofY;
+                                velRef.current.y = 0;
+                                
+                                if (playerRef.current) {
+                                    playerRef.current.position.set(roofX, roofY, roofZ);
+                                }
+                                
+                                setNearbyInteraction(null);
+                            }
+                            else if (nearbyInteraction.emote) {
+                                emoteRef.current = { type: nearbyInteraction.emote, startTime: Date.now() };
+                                mpSendEmote(nearbyInteraction.emote, false);
+                            }
+                            if (nearbyInteraction.action === 'interact_snowman') {
+                                setActiveBubble(nearbyInteraction.message);
+                            }
+                        }}
+                    >
+                        {nearbyInteraction.action === 'sit' ? '🪑 SIT' : 
+                         nearbyInteraction.action === 'dj' ? '🎧 DJ' :
+                         nearbyInteraction.action === 'climb_roof' ? '🪜 CLIMB' :
+                         '✓ OK'}
+                    </button>
+                    
+                    {/* Desktop hint only */}
+                    {!isMobile && (
+                        <p className="text-white/50 text-[10px] mt-1 retro-text">or press E</p>
+                    )}
                 </div>
              )}
 
@@ -4938,8 +5010,12 @@ const VoxelWorld = ({
              )}
              
              {/* Title & Controls - Top Left */}
-             <div className="absolute top-4 left-4 retro-text text-white drop-shadow-md z-10 pointer-events-none">
-                 <h2 className={`text-xl drop-shadow-lg ${room === 'dojo' ? 'text-red-400' : room === 'pizza' ? 'text-orange-400' : room === 'nightclub' ? 'text-fuchsia-400' : room === 'igloo3' ? 'text-fuchsia-400' : room.startsWith('igloo') ? 'text-cyan-300' : 'text-yellow-400'}`}>
+             <div className={`absolute retro-text text-white drop-shadow-md z-10 pointer-events-none ${
+                 isMobile && !isLandscape ? 'top-2 left-2' : 'top-4 left-4'
+             }`}>
+                 <h2 className={`drop-shadow-lg ${
+                     isMobile && !isLandscape ? 'text-sm' : 'text-xl'
+                 } ${room === 'dojo' ? 'text-red-400' : room === 'pizza' ? 'text-orange-400' : room === 'nightclub' ? 'text-fuchsia-400' : room === 'igloo3' ? 'text-fuchsia-400' : room.startsWith('igloo') ? 'text-cyan-300' : 'text-yellow-400'}`}>
                      {room === 'dojo' ? 'THE DOJO' : room === 'pizza' ? 'PIZZA PARLOR' : room === 'nightclub' ? '🎵 THE NIGHTCLUB' : room === 'igloo3' ? '🎵 SKNY GANG $CPw3' : room.startsWith('igloo') ? `IGLOO ${room.replace('igloo', '')}` : 'TOWN'}
                  </h2>
                  {!isMobile && (

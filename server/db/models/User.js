@@ -1,0 +1,563 @@
+/**
+ * User Model - Core player account
+ * Server-authoritative for all security-critical data
+ */
+
+import mongoose from 'mongoose';
+
+const userSchema = new mongoose.Schema({
+    // ========== IDENTITY (Primary Key) ==========
+    walletAddress: {
+        type: String,
+        required: true,
+        unique: true
+        // index defined below with schema.index()
+    },
+
+    // ========== PROFILE ==========
+    username: {
+        type: String,
+        required: true,
+        minlength: 3,
+        maxlength: 20
+        // unique index defined below with schema.index()
+    },
+    characterType: {
+        type: String,
+        enum: ['penguin', 'marcus'],
+        default: 'penguin'
+    },
+
+    // Appearance
+    customization: {
+        skin: { type: String, default: 'blue' },
+        hat: { type: String, default: 'none' },
+        eyes: { type: String, default: 'normal' },
+        mouth: { type: String, default: 'beak' },
+        bodyItem: { type: String, default: 'none' },
+        mount: { type: String, default: 'none' }
+    },
+
+    // ========== CURRENCY (Server-Authoritative) ==========
+    coins: {
+        type: Number,
+        default: 100,  // Starting coins
+        min: 0
+    },
+
+    // ========== UNLOCKS (Anti-Cheat Critical) ==========
+    unlockedCosmetics: {
+        type: [String],
+        default: ['none']
+    },
+    unlockedMounts: {
+        type: [String],
+        default: ['none']
+    },
+    unlockedCharacters: {
+        type: [String],
+        default: ['penguin']
+    },
+    stamps: [{
+        id: String,
+        name: String,
+        earnedAt: { type: Date, default: Date.now }
+    }],
+    inventory: {
+        type: [String],
+        default: []
+    },
+
+    // ========== COMPREHENSIVE STATISTICS ==========
+    stats: {
+        movement: {
+            totalDistanceWalked: { type: Number, default: 0 },
+            totalJumps: { type: Number, default: 0 },
+            totalRoomChanges: { type: Number, default: 0 },
+            totalBuildingsEntered: { type: Number, default: 0 }
+        },
+        social: {
+            totalChatsSent: { type: Number, default: 0 },
+            totalWhispersSent: { type: Number, default: 0 },
+            totalWhispersReceived: { type: Number, default: 0 },
+            totalEmotesUsed: { type: Number, default: 0 },
+            totalFriendsAdded: { type: Number, default: 0 },
+            totalChallengesSent: { type: Number, default: 0 },
+            totalChallengesReceived: { type: Number, default: 0 },
+            totalChallengesAccepted: { type: Number, default: 0 },
+            totalChallengesDeclined: { type: Number, default: 0 }
+        },
+        emotes: {
+            wave: { type: Number, default: 0 },
+            laugh: { type: Number, default: 0 },
+            breakdance: { type: Number, default: 0 },
+            dance: { type: Number, default: 0 },
+            sit: { type: Number, default: 0 },
+            '67': { type: Number, default: 0 },
+            headbang: { type: Number, default: 0 },
+            dj: { type: Number, default: 0 }
+        },
+        economy: {
+            totalCoinsEarned: { type: Number, default: 100 },
+            totalCoinsSpent: { type: Number, default: 0 },
+            totalCoinsWagered: { type: Number, default: 0 },
+            totalCoinsWonFromWagers: { type: Number, default: 0 },
+            totalCoinsLostToWagers: { type: Number, default: 0 },
+            totalPurchasesMade: { type: Number, default: 0 },
+            totalTradesCompleted: { type: Number, default: 0 }
+        },
+        session: {
+            totalPlayTimeMinutes: { type: Number, default: 0 },
+            totalSessions: { type: Number, default: 0 },
+            longestSessionMinutes: { type: Number, default: 0 },
+            totalAfkTimeMinutes: { type: Number, default: 0 }
+        },
+        puffles: {
+            totalPufflesAdopted: { type: Number, default: 0 },
+            totalTimesFedPuffle: { type: Number, default: 0 },
+            totalTimesPlayedWithPuffle: { type: Number, default: 0 },
+            totalPuffleHappinessGiven: { type: Number, default: 0 }
+        },
+        unlocks: {
+            totalCosmeticsOwned: { type: Number, default: 1 },
+            totalMountsOwned: { type: Number, default: 1 },
+            totalCharactersOwned: { type: Number, default: 1 },
+            totalStampsEarned: { type: Number, default: 0 },
+            totalPromoCodesRedeemed: { type: Number, default: 0 }
+        },
+        roomTime: {
+            town: { type: Number, default: 0 },
+            nightclub: { type: Number, default: 0 },
+            dojo: { type: Number, default: 0 },
+            pizza: { type: Number, default: 0 },
+            market: { type: Number, default: 0 },
+            igloo1: { type: Number, default: 0 },
+            igloo2: { type: Number, default: 0 },
+            igloo3: { type: Number, default: 0 },
+            igloo4: { type: Number, default: 0 },
+            igloo5: { type: Number, default: 0 },
+            igloo6: { type: Number, default: 0 },
+            igloo7: { type: Number, default: 0 },
+            igloo8: { type: Number, default: 0 },
+            igloo9: { type: Number, default: 0 },
+            igloo10: { type: Number, default: 0 },
+            totalIglooTime: { type: Number, default: 0 }
+        }
+    },
+
+    // ========== GAME STATISTICS ==========
+    gameStats: {
+        cardJitsu: {
+            played: { type: Number, default: 0 },
+            wins: { type: Number, default: 0 },
+            losses: { type: Number, default: 0 },
+            draws: { type: Number, default: 0 },
+            coinsWon: { type: Number, default: 0 },
+            coinsLost: { type: Number, default: 0 },
+            winStreak: { type: Number, default: 0 },
+            bestWinStreak: { type: Number, default: 0 },
+            lossStreak: { type: Number, default: 0 },
+            worstLossStreak: { type: Number, default: 0 },
+            totalRoundsPlayed: { type: Number, default: 0 },
+            fireWins: { type: Number, default: 0 },
+            waterWins: { type: Number, default: 0 },
+            snowWins: { type: Number, default: 0 }
+        },
+        connect4: {
+            played: { type: Number, default: 0 },
+            wins: { type: Number, default: 0 },
+            losses: { type: Number, default: 0 },
+            draws: { type: Number, default: 0 },
+            coinsWon: { type: Number, default: 0 },
+            coinsLost: { type: Number, default: 0 },
+            winStreak: { type: Number, default: 0 },
+            bestWinStreak: { type: Number, default: 0 },
+            lossStreak: { type: Number, default: 0 },
+            worstLossStreak: { type: Number, default: 0 },
+            totalMovesPlayed: { type: Number, default: 0 }
+        },
+        ticTacToe: {
+            played: { type: Number, default: 0 },
+            wins: { type: Number, default: 0 },
+            losses: { type: Number, default: 0 },
+            draws: { type: Number, default: 0 },
+            coinsWon: { type: Number, default: 0 },
+            coinsLost: { type: Number, default: 0 },
+            winStreak: { type: Number, default: 0 },
+            bestWinStreak: { type: Number, default: 0 },
+            lossStreak: { type: Number, default: 0 },
+            worstLossStreak: { type: Number, default: 0 },
+            totalMovesPlayed: { type: Number, default: 0 },
+            winsAsX: { type: Number, default: 0 },
+            winsAsO: { type: Number, default: 0 }
+        },
+        overall: {
+            totalGamesPlayed: { type: Number, default: 0 },
+            totalGamesWon: { type: Number, default: 0 },
+            totalGamesLost: { type: Number, default: 0 },
+            totalGamesDrew: { type: Number, default: 0 },
+            favoriteGame: { type: String, default: null }
+        }
+    },
+
+    // ========== SESSION STATE ==========
+    lastRoom: { type: String, default: 'town' },
+    lastPosition: {
+        x: { type: Number, default: 110 },
+        y: { type: Number, default: 0 },
+        z: { type: Number, default: 110 }
+    },
+
+    // ========== SETTINGS ==========
+    settings: {
+        musicVolume: { type: Number, default: 50, min: 0, max: 100 },
+        soundEnabled: { type: Boolean, default: true },
+        mountEnabled: { type: Boolean, default: true },
+        snowEnabled: { type: Boolean, default: true }
+    },
+
+    // ========== CONNECTION STATE ==========
+    isConnected: { type: Boolean, default: false },
+    currentSessionId: { type: String, default: null },
+    currentPlayerId: { type: String, default: null },
+    lastLoginAt: { type: Date, default: null },
+    lastLogoutAt: { type: Date, default: null },
+    lastActiveAt: { type: Date, default: null },
+    lastIpAddress: { type: String, default: null },
+
+    // ========== USERNAME MANAGEMENT ==========
+    usernameHistory: [{
+        previousName: String,
+        changedAt: { type: Date, default: Date.now }
+    }],
+    lastUsernameChangeAt: { type: Date, default: null },
+
+    // ========== MODERATION ==========
+    isBanned: { type: Boolean, default: false },
+    banReason: { type: String, default: null },
+    banExpires: { type: Date, default: null },
+    banHistory: [{
+        reason: String,
+        bannedAt: Date,
+        bannedBy: String,
+        expiresAt: Date,
+        liftedAt: Date,
+        liftedBy: String
+    }],
+
+    // ========== PROMO CODES ==========
+    redeemedPromoCodes: [{
+        code: String,
+        promoCodeId: { type: mongoose.Schema.Types.ObjectId, ref: 'PromoCode' },
+        redeemedAt: { type: Date, default: Date.now }
+    }],
+
+    // ========== MIGRATION TRACKING ==========
+    migrationSource: { type: String, default: null },
+    migratedAt: { type: Date, default: null }
+
+}, {
+    timestamps: true  // Adds createdAt and updatedAt
+});
+
+// ==================== INDEXES ====================
+userSchema.index({ walletAddress: 1 }, { unique: true });
+userSchema.index({ username: 1 }, { unique: true });  // Usernames must be unique
+userSchema.index({ isConnected: 1 });
+userSchema.index({ coins: -1 });  // Leaderboard
+userSchema.index({ 'gameStats.cardJitsu.wins': -1 });
+userSchema.index({ 'gameStats.connect4.wins': -1 });
+userSchema.index({ 'gameStats.ticTacToe.wins': -1 });
+userSchema.index({ 'gameStats.overall.totalGamesWon': -1 });
+userSchema.index({ lastActiveAt: -1 });
+userSchema.index({ createdAt: -1 });
+
+// ==================== METHODS ====================
+
+/**
+ * Add coins with validation
+ */
+userSchema.methods.addCoins = function(amount, reason = 'unknown') {
+    if (amount < 0 && this.coins + amount < 0) {
+        return { success: false, error: 'INSUFFICIENT_FUNDS' };
+    }
+    
+    this.coins += amount;
+    
+    if (amount > 0) {
+        this.stats.economy.totalCoinsEarned += amount;
+    } else {
+        this.stats.economy.totalCoinsSpent += Math.abs(amount);
+    }
+    
+    return { success: true, newBalance: this.coins };
+};
+
+/**
+ * Check if user has enough coins
+ */
+userSchema.methods.hasCoins = function(amount) {
+    return this.coins >= amount;
+};
+
+/**
+ * Check if user owns a cosmetic
+ * NOTE: Currently all cosmetics are FREE except promo-exclusive items.
+ * Promo items are defined in PROMO_EXCLUSIVE_IDS below.
+ * In the future, this will check against purchased items.
+ */
+const PROMO_EXCLUSIVE_IDS = [
+    // Eyes
+    'lmao', 'bonkEyes', 'mistorEyes',
+    // Hats
+    'bonkExclamation', 'mistorHair',
+    // Body Items
+    'joe', 'bonkShirt', 'mistorShirt', 'penguShirt',
+    // Mounts
+    'penguMount', 'minecraftBoat'
+];
+
+userSchema.methods.ownsCosmetic = function(cosmeticId) {
+    // 'none' is always available
+    if (cosmeticId === 'none') return true;
+    
+    // Check if this is a promo-exclusive item
+    if (PROMO_EXCLUSIVE_IDS.includes(cosmeticId)) {
+        // Must be explicitly unlocked via promo code
+        return this.unlockedCosmetics.includes(cosmeticId) || 
+               this.unlockedMounts.includes(cosmeticId);
+    }
+    
+    // All other cosmetics are FREE (for now)
+    // Future: Check against purchased items
+    return true;
+};
+
+/**
+ * Unlock a cosmetic for the user
+ */
+userSchema.methods.unlockCosmetic = function(cosmeticId, category = 'cosmetic') {
+    if (category === 'mount') {
+        if (!this.unlockedMounts.includes(cosmeticId)) {
+            this.unlockedMounts.push(cosmeticId);
+            this.stats.unlocks.totalMountsOwned++;
+            return true;
+        }
+    } else {
+        if (!this.unlockedCosmetics.includes(cosmeticId)) {
+            this.unlockedCosmetics.push(cosmeticId);
+            this.stats.unlocks.totalCosmeticsOwned++;
+            return true;
+        }
+    }
+    return false; // Already owned
+};
+
+/**
+ * Record a game result
+ */
+userSchema.methods.recordGameResult = function(gameType, won, coinsDelta, isDraw = false) {
+    const gameStats = this.gameStats[gameType];
+    if (!gameStats) return;
+
+    gameStats.played++;
+    this.gameStats.overall.totalGamesPlayed++;
+
+    if (isDraw) {
+        gameStats.draws++;
+        this.gameStats.overall.totalGamesDrew++;
+        gameStats.winStreak = 0;
+        gameStats.lossStreak = 0;
+    } else if (won) {
+        gameStats.wins++;
+        gameStats.coinsWon += coinsDelta;
+        gameStats.winStreak++;
+        gameStats.lossStreak = 0;
+        if (gameStats.winStreak > gameStats.bestWinStreak) {
+            gameStats.bestWinStreak = gameStats.winStreak;
+        }
+        this.gameStats.overall.totalGamesWon++;
+        this.stats.economy.totalCoinsWonFromWagers += coinsDelta;
+    } else {
+        gameStats.losses++;
+        gameStats.coinsLost += coinsDelta;
+        gameStats.lossStreak++;
+        gameStats.winStreak = 0;
+        if (gameStats.lossStreak > gameStats.worstLossStreak) {
+            gameStats.worstLossStreak = gameStats.lossStreak;
+        }
+        this.gameStats.overall.totalGamesLost++;
+        this.stats.economy.totalCoinsLostToWagers += coinsDelta;
+    }
+};
+
+/**
+ * Get public profile (safe to send to other players)
+ */
+userSchema.methods.getPublicProfile = function() {
+    return {
+        walletAddress: this.walletAddress,
+        username: this.username,
+        characterType: this.characterType,
+        customization: this.customization,
+        gameStats: {
+            cardJitsu: { wins: this.gameStats.cardJitsu.wins, losses: this.gameStats.cardJitsu.losses },
+            connect4: { wins: this.gameStats.connect4.wins, losses: this.gameStats.connect4.losses },
+            ticTacToe: { wins: this.gameStats.ticTacToe.wins, losses: this.gameStats.ticTacToe.losses },
+            overall: this.gameStats.overall
+        },
+        createdAt: this.createdAt
+    };
+};
+
+/**
+ * Check if user has established their account (entered world at least once)
+ * A user is NOT established until they click "Enter World" for the first time
+ */
+userSchema.methods.isEstablishedUser = function() {
+    // Primary check: lastUsernameChangeAt is set when user first enters world
+    if (this.lastUsernameChangeAt) {
+        return true;
+    }
+    
+    // Fallback checks for legacy/migration users who don't have lastUsernameChangeAt
+    // Only consider them established if they have actual gameplay activity
+    if (this.stats?.session?.totalSessions > 1) return true; // More than first session
+    if (this.gameStats?.overall?.totalGamesPlayed > 0) return true;
+    
+    // lastLoginAt alone doesn't make them established anymore
+    // (we don't set this for new users until they enter world)
+    
+    // If username is not the default format, they chose it (legacy user)
+    if (this.username && !this.username.startsWith('Penguin')) return true;
+    
+    return false;
+};
+
+/**
+ * Get full user data (for authenticated user only)
+ */
+userSchema.methods.getFullData = function() {
+    const isEstablished = this.isEstablishedUser();
+    
+    return {
+        walletAddress: this.walletAddress,
+        username: this.username,
+        characterType: this.characterType,
+        customization: this.customization,
+        coins: this.coins,
+        unlockedCosmetics: this.unlockedCosmetics,
+        unlockedMounts: this.unlockedMounts,
+        unlockedCharacters: this.unlockedCharacters,
+        stamps: this.stamps,
+        inventory: this.inventory,
+        stats: this.stats,
+        gameStats: this.gameStats,
+        settings: this.settings,
+        lastRoom: this.lastRoom,
+        lastPosition: this.lastPosition,
+        createdAt: this.createdAt,
+        lastUsernameChangeAt: this.lastUsernameChangeAt,
+        canChangeUsername: this.canChangeUsername(),
+        isEstablishedUser: isEstablished  // Tells client if user has entered world before
+    };
+};
+
+/**
+ * Check if username can be changed (30 day cooldown)
+ */
+userSchema.methods.canChangeUsername = function() {
+    if (!this.lastUsernameChangeAt) return true;
+    
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const timeSinceChange = Date.now() - this.lastUsernameChangeAt.getTime();
+    return timeSinceChange >= thirtyDaysMs;
+};
+
+/**
+ * Get days until username can be changed
+ */
+userSchema.methods.daysUntilUsernameChange = function() {
+    if (!this.lastUsernameChangeAt) return 0;
+    
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const timeSinceChange = Date.now() - this.lastUsernameChangeAt.getTime();
+    const remaining = thirtyDaysMs - timeSinceChange;
+    
+    if (remaining <= 0) return 0;
+    return Math.ceil(remaining / (24 * 60 * 60 * 1000));
+};
+
+/**
+ * Change username (with 30 day limit)
+ */
+userSchema.methods.changeUsername = async function(newUsername) {
+    // Check cooldown
+    if (!this.canChangeUsername()) {
+        const daysLeft = this.daysUntilUsernameChange();
+        return { 
+            success: false, 
+            error: 'USERNAME_COOLDOWN', 
+            message: `You can change your username in ${daysLeft} days` 
+        };
+    }
+    
+    // Validate length
+    if (newUsername.length < 3 || newUsername.length > 20) {
+        return { 
+            success: false, 
+            error: 'INVALID_LENGTH', 
+            message: 'Username must be 3-20 characters' 
+        };
+    }
+    
+    // Check if username is taken
+    const existing = await mongoose.model('User').findOne({ 
+        username: newUsername,
+        _id: { $ne: this._id }
+    });
+    
+    if (existing) {
+        return { 
+            success: false, 
+            error: 'USERNAME_TAKEN', 
+            message: 'This username is already taken' 
+        };
+    }
+    
+    // Save to history
+    this.usernameHistory.push({
+        previousName: this.username,
+        changedAt: new Date()
+    });
+    
+    // Update username
+    const oldUsername = this.username;
+    this.username = newUsername;
+    this.lastUsernameChangeAt = new Date();
+    
+    return { 
+        success: true, 
+        oldUsername, 
+        newUsername 
+    };
+};
+
+/**
+ * Update customization
+ */
+userSchema.methods.updateCustomization = function(customization) {
+    if (customization.skin) this.customization.skin = customization.skin;
+    if (customization.hat) this.customization.hat = customization.hat;
+    if (customization.eyes) this.customization.eyes = customization.eyes;
+    if (customization.mouth) this.customization.mouth = customization.mouth;
+    if (customization.bodyItem) this.customization.bodyItem = customization.bodyItem;
+    if (customization.mount) this.customization.mount = customization.mount;
+    if (customization.characterType) this.characterType = customization.characterType;
+    return true;
+};
+
+const User = mongoose.model('User', userSchema);
+
+export default User;
+

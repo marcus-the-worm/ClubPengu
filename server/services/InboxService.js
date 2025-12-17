@@ -1,14 +1,24 @@
 /**
- * InboxService - Per-player message inbox management
- * Handles challenge notifications, responses, and system messages
+ * InboxService - Player inbox/notification management
+ * Handles challenge notifications and system messages
  */
+
+// Message expiry times
+const MESSAGE_EXPIRY = {
+    challenge: 5 * 60 * 1000,        // 5 minutes for challenges
+    challenge_response: 60 * 60 * 1000, // 1 hour for responses
+    system: 24 * 60 * 60 * 1000,     // 24 hours for system messages
+    default: 24 * 60 * 60 * 1000
+};
 
 class InboxService {
     constructor() {
-        // In-memory inbox storage (playerId -> messages[])
-        // TODO: Replace with database for persistence
+        // In-memory inbox storage
+        // Key: playerId, Value: Array of messages
         this.inboxes = new Map();
-        this.nextMessageId = 1;
+        
+        // Secondary index by wallet for persistent users
+        this.walletInboxes = new Map(); // walletAddress -> playerId
     }
 
     /**
@@ -22,66 +32,98 @@ class InboxService {
     }
 
     /**
-     * Add a message to player's inbox
+     * Associate a wallet with a player ID (for persistent users)
      */
-    addMessage(playerId, message) {
+    associateWallet(walletAddress, playerId) {
+        if (walletAddress) {
+            // If there's an existing inbox for this wallet, migrate messages
+            const oldPlayerId = this.walletInboxes.get(walletAddress);
+            if (oldPlayerId && oldPlayerId !== playerId && this.inboxes.has(oldPlayerId)) {
+                const oldMessages = this.inboxes.get(oldPlayerId);
+                const newInbox = this.getInbox(playerId);
+                newInbox.push(...oldMessages);
+                this.inboxes.delete(oldPlayerId);
+            }
+            this.walletInboxes.set(walletAddress, playerId);
+        }
+    }
+
+    /**
+     * Add a generic message to inbox
+     */
+    addMessage(playerId, walletAddress, type, title, message, data = {}) {
         const inbox = this.getInbox(playerId);
-        const fullMessage = {
-            id: `msg_${this.nextMessageId++}`,
-            recipientId: playerId,
+        const expiry = MESSAGE_EXPIRY[type] || MESSAGE_EXPIRY.default;
+
+        const msg = {
+            id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            type,
+            title,
+            message,
+            data,
             read: false,
             createdAt: Date.now(),
-            ...message
+            expiresAt: Date.now() + expiry
         };
-        inbox.unshift(fullMessage); // Add to beginning (newest first)
+
+        inbox.push(msg);
         
-        // Keep inbox size reasonable (max 50 messages)
-        if (inbox.length > 50) {
-            inbox.pop();
+        // Associate wallet if provided
+        if (walletAddress) {
+            this.associateWallet(walletAddress, playerId);
         }
+
+        return msg;
+    }
+
+    /**
+     * Add a challenge notification
+     */
+    addChallengeMessage(targetId, targetWallet, challengeId, challengerName, gameType, wagerAmount) {
+        const gameNames = {
+            'cardJitsu': 'Card Jitsu',
+            'ticTacToe': 'Tic Tac Toe',
+            'connect4': 'Connect 4',
+            'pong': 'Pong'
+        };
+
+        const gameName = gameNames[gameType] || gameType;
+        const wagerText = wagerAmount > 0 ? ` for ${wagerAmount} coins` : ' (friendly match)';
+
+        return this.addMessage(
+            targetId,
+            targetWallet,
+            'challenge',
+            `⚔️ Challenge from ${challengerName}`,
+            `${challengerName} challenges you to ${gameName}${wagerText}!`,
+            { 
+                challengeId, 
+                challengerName, 
+                gameType, 
+                wagerAmount,
+                canAccept: true,
+                canDecline: true
+            }
+        );
+    }
+
+    /**
+     * Get all messages for a player
+     */
+    getMessages(playerId) {
+        const inbox = this.getInbox(playerId);
+        const now = Date.now();
         
-        return fullMessage;
+        // Filter out expired messages and return
+        return inbox.filter(msg => msg.expiresAt > now);
     }
 
     /**
-     * Add a challenge to player's inbox
+     * Get unread count
      */
-    addChallenge(targetPlayerId, challenge) {
-        return this.addMessage(targetPlayerId, {
-            type: 'challenge',
-            challengeId: challenge.id,
-            challengerId: challenge.challengerId,
-            challengerName: challenge.challengerName,
-            challengerAppearance: challenge.challengerAppearance,
-            gameType: challenge.gameType,
-            wagerAmount: challenge.wagerAmount,
-            expiresAt: challenge.expiresAt
-        });
-    }
-
-    /**
-     * Add a challenge response notification
-     */
-    addChallengeResponse(playerId, response) {
-        return this.addMessage(playerId, {
-            type: 'challenge_response',
-            response: response.type, // 'accepted', 'denied', 'deleted', 'expired'
-            challengeId: response.challengeId,
-            otherPlayerName: response.otherPlayerName,
-            gameType: response.gameType,
-            wagerAmount: response.wagerAmount
-        });
-    }
-
-    /**
-     * Add a system message
-     */
-    addSystemMessage(playerId, text, data = {}) {
-        return this.addMessage(playerId, {
-            type: 'system',
-            text,
-            data
-        });
+    getUnreadCount(playerId) {
+        const messages = this.getMessages(playerId);
+        return messages.filter(msg => !msg.read).length;
     }
 
     /**
@@ -89,76 +131,66 @@ class InboxService {
      */
     markRead(playerId, messageId) {
         const inbox = this.getInbox(playerId);
-        const message = inbox.find(m => m.id === messageId);
-        if (message) {
-            message.read = true;
-            return true;
+        const msg = inbox.find(m => m.id === messageId);
+        if (msg) {
+            msg.read = true;
         }
-        return false;
     }
 
     /**
-     * Delete a message from inbox
+     * Delete a message
      */
     deleteMessage(playerId, messageId) {
         const inbox = this.getInbox(playerId);
         const index = inbox.findIndex(m => m.id === messageId);
         if (index !== -1) {
             inbox.splice(index, 1);
-            return true;
         }
-        return false;
     }
 
     /**
-     * Delete challenge message by challenge ID
+     * Delete all messages for a challenge ID
      */
     deleteByChallengeId(playerId, challengeId) {
         const inbox = this.getInbox(playerId);
-        const index = inbox.findIndex(m => m.challengeId === challengeId);
+        const index = inbox.findIndex(m => m.data?.challengeId === challengeId);
         if (index !== -1) {
             inbox.splice(index, 1);
-            return true;
         }
-        return false;
     }
 
     /**
-     * Get unread count
-     */
-    getUnreadCount(playerId) {
-        const inbox = this.getInbox(playerId);
-        return inbox.filter(m => !m.read).length;
-    }
-
-    /**
-     * Get all messages for sync
-     */
-    getMessages(playerId) {
-        return this.getInbox(playerId);
-    }
-
-    /**
-     * Clean up expired challenge messages
+     * Clean up expired messages
      */
     cleanupExpired() {
         const now = Date.now();
+        let totalCleaned = 0;
+
         for (const [playerId, inbox] of this.inboxes) {
-            // Remove expired challenges
-            const filtered = inbox.filter(msg => {
-                if (msg.type === 'challenge' && msg.expiresAt && msg.expiresAt < now) {
-                    return false;
-                }
-                return true;
-            });
-            this.inboxes.set(playerId, filtered);
+            const before = inbox.length;
+            this.inboxes.set(
+                playerId,
+                inbox.filter(msg => msg.expiresAt > now)
+            );
+            totalCleaned += before - this.inboxes.get(playerId).length;
+            
+            // Remove empty inboxes
+            if (this.inboxes.get(playerId).length === 0) {
+                this.inboxes.delete(playerId);
+            }
         }
+
+        if (totalCleaned > 0) {
+            console.log(`📬 Cleaned ${totalCleaned} expired inbox messages`);
+        }
+    }
+
+    /**
+     * Clear inbox for a player (on disconnect/logout)
+     */
+    clearInbox(playerId) {
+        this.inboxes.delete(playerId);
     }
 }
 
 export default InboxService;
-
-
-
-
-

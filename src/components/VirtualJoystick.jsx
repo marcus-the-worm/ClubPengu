@@ -9,7 +9,8 @@ const VirtualJoystick = ({
     onMove, 
     size = 120, 
     position = 'left', // 'left' or 'right'
-    deadzone = 0.1 
+    deadzone = 0.1,
+    isPortrait = false
 }) => {
     const containerRef = useRef(null);
     const [isActive, setIsActive] = useState(false);
@@ -141,8 +142,10 @@ const VirtualJoystick = ({
     
     // Detect iPad/tablet for extra padding
     const isTablet = window.innerWidth >= 768;
-    const horizontalPadding = isTablet ? '40px' : '16px';
-    const bottomPadding = isTablet ? '100px' : '70px';
+    
+    // Adjust padding for portrait vs landscape
+    const horizontalPadding = isPortrait ? '12px' : (isTablet ? '40px' : '16px');
+    const bottomPadding = isPortrait ? '50px' : (isTablet ? '100px' : '70px');
     
     const positionStyle = position === 'left' 
         ? { left: horizontalPadding, bottom: bottomPadding }

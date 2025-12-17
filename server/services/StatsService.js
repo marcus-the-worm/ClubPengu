@@ -1,98 +1,260 @@
 /**
- * StatsService - Player statistics tracking
- * Tracks wins, losses, coins won/lost per game type
+ * StatsService - Player statistics tracking with MongoDB persistence
+ * Server-authoritative stats management
  */
 
+import { User } from '../db/models/index.js';
+import { isDBConnected } from '../db/connection.js';
+
+// Normalize game type from server format to DB format
+const normalizeGameType = (gameType) => {
+    const mapping = {
+        'card_jitsu': 'cardJitsu',
+        'tic_tac_toe': 'ticTacToe',
+        'connect4': 'connect4',
+        'pong': 'pong'
+    };
+    return mapping[gameType] || gameType;
+};
+
 class StatsService {
-    constructor() {
-        // In-memory stats storage (playerId -> stats)
-        // TODO: Replace with database for persistence
-        this.stats = new Map();
-    }
-
-    /**
-     * Get or create stats for a player
-     */
-    getStats(playerId) {
-        if (!this.stats.has(playerId)) {
-            this.stats.set(playerId, this._createDefaultStats(playerId));
+    constructor(userService) {
+        this.userService = userService;
+        
+        // In-memory cache for real-time stats (batched to DB periodically)
+        this.pendingStats = new Map(); // walletAddress -> { updates }
+        this.BATCH_INTERVAL = 30000; // 30 seconds
+        
+        // Start batch flush interval
+        if (isDBConnected()) {
+            setInterval(() => this.flushPendingStats(), this.BATCH_INTERVAL);
         }
-        return this.stats.get(playerId);
-    }
-
-    /**
-     * Create default stats object
-     */
-    _createDefaultStats(playerId) {
-        return {
-            playerId,
-            cardJitsu: {
-                wins: 0,
-                losses: 0,
-                coinsWon: 0,
-                coinsLost: 0
-            },
-            // Extensible for future games
-            connect4: { wins: 0, losses: 0, coinsWon: 0, coinsLost: 0 },
-            pong: { wins: 0, losses: 0, coinsWon: 0, coinsLost: 0 },
-            ticTacToe: { wins: 0, losses: 0, coinsWon: 0, coinsLost: 0 }
-        };
     }
 
     /**
      * Record a match result
-     * @param {string} playerId - Player ID
-     * @param {string} gameType - Game type (cardJitsu, ticTacToe, etc.)
+     * @param {string} walletAddress - Player's wallet
+     * @param {string} gameType - Game type (server format: card_jitsu, tic_tac_toe, etc.)
      * @param {boolean} won - Whether player won
-     * @param {number} coinsAmount - Coins won/lost
+     * @param {number} coinsAmount - Coins won/lost (absolute value)
      * @param {boolean} isDraw - Whether the match was a draw
      */
-    recordResult(playerId, gameType, won, coinsAmount, isDraw = false) {
-        const stats = this.getStats(playerId);
-        const gameStats = stats[gameType];
-        
-        if (!gameStats) {
-            console.warn(`Unknown game type: ${gameType}`);
+    async recordResult(walletAddress, gameType, won, coinsAmount, isDraw = false) {
+        if (!walletAddress) {
+            console.warn('Cannot record stats: no wallet address');
             return;
         }
 
-        if (isDraw) {
-            // Draws don't count as wins or losses
-            gameStats.draws = (gameStats.draws || 0) + 1;
-            console.log(`📊 Stats updated: ${playerId} drew ${gameType} - Total draws: ${gameStats.draws}`);
-        } else if (won) {
-            gameStats.wins++;
-            gameStats.coinsWon += coinsAmount;
-            console.log(`📊 Stats updated: ${playerId} won ${gameType} (+${coinsAmount} coins) - Total wins: ${gameStats.wins}`);
-        } else {
-            gameStats.losses++;
-            gameStats.coinsLost += coinsAmount;
-            console.log(`📊 Stats updated: ${playerId} lost ${gameType} (-${coinsAmount} coins) - Total losses: ${gameStats.losses}`);
+        const normalizedType = normalizeGameType(gameType);
+        
+        try {
+            const user = await User.findOne({ walletAddress });
+            if (!user) {
+                console.warn(`Cannot record stats: user not found for ${walletAddress}`);
+                return;
+            }
+
+            // Use the model method to record result
+            user.recordGameResult(normalizedType, won, coinsAmount, isDraw);
+            await user.save();
+
+            // Log the result
+            if (isDraw) {
+                console.log(`📊 Stats: ${user.username} drew ${normalizedType}`);
+            } else if (won) {
+                console.log(`📊 Stats: ${user.username} won ${normalizedType} (+${coinsAmount} coins)`);
+            } else {
+                console.log(`📊 Stats: ${user.username} lost ${normalizedType} (-${coinsAmount} coins)`);
+            }
+        } catch (error) {
+            console.error('Error recording stats:', error);
         }
     }
 
     /**
-     * Get public stats for display
+     * Get public stats for display (works with wallet or playerId)
      */
-    getPublicStats(playerId) {
-        const stats = this.getStats(playerId);
-        return {
-            playerId,
-            // Card Jitsu
-            cardJitsuWins: stats.cardJitsu.wins,
-            cardJitsuLosses: stats.cardJitsu.losses,
-            // Tic Tac Toe
-            ticTacToeWins: stats.ticTacToe.wins,
-            ticTacToeLosses: stats.ticTacToe.losses,
-            // Connect 4
-            connect4Wins: stats.connect4.wins,
-            connect4Losses: stats.connect4.losses,
-            // Totals
-            totalWins: stats.cardJitsu.wins + stats.connect4.wins + stats.pong.wins + stats.ticTacToe.wins,
-            totalLosses: stats.cardJitsu.losses + stats.connect4.losses + stats.pong.losses + stats.ticTacToe.losses
-        };
+    async getPublicStats(identifier, isWallet = false) {
+        try {
+            let user;
+            if (isWallet) {
+                user = await User.findOne({ walletAddress: identifier });
+            } else {
+                // Find by current player ID
+                user = await User.findOne({ currentPlayerId: identifier, isConnected: true });
+            }
+            
+            if (!user) {
+                // Return default stats for guest players
+                return {
+                    playerId: identifier,
+                    coins: 0,
+                    cardJitsuWins: 0,
+                    cardJitsuLosses: 0,
+                    ticTacToeWins: 0,
+                    ticTacToeLosses: 0,
+                    connect4Wins: 0,
+                    connect4Losses: 0,
+                    totalWins: 0,
+                    totalLosses: 0,
+                    isGuest: true
+                };
+            }
+
+            return {
+                walletAddress: user.walletAddress,
+                username: user.username,
+                coins: user.coins, // Include coin balance for profile viewing
+                // Card Jitsu
+                cardJitsuWins: user.gameStats.cardJitsu.wins,
+                cardJitsuLosses: user.gameStats.cardJitsu.losses,
+                cardJitsuDraws: user.gameStats.cardJitsu.draws,
+                // Tic Tac Toe
+                ticTacToeWins: user.gameStats.ticTacToe.wins,
+                ticTacToeLosses: user.gameStats.ticTacToe.losses,
+                ticTacToeDraws: user.gameStats.ticTacToe.draws,
+                // Connect 4
+                connect4Wins: user.gameStats.connect4.wins,
+                connect4Losses: user.gameStats.connect4.losses,
+                connect4Draws: user.gameStats.connect4.draws,
+                // Totals
+                totalWins: user.gameStats.overall.totalGamesWon,
+                totalLosses: user.gameStats.overall.totalGamesLost,
+                totalDraws: user.gameStats.overall.totalGamesDrew,
+                totalGames: user.gameStats.overall.totalGamesPlayed,
+                isGuest: false
+            };
+        } catch (error) {
+            console.error('Error getting public stats:', error);
+            return {
+                playerId: identifier,
+                cardJitsuWins: 0,
+                cardJitsuLosses: 0,
+                totalWins: 0,
+                totalLosses: 0,
+                error: true
+            };
+        }
+    }
+
+    /**
+     * Queue a stat increment (batched write)
+     */
+    queueStatIncrement(walletAddress, statPath, amount = 1) {
+        if (!walletAddress) return;
+        
+        if (!this.pendingStats.has(walletAddress)) {
+            this.pendingStats.set(walletAddress, {});
+        }
+        
+        const updates = this.pendingStats.get(walletAddress);
+        updates[statPath] = (updates[statPath] || 0) + amount;
+    }
+
+    /**
+     * Increment emote stat
+     */
+    async recordEmote(walletAddress, emoteType) {
+        if (!walletAddress) return;
+        
+        const emoteKey = emoteType.toLowerCase();
+        this.queueStatIncrement(walletAddress, `stats.emotes.${emoteKey}`, 1);
+        this.queueStatIncrement(walletAddress, 'stats.social.totalEmotesUsed', 1);
+    }
+
+    /**
+     * Record chat sent
+     */
+    recordChat(walletAddress) {
+        if (!walletAddress) return;
+        this.queueStatIncrement(walletAddress, 'stats.social.totalChatsSent', 1);
+    }
+
+    /**
+     * Record whisper
+     */
+    recordWhisper(fromWallet, toWallet) {
+        if (fromWallet) this.queueStatIncrement(fromWallet, 'stats.social.totalWhispersSent', 1);
+        if (toWallet) this.queueStatIncrement(toWallet, 'stats.social.totalWhispersReceived', 1);
+    }
+
+    /**
+     * Record room change
+     */
+    recordRoomChange(walletAddress, newRoom) {
+        if (!walletAddress) return;
+        this.queueStatIncrement(walletAddress, 'stats.movement.totalRoomChanges', 1);
+        
+        // Track building entry
+        const buildings = ['dojo', 'nightclub', 'pizza', 'market'];
+        if (buildings.includes(newRoom)) {
+            this.queueStatIncrement(walletAddress, 'stats.movement.totalBuildingsEntered', 1);
+        }
+    }
+
+    /**
+     * Record challenge sent
+     */
+    recordChallengeSent(walletAddress) {
+        if (!walletAddress) return;
+        this.queueStatIncrement(walletAddress, 'stats.social.totalChallengesSent', 1);
+    }
+
+    /**
+     * Record challenge received
+     */
+    recordChallengeReceived(walletAddress) {
+        if (!walletAddress) return;
+        this.queueStatIncrement(walletAddress, 'stats.social.totalChallengesReceived', 1);
+    }
+
+    /**
+     * Flush pending stats to database
+     */
+    async flushPendingStats() {
+        if (this.pendingStats.size === 0) return;
+        if (!isDBConnected()) return;
+
+        const batch = this.pendingStats;
+        this.pendingStats = new Map();
+
+        const bulkOps = [];
+        
+        for (const [wallet, updates] of batch) {
+            const $inc = {};
+            for (const [path, value] of Object.entries(updates)) {
+                $inc[path] = value;
+            }
+            bulkOps.push({
+                updateOne: {
+                    filter: { walletAddress: wallet },
+                    update: { $inc }
+                }
+            });
+        }
+
+        if (bulkOps.length > 0) {
+            try {
+                await User.bulkWrite(bulkOps);
+                console.log(`📊 Flushed stats for ${bulkOps.length} users`);
+            } catch (error) {
+                console.error('Error flushing stats:', error);
+                // Put failed updates back in queue
+                for (const [wallet, updates] of batch) {
+                    if (!this.pendingStats.has(wallet)) {
+                        this.pendingStats.set(wallet, updates);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Force flush on shutdown
+     */
+    async shutdown() {
+        await this.flushPendingStats();
     }
 }
 
 export default StatsService;
-

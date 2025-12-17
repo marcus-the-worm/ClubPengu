@@ -186,11 +186,6 @@ class CollisionSystem {
     addTrigger(x, z, shape, callback, data = {}, rotation = 0, y = 0) {
         const id = this.nextId++;
         
-        // Debug log for elevated triggers
-        if (y > 1) {
-            console.log(`[addTrigger ${id}] Elevated trigger at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}), shape:`, shape, `hasCallback: ${!!callback}`);
-        }
-        
         this.triggers.set(id, {
             id,
             x,
@@ -466,11 +461,6 @@ class CollisionSystem {
             
             const inXZ = this._testCollision(playerX, playerZ, playerRadius, trigger);
             const isInside = heightOk && inXZ;
-            
-            // Debug elevated triggers
-            if (triggerY > 5 && inXZ) {
-                console.log(`[Elevated Trigger ${id}] at (${trigger.x.toFixed(1)}, ${triggerY.toFixed(1)}, ${trigger.z.toFixed(1)}) - Player Y=${playerY.toFixed(1)}, heightOk=${heightOk}, inXZ=${inXZ}`);
-            }
             
             if (isInside && !trigger.wasInside) {
                 // Just entered

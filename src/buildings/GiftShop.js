@@ -277,3 +277,4 @@ export function createGiftShop(THREE, config = {}) {
 
 export default GiftShop;
 
+

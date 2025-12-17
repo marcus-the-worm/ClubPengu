@@ -60,3 +60,6 @@ export { default as MountTrailSystem, TRAIL_TYPES } from './MountTrailSystem';
 // Localized particle effects (nametag gold rain, sparkles, etc.)
 export { default as LocalizedParticleSystem, PRESETS as LOCALIZED_PARTICLE_PRESETS } from './LocalizedParticleSystem';
 
+// Camera controller (smooth third-person camera with trailing)
+export { default as CameraController } from './CameraController';
+

@@ -117,7 +117,7 @@ export const MOUNTS = {
         animationType: 'rowing'
     },
     
-    // PROMO: Pengu Mount - A $PENGU penguin on its belly
+    // EXCLUSIVE: Pengu Mount - A $PENGU penguin on its belly
     penguMount: {
         voxels: (() => {
             const voxelMap = new Map();

@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import Puffle from '../engine/Puffle';
 import GameManager from '../engine/GameManager';
 import { useClickOutside, useEscapeKey } from '../hooks';
+import { useMultiplayer } from '../multiplayer';
 
 /**
  * PufflePanel - Club Penguin style puffle management
  * Supports multiple puffle ownership and equip/unequip
+ * Server-authoritative: adoption goes through server for authenticated users
  */
 const PufflePanel = ({ equippedPuffle, ownedPuffles = [], onAdopt, onEquip, onUnequip, onUpdate, onClose }) => {
     const [tab, setTab] = useState('shop'); // 'shop' | 'inventory'
@@ -15,6 +17,9 @@ const PufflePanel = ({ equippedPuffle, ownedPuffles = [], onAdopt, onEquip, onUn
     const [feedback, setFeedback] = useState(null);
     const [coins, setCoins] = useState(() => GameManager.getInstance().getCoins());
     const panelRef = useRef(null);
+    
+    // Server-authoritative puffle adoption
+    const { adoptPuffle, puffleAdopting, isAuthenticated } = useMultiplayer();
     
     // Use shared hooks for click outside and escape key
     useClickOutside(panelRef, onClose, true);
@@ -47,24 +52,48 @@ const PufflePanel = ({ equippedPuffle, ownedPuffles = [], onAdopt, onEquip, onUn
         Puffle.COLORS[a].price - Puffle.COLORS[b].price
     );
 
-    const handleAdopt = (color) => {
+    const handleAdopt = async (color) => {
         const colorData = Puffle.COLORS[color];
         const gm = GameManager.getInstance();
         
+        // Check coins locally first for quick feedback
         if (gm.getCoins() < colorData.price) {
             setFeedback({ type: 'error', message: `Need ${colorData.price} coins!` });
             setTimeout(() => setFeedback(null), 2000);
             return;
         }
         
-        gm.addCoins(-colorData.price, 'puffle_adoption');
-        const newPuffle = new Puffle({ name, color });
-        setFeedback({ type: 'success', message: `${name} the ${colorData.name} puffle joined your family!` });
-        
-        setTimeout(() => {
-            if (onAdopt) onAdopt(newPuffle);
-            setName('Fluffy'); // Reset name
-        }, 1000);
+        // For authenticated users, use server
+        if (isAuthenticated) {
+            setFeedback({ type: 'info', message: 'Adopting...' });
+            
+            const result = await adoptPuffle(color, name);
+            
+            if (result.success) {
+                // Server returns the puffle data
+                const newPuffle = Puffle.fromJSON(result.puffle);
+                setFeedback({ type: 'success', message: `${name} the ${colorData.name} puffle joined your family!` });
+                
+                setTimeout(() => {
+                    if (onAdopt) onAdopt(newPuffle);
+                    setName('Fluffy');
+                    setFeedback(null);
+                }, 1000);
+            } else {
+                setFeedback({ type: 'error', message: result.message || 'Failed to adopt puffle' });
+                setTimeout(() => setFeedback(null), 3000);
+            }
+        } else {
+            // Guest mode - local only, no persistence
+            const newPuffle = new Puffle({ name, color });
+            setFeedback({ type: 'success', message: `${name} joined! (Guest - won't save)` });
+            
+            setTimeout(() => {
+                if (onAdopt) onAdopt(newPuffle);
+                setName('Fluffy');
+                setFeedback(null);
+            }, 1000);
+        }
     };
 
     const handleFeed = () => {

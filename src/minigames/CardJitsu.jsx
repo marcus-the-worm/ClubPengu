@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import CardJitsuGame from './CardJitsuGame';
 import GameManager from '../engine/GameManager';
+import { useMultiplayer } from '../multiplayer';
 
 /**
  * Card Jitsu - The Dojo card battle minigame
  * Fire beats Snow, Snow beats Water, Water beats Fire
+ * Server-authoritative rewards for authenticated users
  */
 const CardJitsu = ({ penguinData, onExit }) => {
-    const [game] = useState(() => new CardJitsuGame());
+    const { send, isAuthenticated } = useMultiplayer();
+    
+    // Pass server send function to game for rewards
+    const [game] = useState(() => new CardJitsuGame({
+        serverSend: isAuthenticated ? send : null
+    }));
     const [gameState, setGameState] = useState(null);
     const [selectedCard, setSelectedCard] = useState(null);
     const [showResult, setShowResult] = useState(false);

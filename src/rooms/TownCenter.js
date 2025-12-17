@@ -791,18 +791,10 @@ class TownCenter {
                         this.propMeshes.push(benchMesh);
                         
                         // Register with collision system for interactions
-                        // Y position comes from benchMesh.position.y automatically
-                        console.log(`[VIP Bench ${idx}] Registering at Y=${benchMesh.position.y}, pos=(${benchMesh.position.x.toFixed(1)}, ${benchMesh.position.z.toFixed(1)})`);
-                        console.log(`[VIP Bench ${idx}] Has interactionZone:`, !!benchMesh.userData.interactionZone);
-                        if (benchMesh.userData.interactionZone) {
-                            console.log(`[VIP Bench ${idx}] Zone size:`, benchMesh.userData.interactionZone.size);
-                            console.log(`[VIP Bench ${idx}] Zone action:`, benchMesh.userData.interactionZone.action);
-                        }
-                        const result = this.collisionSystem.registerProp(
+                        this.collisionSystem.registerProp(
                             benchMesh,
                             (event, zoneData) => this._handleInteraction(event, zoneData)
                         );
-                        console.log(`[VIP Bench ${idx}] Trigger ID: ${result.triggerId}`);
                     });
                     
                     mesh.userData.parkourData = parkourResult;

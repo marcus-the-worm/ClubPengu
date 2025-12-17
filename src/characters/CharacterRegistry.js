@@ -1,16 +1,11 @@
 /**
- * CharacterRegistry - OOP registry for managing character types and promo codes
- * Designed for scalability - easily add new characters with promo codes
+ * CharacterRegistry - OOP registry for managing character types
+ * Server-authoritative: unlocks come from server, NO client-side promo codes
  */
 
 class CharacterRegistry {
     constructor() {
         this.characters = new Map();
-        this.promoCodes = new Map();
-        this.unlockedCharacters = new Set(['penguin']); // Penguin is always unlocked
-        
-        // Load unlocked characters from localStorage
-        this._loadUnlocked();
     }
     
     /**
@@ -23,7 +18,6 @@ class CharacterRegistry {
             id,
             name: config.name,
             description: config.description || '',
-            promoCode: config.promoCode || null,
             generators: config.generators,
             palette: config.palette || {},
             customizationOptions: config.customizationOptions || {},
@@ -31,39 +25,7 @@ class CharacterRegistry {
             previewScale: config.previewScale || 1,
         });
         
-        // Register promo code mapping if exists
-        if (config.promoCode) {
-            this.promoCodes.set(config.promoCode.toUpperCase(), id);
-        }
-        
         return this;
-    }
-    
-    /**
-     * Check if a promo code is valid and unlock the character
-     * @param {string} code - Promo code to check
-     * @returns {Object|null} - Character info if valid, null otherwise
-     */
-    redeemPromoCode(code) {
-        const upperCode = code.toUpperCase().trim();
-        const characterId = this.promoCodes.get(upperCode);
-        
-        if (characterId && this.characters.has(characterId)) {
-            this.unlockedCharacters.add(characterId);
-            this._saveUnlocked();
-            return this.characters.get(characterId);
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Check if a character is unlocked
-     * @param {string} id - Character ID
-     * @returns {boolean}
-     */
-    isUnlocked(id) {
-        return this.unlockedCharacters.has(id);
     }
     
     /**
@@ -76,51 +38,20 @@ class CharacterRegistry {
     }
     
     /**
-     * Get all unlocked characters
-     * @returns {Array}
-     */
-    getUnlockedCharacters() {
-        return Array.from(this.unlockedCharacters)
-            .map(id => this.characters.get(id))
-            .filter(Boolean);
-    }
-    
-    /**
-     * Get all available character IDs (unlocked only)
+     * Get all registered character IDs
      * @returns {Array<string>}
      */
-    getAvailableCharacterIds() {
-        return Array.from(this.unlockedCharacters).filter(id => this.characters.has(id));
+    getAllCharacterIds() {
+        return Array.from(this.characters.keys());
     }
     
     /**
-     * Check if promo code exists (without redeeming)
-     * @param {string} code - Promo code
+     * Check if a character exists in the registry
+     * @param {string} id - Character ID
      * @returns {boolean}
      */
-    isValidPromoCode(code) {
-        return this.promoCodes.has(code.toUpperCase().trim());
-    }
-    
-    _loadUnlocked() {
-        try {
-            const saved = localStorage.getItem('unlocked_characters');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                parsed.forEach(id => this.unlockedCharacters.add(id));
-            }
-        } catch (e) {
-            console.warn('Failed to load unlocked characters:', e);
-        }
-    }
-    
-    _saveUnlocked() {
-        try {
-            localStorage.setItem('unlocked_characters', 
-                JSON.stringify(Array.from(this.unlockedCharacters)));
-        } catch (e) {
-            console.warn('Failed to save unlocked characters:', e);
-        }
+    hasCharacter(id) {
+        return this.characters.has(id);
     }
 }
 
@@ -129,8 +60,3 @@ const characterRegistry = new CharacterRegistry();
 
 export default characterRegistry;
 export { CharacterRegistry };
-
-
-
-
-

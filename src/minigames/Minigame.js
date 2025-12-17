@@ -3,6 +3,7 @@ import GameManager from '../engine/GameManager';
 /**
  * Minigame - Base class for all minigames
  * Provides common functionality for game flow, scoring, and rewards
+ * Server-authoritative rewards for authenticated users
  */
 class Minigame {
     constructor(config = {}) {
@@ -27,6 +28,9 @@ class Minigame {
         // Rewards
         this.baseReward = config.baseReward || 50;
         this.winBonus = config.winBonus || 100;
+        
+        // Server send function (set by component)
+        this.serverSend = config.serverSend || null;
         
         // Callbacks
         this.onStateChange = config.onStateChange || (() => {});
@@ -66,8 +70,18 @@ class Minigame {
             GameManager.getInstance().incrementStat('gamesWon');
         }
         
-        // Award coins
-        GameManager.getInstance().addCoins(coins, this.id);
+        // Request coin reward from server (for authenticated users)
+        // Server will validate and send coins_update message
+        if (this.serverSend && GameManager.getInstance().isAuthenticatedMode()) {
+            this.serverSend({
+                type: 'minigame_reward',
+                gameId: this.id,
+                won,
+                score: this.score,
+                coinsRequested: coins
+            });
+        }
+        // Note: Guests don't earn coins (server-authoritative)
         
         this.onGameEnd({
             won,
@@ -109,6 +123,7 @@ class Minigame {
 }
 
 export default Minigame;
+
 
 
 

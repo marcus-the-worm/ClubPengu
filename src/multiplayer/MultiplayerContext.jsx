@@ -1,10 +1,12 @@
 /**
  * Multiplayer Context - WebSocket connection and state management
+ * With Phantom wallet authentication support
  * OPTIMIZED: Uses refs for real-time position data to avoid React re-renders
  */
 
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import GameManager from '../engine/GameManager';
+import { PhantomWallet } from '../wallet';
 
 const MultiplayerContext = createContext(null);
 
@@ -23,52 +25,71 @@ export function MultiplayerProvider({ children }) {
     const wsRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
     const pingIntervalRef = useRef(null);
+    const walletRef = useRef(PhantomWallet.getInstance());
     
     // Connection state
     const [connected, setConnected] = useState(false);
     const [playerId, setPlayerId] = useState(null);
-    const playerIdRef = useRef(null); // Ref for use in callbacks
+    const playerIdRef = useRef(null);
     const [playerName, setPlayerName] = useState(() => {
-        return localStorage.getItem('penguin_name') || `Penguin${Math.floor(Math.random() * 1000)}`;
+        const saved = localStorage.getItem('penguin_name');
+        if (saved && saved !== 'Player1' && saved.length > 0) return saved;
+        // Generate simple guest name: Penguin + random 4 digits
+        return `Penguin${Math.floor(1000 + Math.random() * 9000)}`;
     });
-    const playerNameRef = useRef(playerName); // Ref for use in callbacks
+    const playerNameRef = useRef(playerName);
     
-    // OPTIMIZATION: Player LIST in state (for join/leave only)
-    // Player POSITIONS in ref (for real-time updates, no re-renders)
-    const [playerList, setPlayerList] = useState([]); // Array of player IDs
-    const playersDataRef = useRef(new Map()); // playerId -> full player data (positions, etc)
+    // ==================== AUTHENTICATION STATE ====================
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [walletAddress, setWalletAddress] = useState(() => localStorage.getItem('wallet_address'));
+    const [authToken, setAuthToken] = useState(() => localStorage.getItem('auth_token'));
+    const [userData, setUserData] = useState(null);
+    const [isNewUser, setIsNewUser] = useState(false);
+    const [authError, setAuthError] = useState(null);
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
+    const [isRestoringSession, setIsRestoringSession] = useState(false);
     
-    // For backwards compatibility - return a getter function
+    // Pending auth challenge
+    const pendingChallengeRef = useRef(null);
+    const sessionRestoredRef = useRef(false);
+    
+    // ==================== PLAYER STATE ====================
+    const [playerList, setPlayerList] = useState([]);
+    const playersDataRef = useRef(new Map());
     const getPlayersData = useCallback(() => playersDataRef.current, []);
-    
-    // Player count for UI (updated less frequently)
     const [playerCount, setPlayerCount] = useState(0);
-    
-    // Total players online (across all rooms)
     const [totalPlayerCount, setTotalPlayerCount] = useState(0);
     
-    // Chat messages (recent)
+    // Chat messages
     const [chatMessages, setChatMessages] = useState([]);
     
-    // Current room synced with server
+    // Current room
     const [serverRoom, setServerRoom] = useState(null);
     
     // Connection error state
     const [connectionError, setConnectionError] = useState(null);
     
-    // World time (synchronized from server)
-    const worldTimeRef = useRef(0.35); // Default morning
+    // World time
+    const worldTimeRef = useRef(0.35);
     
-    // Callbacks for game integration
+    // Promo code state
+    const [promoLoading, setPromoLoading] = useState(false);
+    const [promoResult, setPromoResult] = useState(null);
+    const promoCallbackRef = useRef(null);
+    
+    // Callbacks
     const callbacksRef = useRef({
         onPlayerJoined: null,
         onPlayerLeft: null,
         onPlayerMoved: null,
         onPlayerEmote: null,
-        onChatMessage: null
+        onChatMessage: null,
+        onAuthSuccess: null,
+        onAuthFailure: null,
+        onPromoResult: null
     });
     
-    // Connect to server
+    // ==================== CONNECT ====================
     const connect = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
         
@@ -82,16 +103,42 @@ export function MultiplayerProvider({ children }) {
             ws.onopen = () => {
                 console.log('✅ Connected to multiplayer server');
                 setConnected(true);
-                
-                // Expose WebSocket globally for ChallengeContext
                 window.__multiplayerWs = ws;
                 
-                // Start ping interval to keep connection alive
                 pingIntervalRef.current = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'ping' }));
                     }
                 }, 25000);
+                
+                // Attempt to restore session from stored token
+                const storedToken = localStorage.getItem('auth_token');
+                const storedWallet = localStorage.getItem('wallet_address');
+                const sessionTimestamp = localStorage.getItem('session_timestamp');
+                
+                if (storedToken && storedWallet && !sessionRestoredRef.current) {
+                    // Check if session is still valid (within 7 days)
+                    const sessionAge = Date.now() - parseInt(sessionTimestamp || '0');
+                    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+                    
+                    if (sessionAge < maxAge) {
+                        console.log('🔄 Attempting to restore session...');
+                        setIsRestoringSession(true);
+                        sessionRestoredRef.current = true;
+                        
+                        // Send session restore request
+                        ws.send(JSON.stringify({
+                            type: 'auth_restore',
+                            token: storedToken,
+                            walletAddress: storedWallet
+                        }));
+                    } else {
+                        console.log('⚠️ Stored session expired, clearing...');
+                        localStorage.removeItem('auth_token');
+                        localStorage.removeItem('wallet_address');
+                        localStorage.removeItem('session_timestamp');
+                    }
+                }
             };
             
             ws.onmessage = (event) => {
@@ -107,9 +154,9 @@ export function MultiplayerProvider({ children }) {
                 console.log('❌ Disconnected from server');
                 setConnected(false);
                 setPlayerId(null);
+                setIsAuthenticated(false);
                 clearInterval(pingIntervalRef.current);
                 
-                // Attempt reconnect after 3 seconds
                 reconnectTimeoutRef.current = setTimeout(() => {
                     console.log('🔄 Attempting reconnect...');
                     connect();
@@ -121,36 +168,230 @@ export function MultiplayerProvider({ children }) {
             };
         } catch (e) {
             console.error('Failed to connect:', e);
-            // Retry connection
             reconnectTimeoutRef.current = setTimeout(connect, 5000);
         }
     }, []);
     
-    // Handle incoming messages - OPTIMIZED: position updates go to ref, not state
+    // ==================== MESSAGE HANDLER ====================
     const handleMessage = useCallback((message) => {
         switch (message.type) {
+            // ==================== AUTH MESSAGES ====================
             case 'connected':
                 setPlayerId(message.playerId);
                 playerIdRef.current = message.playerId;
-                console.log(`🐧 Assigned player ID: ${message.playerId}`);
+                console.log(`🐧 Assigned player ID: ${message.playerId}${message.isGuest ? ' (guest)' : ''}`);
                 break;
                 
+            case 'auth_challenge':
+                // Store the x403 challenge for signing (full message)
+                pendingChallengeRef.current = {
+                    message: message.message,    // Full message to display/sign
+                    nonce: message.nonce,        // Unique nonce
+                    domain: message.domain,      // Expected domain
+                    expiresAt: message.expiresAt // Expiration time
+                };
+                break;
+                
+            case 'auth_success':
+                console.log(`🔐 ${message.restored ? 'Session restored' : 'Authenticated'} as ${message.user.username}`);
+                setIsAuthenticated(true);
+                setWalletAddress(message.user.walletAddress);
+                setAuthToken(message.token);
+                setUserData(message.user);
+                setIsNewUser(message.isNewUser);
+                setAuthError(null);
+                setIsAuthenticating(false);
+                setIsRestoringSession(false);
+                
+                // Update player name from user data
+                setPlayerName(message.user.username);
+                playerNameRef.current = message.user.username;
+                
+                // Persist session (survives refresh for 24h+)
+                localStorage.setItem('penguin_name', message.user.username);
+                localStorage.setItem('auth_token', message.token);
+                localStorage.setItem('wallet_address', message.user.walletAddress);
+                localStorage.setItem('session_timestamp', Date.now().toString());
+                
+                // Sync GameManager with server data
+                const gm = GameManager.getInstance();
+                gm.syncFromServer(message.user, message.isNewUser);
+                
+                callbacksRef.current.onAuthSuccess?.(message.user);
+                break;
+                
+            case 'auth_failure':
+                console.error(`🔐 Auth failed: ${message.error}`);
+                setAuthError({ code: message.error, message: message.message });
+                setIsAuthenticating(false);
+                setIsRestoringSession(false);
+                
+                // Clear stored session on failure
+                if (message.error === 'TOKEN_EXPIRED' || message.error === 'SESSION_INVALID') {
+                    localStorage.removeItem('auth_token');
+                    localStorage.removeItem('wallet_address');
+                    localStorage.removeItem('session_timestamp');
+                }
+                
+                callbacksRef.current.onAuthFailure?.(message.error, message.message);
+                break;
+                
+            case 'auth_logged_out':
+                setIsAuthenticated(false);
+                setWalletAddress(null);
+                setAuthToken(null);
+                setUserData(null);
+                localStorage.removeItem('auth_token');
+                localStorage.removeItem('wallet_address');
+                localStorage.removeItem('session_timestamp');
+                GameManager.getInstance().clearServerData();
+                break;
+                
+            // Note: auth_restored is handled by auth_success with restored: true flag
+                
+            case 'coins_update':
+                // Server-authoritative coin update
+                if (message.coins !== undefined) {
+                    GameManager.getInstance().setCoinsFromServer(message.coins);
+                }
+                break;
+                
+            case 'username_changed':
+                // Username successfully changed
+                console.log(`📝 Username changed: ${message.oldUsername} → ${message.newUsername}`);
+                setPlayerName(message.newUsername);
+                playerNameRef.current = message.newUsername;
+                localStorage.setItem('penguin_name', message.newUsername);
+                setUserData(prev => prev ? { ...prev, username: message.newUsername, canChangeUsername: false } : prev);
+                callbacksRef.current.onUsernameChanged?.(message);
+                break;
+                
+            case 'username_change_failed':
+                // Username change failed
+                console.error(`📝 Username change failed: ${message.error}`);
+                callbacksRef.current.onUsernameChangeFailed?.(message);
+                break;
+                
+            case 'username_status':
+                // Username availability check result
+                callbacksRef.current.onUsernameStatus?.(message);
+                break;
+                
+            case 'user_data':
+                if (message.user) {
+                    setUserData(message.user);
+                    GameManager.getInstance().syncFromServer(message.user);
+                }
+                break;
+            
+            case 'username_updated':
+                setPlayerName(message.username);
+                playerNameRef.current = message.username;
+                localStorage.setItem('penguin_name', message.username);
+                break;
+            
+            // ==================== PROMO CODE MESSAGES ====================
+            case 'promo_result': {
+                setPromoLoading(false);
+                setPromoResult(message);
+                
+                // If successful, userData will be updated via user_data message
+                // Call the callback if registered
+                if (promoCallbackRef.current) {
+                    promoCallbackRef.current(message);
+                    promoCallbackRef.current = null;
+                }
+                callbacksRef.current.onPromoResult?.(message);
+                break;
+            }
+            
+            case 'promo_validation':
+                // Quick validation result (no redemption)
+                callbacksRef.current.onPromoValidation?.(message);
+                break;
+            
+            case 'promo_history':
+                // User's redeemed promo codes
+                callbacksRef.current.onPromoHistory?.(message.codes);
+                break;
+            
+            // ==================== PUFFLE MESSAGES ====================
+            case 'puffle_adopted': {
+                setPuffleAdopting(false);
+                const result = { 
+                    success: true, 
+                    puffle: message.puffle, 
+                    newBalance: message.newBalance 
+                };
+                if (puffleAdoptCallbackRef.current) {
+                    puffleAdoptCallbackRef.current(result);
+                    puffleAdoptCallbackRef.current = null;
+                }
+                callbacksRef.current.onPuffleAdopted?.(message.puffle);
+                break;
+            }
+            
+            case 'puffle_adopt_failed': {
+                setPuffleAdopting(false);
+                const result = { 
+                    success: false, 
+                    error: message.error, 
+                    message: message.message 
+                };
+                if (puffleAdoptCallbackRef.current) {
+                    puffleAdoptCallbackRef.current(result);
+                    puffleAdoptCallbackRef.current = null;
+                }
+                break;
+            }
+                
+            case 'stats_update':
+                // Update local stats from server
+                if (message.stats) {
+                    GameManager.getInstance().updateStats(message.stats);
+                }
+                break;
+                
+            case 'player_authenticated':
+                // Another player authenticated - update their display
+                const authPlayer = playersDataRef.current.get(message.playerId);
+                if (authPlayer) {
+                    authPlayer.name = message.name;
+                    authPlayer.appearance = message.appearance;
+                    authPlayer.isAuthenticated = true;
+                    authPlayer.needsMeshRebuild = true;
+                }
+                break;
+                
+            // ==================== ROOM/PLAYER MESSAGES ====================
             case 'room_state':
-                // Received current state of room (other players)
                 console.log(`📍 Entered ${message.room} with ${message.players.length} other players`);
                 setServerRoom(message.room);
                 
-                // Sync world time from server
                 if (message.worldTime !== undefined) {
                     worldTimeRef.current = message.worldTime;
-                    console.log(`🌅 Synced world time: ${(message.worldTime * 24).toFixed(1)}h`);
                 }
                 
-                // Clear and rebuild player data
+                // Sync coins from server
+                if (message.coins !== undefined) {
+                    GameManager.getInstance().setCoinsFromServer(message.coins);
+                }
+                
+                // Sync updated user data only if username changed (first entry lock)
+                // Don't re-sync on every room join to prevent loops
+                if (message.userData && message.userData.username !== playerNameRef.current) {
+                    setUserData(prev => ({ ...prev, ...message.userData }));
+                    // Update player name if it changed (username lock)
+                    if (message.userData.username) {
+                        setPlayerName(message.userData.username);
+                        playerNameRef.current = message.userData.username;
+                    }
+                }
+                
                 playersDataRef.current.clear();
                 const ids = [];
                 message.players.forEach(p => {
-                    console.log(`  - ${p.name}`, p.puffle ? `with ${p.puffle.color} puffle` : '(no puffle)', p.emote ? `emoting: ${p.emote}` : '', p.isAfk ? '(AFK)' : '');
+                    console.log(`  - ${p.name}`, p.puffle ? `with ${p.puffle.color} puffle` : '(no puffle)', p.emote ? `emoting: ${p.emote}` : '', p.isAfk ? '(AFK)' : '', p.isAuthenticated ? '✓' : '');
                     const playerData = {
                         id: p.id,
                         name: p.name,
@@ -164,10 +405,10 @@ export function MultiplayerProvider({ children }) {
                         seatedOnFurniture: p.seatedOnFurniture || false,
                         isAfk: p.isAfk || false,
                         afkMessage: p.afkMessage || null,
-                        // Set AFK bubble if player is AFK
                         chatMessage: p.isAfk ? p.afkMessage : null,
                         chatTime: p.isAfk ? Date.now() : null,
                         isAfkBubble: p.isAfk || false,
+                        isAuthenticated: p.isAuthenticated || false,
                         needsMesh: true
                     };
                     playersDataRef.current.set(p.id, playerData);
@@ -178,8 +419,7 @@ export function MultiplayerProvider({ children }) {
                 break;
                 
             case 'player_joined':
-                console.log(`👋 ${message.player.name} joined`, message.player.puffle ? `with ${message.player.puffle.color} puffle` : '(no puffle)', message.player.emote ? `emoting: ${message.player.emote}` : '', message.player.isAfk ? '(AFK)' : '');
-                // Add to ref immediately with all data including puffle and AFK status
+                console.log(`👋 ${message.player.name} joined`, message.player.isAuthenticated ? '✓' : '(guest)');
                 const joinedPlayerData = {
                     id: message.player.id,
                     name: message.player.name,
@@ -191,16 +431,15 @@ export function MultiplayerProvider({ children }) {
                     emote: message.player.emote || null,
                     emoteStartTime: message.player.emote ? Date.now() : null,
                     seatedOnFurniture: message.player.seatedOnFurniture || false,
-                    // AFK state
                     isAfk: message.player.isAfk || false,
                     afkMessage: message.player.afkMessage || null,
                     chatMessage: message.player.isAfk ? message.player.afkMessage : null,
                     chatTime: message.player.isAfk ? Date.now() : null,
                     isAfkBubble: message.player.isAfk || false,
+                    isAuthenticated: message.player.isAuthenticated || false,
                     needsMesh: true
                 };
                 playersDataRef.current.set(message.player.id, joinedPlayerData);
-                // Update state for list change (triggers mesh creation)
                 setPlayerList(prev => [...prev, message.player.id]);
                 setPlayerCount(prev => prev + 1);
                 callbacksRef.current.onPlayerJoined?.(message.player);
@@ -208,28 +447,23 @@ export function MultiplayerProvider({ children }) {
                 
             case 'player_left':
                 console.log(`👋 Player ${message.playerId} left`);
-                // Remove from ref
                 playersDataRef.current.delete(message.playerId);
-                // Update state for list change
                 setPlayerList(prev => prev.filter(id => id !== message.playerId));
                 setPlayerCount(prev => Math.max(0, prev - 1));
                 callbacksRef.current.onPlayerLeft?.(message.playerId);
                 break;
                 
             case 'player_moved':
-                // OPTIMIZATION: Update ref directly, NO state update, NO re-render
                 const movingPlayer = playersDataRef.current.get(message.playerId);
                 if (movingPlayer) {
                     movingPlayer.position = message.position;
                     movingPlayer.rotation = message.rotation;
                     movingPlayer.pufflePosition = message.pufflePosition;
                 }
-                // Callback for any direct handling needed
                 callbacksRef.current.onPlayerMoved?.(message.playerId, message.position, message.rotation);
                 break;
                 
             case 'player_emote':
-                // Update ref directly
                 const emotingPlayer = playersDataRef.current.get(message.playerId);
                 if (emotingPlayer) {
                     emotingPlayer.emote = message.emote;
@@ -243,7 +477,7 @@ export function MultiplayerProvider({ children }) {
                 const appearancePlayer = playersDataRef.current.get(message.playerId);
                 if (appearancePlayer) {
                     appearancePlayer.appearance = message.appearance;
-                    appearancePlayer.needsMeshRebuild = true; // Flag for mesh rebuild
+                    appearancePlayer.needsMeshRebuild = true;
                 }
                 break;
                 
@@ -257,8 +491,14 @@ export function MultiplayerProvider({ children }) {
                 }
                 break;
                 
+            case 'player_renamed':
+                const renamedPlayer = playersDataRef.current.get(message.playerId);
+                if (renamedPlayer) {
+                    renamedPlayer.name = message.newName;
+                }
+                break;
+                
             case 'chat':
-                // Add chat bubble to player data for rendering
                 const chattingPlayer = playersDataRef.current.get(message.playerId);
                 if (chattingPlayer) {
                     chattingPlayer.chatMessage = message.text;
@@ -277,29 +517,24 @@ export function MultiplayerProvider({ children }) {
                 break;
             
             case 'emote_bubble':
-                // Emote bubble - shows above player but does NOT log to chat
                 const emoteBubblePlayer = playersDataRef.current.get(message.playerId);
                 if (emoteBubblePlayer) {
                     emoteBubblePlayer.chatMessage = message.text;
                     emoteBubblePlayer.chatTime = Date.now();
                 }
-                // Note: No setChatMessages - bubble only, no chat log
                 break;
             
             case 'player_afk': {
-                // Player AFK status changed
                 const afkPlayer = playersDataRef.current.get(message.playerId);
                 if (afkPlayer) {
                     afkPlayer.isAfk = message.isAfk;
                     afkPlayer.afkMessage = message.afkMessage || null;
                     
                     if (message.isAfk) {
-                        // Set permanent AFK chat bubble
                         afkPlayer.chatMessage = message.afkMessage;
                         afkPlayer.chatTime = Date.now();
-                        afkPlayer.isAfkBubble = true; // Mark as AFK bubble (don't auto-clear)
+                        afkPlayer.isAfkBubble = true;
                     } else {
-                        // Clear AFK bubble
                         if (afkPlayer.isAfkBubble) {
                             afkPlayer.chatMessage = null;
                             afkPlayer.chatTime = null;
@@ -308,7 +543,6 @@ export function MultiplayerProvider({ children }) {
                     }
                 }
                 
-                // If this is the local player's AFK message, add to chatMessages so their bubble shows
                 if (message.playerId === playerIdRef.current && message.isAfk) {
                     const afkChatMsg = {
                         id: Date.now(),
@@ -328,29 +562,22 @@ export function MultiplayerProvider({ children }) {
                 break;
             
             case 'world_time':
-                // Server-synchronized day/night cycle time
                 worldTimeRef.current = message.time;
-                // Update total player count if provided
                 if (message.totalPlayers !== undefined) {
                     setTotalPlayerCount(message.totalPlayers);
                 }
                 break;
             
             case 'room_counts':
-                // Server sending igloo room occupancy counts
-                // Dispatch custom event for VoxelWorld to handle
-                window.dispatchEvent(new CustomEvent('roomCounts', { 
-                    detail: message.counts 
-                }));
+                window.dispatchEvent(new CustomEvent('roomCounts', { detail: message.counts }));
                 break;
             
             case 'whisper': {
-                // Received a whisper from another player
                 const whisperMsg = {
                     id: Date.now(),
                     playerId: message.fromId,
                     name: message.fromName,
-                    fromName: message.fromName, // For reply functionality
+                    fromName: message.fromName,
                     text: message.text,
                     timestamp: message.timestamp || Date.now(),
                     isWhisper: true,
@@ -362,7 +589,6 @@ export function MultiplayerProvider({ children }) {
             }
             
             case 'whisper_sent': {
-                // Confirmation that whisper was sent
                 const sentMsg = {
                     id: Date.now(),
                     playerId: null,
@@ -377,7 +603,6 @@ export function MultiplayerProvider({ children }) {
             }
             
             case 'whisper_error': {
-                // Whisper failed
                 const errorMsg = {
                     id: Date.now(),
                     playerId: null,
@@ -391,7 +616,6 @@ export function MultiplayerProvider({ children }) {
             }
             
             case 'ball_update':
-                // Beach ball position update from server
                 if (callbacksRef.current.onBallUpdate) {
                     callbacksRef.current.onBallUpdate(message.x, message.z, message.vx, message.vz);
                 }
@@ -399,10 +623,7 @@ export function MultiplayerProvider({ children }) {
                 
             case 'error':
                 console.error(`❌ Server error: ${message.code} - ${message.message}`);
-                setConnectionError({
-                    code: message.code,
-                    message: message.message
-                });
+                setConnectionError({ code: message.code, message: message.message });
                 break;
         }
     }, []);
@@ -414,112 +635,291 @@ export function MultiplayerProvider({ children }) {
         }
     }, []);
     
-    // Join a room with player data
-    const joinRoom = useCallback((room, appearance, puffle = null) => {
-        // Get coins from local storage to sync with server
-        const gm = GameManager.getInstance();
-        const coins = gm.getCoins();
+    // ==================== AUTHENTICATION ====================
+    
+    /**
+     * Connect Phantom wallet and authenticate
+     */
+    const connectWallet = useCallback(async () => {
+        const wallet = walletRef.current;
         
+        if (!wallet.isPhantomInstalled()) {
+            setAuthError({
+                code: 'PHANTOM_NOT_INSTALLED',
+                message: 'Please install Phantom wallet to save your progress'
+            });
+            return { success: false, error: 'PHANTOM_NOT_INSTALLED' };
+        }
+        
+        setIsAuthenticating(true);
+        setAuthError(null);
+        
+        // Step 1: Connect to Phantom
+        const connectResult = await wallet.connect();
+        if (!connectResult.success) {
+            setAuthError({ code: connectResult.error, message: connectResult.message });
+            setIsAuthenticating(false);
+            return connectResult;
+        }
+        
+        setWalletAddress(connectResult.publicKey);
+        
+        // Step 2: Request x403 auth challenge from server
+        // Include domain for signer confidence message
+        send({ 
+            type: 'auth_request',
+            domain: window.location.host
+        });
+        
+        // Wait for challenge response (max 5 seconds)
+        const challenge = await new Promise((resolve) => {
+            const timeout = setTimeout(() => resolve(null), 5000);
+            const checkInterval = setInterval(() => {
+                if (pendingChallengeRef.current) {
+                    clearTimeout(timeout);
+                    clearInterval(checkInterval);
+                    resolve(pendingChallengeRef.current);
+                    pendingChallengeRef.current = null;
+                }
+            }, 100);
+        });
+        
+        if (!challenge) {
+            setAuthError({ code: 'CHALLENGE_TIMEOUT', message: 'Server did not respond with challenge' });
+            setIsAuthenticating(false);
+            return { success: false, error: 'CHALLENGE_TIMEOUT' };
+        }
+        
+        // Step 3: Sign the x403 challenge message
+        // User will see the full message in their wallet for confidence
+        const signResult = await wallet.signMessage(challenge.message);
+        if (!signResult.success) {
+            setAuthError({ code: signResult.error, message: signResult.message });
+            setIsAuthenticating(false);
+            return signResult;
+        }
+        
+        // Step 4: Send signed challenge to server
+        // IMPORTANT: Do NOT send stale data from previous wallet
+        // Server is authoritative - it will send back the correct data for this wallet
+        const gm = GameManager.getInstance();
+        
+        // Only include migration data for genuinely new users (localStorage data from before any auth)
+        const migrationData = gm.getMigrationData();
+        
+        send({
+            type: 'auth_verify',
+            walletAddress: connectResult.publicKey,
+            signature: signResult.signature,
+            clientData: {
+                // DON'T send username - new users should pick it in the designer
+                // Server will assign a default "Penguin..." name that they can change
+                // Only send migration data for first-time users migrating from localStorage
+                migrateFrom: migrationData ? 'localStorage' : null,
+                migrationData: migrationData
+            }
+        });
+        
+        // Auth response will be handled by message handler
+        return { success: true, pending: true };
+    }, [send, playerName]);
+    
+    /**
+     * Disconnect wallet and logout
+     * CRITICAL: Must clear ALL state to prevent data leaking between accounts
+     */
+    const disconnectWallet = useCallback(async () => {
+        send({ type: 'auth_logout' });
+        
+        const wallet = walletRef.current;
+        await wallet.disconnect();
+        
+        // Clear all React state
+        setIsAuthenticated(false);
+        setWalletAddress(null);
+        setAuthToken(null);
+        setUserData(null);
+        
+        // Clear ALL auth-related localStorage - prevents session restore with old wallet
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('wallet_address');
+        localStorage.removeItem('session_timestamp');
+        
+        // Clear GameManager state including appearance
+        GameManager.getInstance().clearServerData();
+        
+        // Reset session restored flag so next connect can restore fresh session
+        sessionRestoredRef.current = false;
+    }, [send]);
+    
+    // Join a room
+    const joinRoom = useCallback((room, appearance, puffle = null) => {
         send({
             type: 'join',
             room,
             name: playerName,
             appearance,
-            puffle,
-            coins // Send coins to server for persistence across restarts
+            puffle
         });
     }, [send, playerName]);
     
-    // Send position update (called frequently during movement)
-    // Position now includes x, y, z for jump support
-    const sendPosition = useCallback((position, rotation, pufflePosition = null) => {
-        send({
+    // Send position update
+    const sendPosition = useCallback((position, rotation, pufflePosition = null, trailPoints = null) => {
+        const msg = {
             type: 'move',
-            position, // { x, y, z }
+            position,
             rotation,
             pufflePosition
-        });
+        };
+        if (trailPoints?.length > 0) {
+            msg.trailPoints = trailPoints;
+        }
+        send(msg);
     }, [send]);
     
-    // Send chat message
     const sendChat = useCallback((text) => {
-        send({
-            type: 'chat',
-            text
-        });
+        send({ type: 'chat', text });
     }, [send]);
     
-    // Send emote bubble (shows chat bubble but doesn't log to chat)
     const sendEmoteBubble = useCallback((text) => {
-        send({
-            type: 'emote_bubble',
-            text
-        });
+        send({ type: 'emote_bubble', text });
     }, [send]);
     
-    // Send emote (with optional seatedOnFurniture flag for furniture sit vs ground sit)
     const sendEmote = useCallback((emote, seatedOnFurniture = false) => {
-        send({
-            type: 'emote',
-            emote,
-            seatedOnFurniture
-        });
+        send({ type: 'emote', emote, seatedOnFurniture });
     }, [send]);
     
-    // Stop emote
     const stopEmote = useCallback(() => {
-        send({
-            type: 'stop_emote'
-        });
+        send({ type: 'stop_emote' });
     }, [send]);
     
-    // Change room
     const changeRoom = useCallback((newRoom) => {
-        send({
-            type: 'change_room',
-            room: newRoom
-        });
+        send({ type: 'change_room', room: newRoom });
     }, [send]);
     
-    // Update appearance
     const updateAppearance = useCallback((appearance) => {
-        send({
-            type: 'update_appearance',
-            appearance
-        });
+        send({ type: 'update_appearance', appearance });
     }, [send]);
     
-    // Update puffle
     const updatePuffle = useCallback((puffle) => {
-        send({
-            type: 'update_puffle',
-            puffle
-        });
+        send({ type: 'update_puffle', puffle });
     }, [send]);
     
-    // Send ball kick (when player kicks beach ball)
+    // Puffle adoption state
+    const [puffleAdopting, setPuffleAdopting] = useState(false);
+    const puffleAdoptCallbackRef = useRef(null);
+    
+    /**
+     * Adopt a puffle via server - server handles coin deduction and persistence
+     */
+    const adoptPuffle = useCallback((color, name) => {
+        return new Promise((resolve) => {
+            if (!connected) {
+                resolve({ success: false, error: 'NOT_CONNECTED', message: 'Not connected to server' });
+                return;
+            }
+            
+            if (!isAuthenticated) {
+                resolve({ success: false, error: 'AUTH_REQUIRED', message: 'You must be logged in to adopt puffles' });
+                return;
+            }
+            
+            setPuffleAdopting(true);
+            puffleAdoptCallbackRef.current = resolve;
+            
+            send({ type: 'puffle_adopt', color, name });
+            
+            // Timeout after 10 seconds
+            setTimeout(() => {
+                if (puffleAdoptCallbackRef.current === resolve) {
+                    setPuffleAdopting(false);
+                    puffleAdoptCallbackRef.current = null;
+                    resolve({ success: false, error: 'TIMEOUT', message: 'Request timed out' });
+                }
+            }, 10000);
+        });
+    }, [connected, isAuthenticated, send]);
+    
     const sendBallKick = useCallback((x, z, vx, vz) => {
-        send({
-            type: 'ball_kick',
-            x, z, vx, vz
-        });
+        send({ type: 'ball_kick', x, z, vx, vz });
     }, [send]);
     
-    // Request ball sync (when entering igloo)
     const requestBallSync = useCallback(() => {
         send({ type: 'ball_sync' });
     }, [send]);
     
-    // Set player name
+    const syncCoins = useCallback(() => {
+        send({ type: 'coins_sync' });
+    }, [send]);
+    
+    const changeUsername = useCallback((newName) => {
+        if (!isAuthenticated) {
+            return { success: false, error: 'Not authenticated' };
+        }
+        send({ type: 'change_username', username: newName });
+        return { success: true, pending: true };
+    }, [send, isAuthenticated]);
+    
+    const checkUsername = useCallback((username) => {
+        if (!connected) return;
+        send({ type: 'check_username', username });
+    }, [send, connected]);
+    
     const setName = useCallback((name) => {
         setPlayerName(name);
         playerNameRef.current = name;
         localStorage.setItem('penguin_name', name);
     }, []);
     
-    // Register callbacks for game events
     const registerCallbacks = useCallback((callbacks) => {
         callbacksRef.current = { ...callbacksRef.current, ...callbacks };
+    }, []);
+    
+    // ==================== PROMO CODE ACTIONS ====================
+    /**
+     * Redeem a promo code - server handles ALL validation
+     * @param {string} code - The promo code to redeem
+     * @returns {Promise<object>} - Result from server
+     */
+    const redeemPromoCode = useCallback((code) => {
+        return new Promise((resolve) => {
+            if (!connected) {
+                resolve({ success: false, error: 'NOT_CONNECTED', message: 'Not connected to server' });
+                return;
+            }
+            
+            if (!isAuthenticated) {
+                resolve({ success: false, error: 'AUTH_REQUIRED', message: 'You must be logged in to redeem promo codes' });
+                return;
+            }
+            
+            if (!code || code.trim().length === 0) {
+                resolve({ success: false, error: 'INVALID_CODE', message: 'Please enter a promo code' });
+                return;
+            }
+            
+            setPromoLoading(true);
+            setPromoResult(null);
+            
+            // Store callback to resolve promise when server responds
+            promoCallbackRef.current = resolve;
+            
+            // Send to server - server handles ALL validation
+            send({ type: 'promo_redeem', code: code.trim().toUpperCase() });
+            
+            // Timeout after 10 seconds
+            setTimeout(() => {
+                if (promoCallbackRef.current === resolve) {
+                    setPromoLoading(false);
+                    promoCallbackRef.current = null;
+                    resolve({ success: false, error: 'TIMEOUT', message: 'Request timed out' });
+                }
+            }, 10000);
+        });
+    }, [connected, isAuthenticated, send]);
+    
+    const clearPromoResult = useCallback(() => {
+        setPromoResult(null);
     }, []);
     
     // Connect on mount
@@ -536,21 +936,45 @@ export function MultiplayerProvider({ children }) {
     }, [connect]);
     
     const value = {
-        // State
+        // Connection State
         connected,
         playerId,
         playerName,
         playerCount,
-        totalPlayerCount,     // Total players online (across all rooms)
-        playerList,           // Array of player IDs (for triggering mesh creation)
-        getPlayersData,       // Function to get ref (for real-time position access)
-        playersDataRef,       // Direct ref access for game loop
-        worldTimeRef,         // Server-synchronized world time (0-1)
+        totalPlayerCount,
+        playerList,
+        getPlayersData,
+        playersDataRef,
+        worldTimeRef,
         chatMessages,
         serverRoom,
-        connectionError,      // Error if connection was rejected
+        connectionError,
         
-        // Actions
+        // Authentication State
+        isAuthenticated,
+        walletAddress,
+        authToken,
+        userData,
+        isNewUser,
+        authError,
+        isAuthenticating,
+        isRestoringSession,
+        
+        // Auth Actions
+        connectWallet,
+        disconnectWallet,
+        
+        // Promo Code Actions
+        redeemPromoCode,
+        promoLoading,
+        promoResult,
+        clearPromoResult,
+        
+        // Puffle Actions
+        adoptPuffle,
+        puffleAdopting,
+        
+        // Game Actions
         setName,
         joinRoom,
         sendPosition,
@@ -563,7 +987,13 @@ export function MultiplayerProvider({ children }) {
         updatePuffle,
         sendBallKick,
         requestBallSync,
-        registerCallbacks
+        registerCallbacks,
+        syncCoins,
+        changeUsername,
+        checkUsername,
+        
+        // Raw send for ChallengeContext
+        send
     };
     
     return (
@@ -582,4 +1012,3 @@ export function useMultiplayer() {
 }
 
 export default MultiplayerContext;
-

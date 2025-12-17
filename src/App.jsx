@@ -6,12 +6,24 @@ import P2PCardJitsu from './minigames/P2PCardJitsu';
 import P2PTicTacToe from './minigames/P2PTicTacToe';
 import P2PConnect4 from './minigames/P2PConnect4';
 import GameManager from './engine/GameManager';
-import { MultiplayerProvider } from './multiplayer';
+import { MultiplayerProvider, useMultiplayer } from './multiplayer';
 import { ChallengeProvider, useChallenge } from './challenge';
 import ProfileMenu from './components/ProfileMenu';
 import WagerModal from './components/WagerModal';
 import Inbox from './components/Inbox';
 import Notification from './components/Notification';
+import GuestModeWarning from './components/GuestModeWarning';
+
+// Default penguin appearance for guests
+const DEFAULT_PENGUIN = {
+    skin: 'blue',
+    hat: 'none',
+    eyes: 'normal',
+    mouth: 'beak',
+    bodyItem: 'none',
+    mount: 'none',
+    characterType: 'penguin'
+};
 
 // Background Music Player Component
 const BackgroundMusic = () => {
@@ -106,26 +118,35 @@ const BackgroundMusic = () => {
 const AppContent = () => {
     // Current room/layer: 'town', 'dojo', etc.
     const [currentRoom, setCurrentRoom] = useState(null); // null = designer
-    const [penguinData, setPenguinData] = useState(() => {
-        // Load saved penguin customization from localStorage
-        try {
-            const saved = localStorage.getItem('penguin_customization');
-            if (saved) {
-                return JSON.parse(saved);
+    
+    // Get auth state and user data from multiplayer context
+    const { isAuthenticated, userData, isRestoringSession, walletAddress } = useMultiplayer();
+    
+    // Penguin customization - synced from server for auth users, defaults for guests
+    const [penguinData, setPenguinData] = useState(DEFAULT_PENGUIN);
+    
+    // Track which wallet we've synced customization for (prevent stale data between wallets)
+    const syncedWalletRef = useRef(null);
+    
+    // Sync penguin data from server when authenticated (including session restore)
+    // CRITICAL: Track wallet address to detect wallet switches
+    useEffect(() => {
+        if (isAuthenticated && userData?.customization) {
+            // Only sync if this is a NEW wallet or we haven't synced yet
+            if (syncedWalletRef.current !== walletAddress) {
+                console.log('🐧 Loading customization from server:', userData.customization);
+                setPenguinData({
+                    ...DEFAULT_PENGUIN,
+                    ...userData.customization
+                });
+                syncedWalletRef.current = walletAddress;
             }
-        } catch (e) {
-            console.warn('Failed to load penguin customization:', e);
+        } else if (!isAuthenticated && !isRestoringSession) {
+            // Guest mode - use defaults and clear synced wallet
+            syncedWalletRef.current = null;
+            setPenguinData(DEFAULT_PENGUIN);
         }
-        // Default penguin
-        return {
-            skin: 'blue',
-            hat: 'none',
-            eyes: 'normal',
-            mouth: 'beak',
-            bodyItem: 'none',
-            characterType: 'penguin'
-        };
-    });
+    }, [isAuthenticated, userData?.customization, isRestoringSession, walletAddress]);
     
     // Puffle state (shared across all rooms)
     const [playerPuffle, setPlayerPuffle] = useState(null);
@@ -145,15 +166,6 @@ const AppContent = () => {
         console.log('🐧 Club Penguin Clone Loaded!');
         console.log('💰 Coins:', gm.getCoins());
     }, []);
-    
-    // Save penguin customization whenever it changes
-    useEffect(() => {
-        try {
-            localStorage.setItem('penguin_customization', JSON.stringify(penguinData));
-        } catch (e) {
-            console.warn('Failed to save penguin customization:', e);
-        }
-    }, [penguinData]);
     
     // Enter the game world (from designer)
     const handleEnterWorld = () => {
@@ -197,6 +209,13 @@ const AppContent = () => {
         // Just need to ensure we don't show the solo game
         setActiveMinigame(null);
     };
+    
+    // Handle request to authenticate - redirects to penguin maker
+    const handleRequestAuth = () => {
+        // Exit to designer for clean auth flow
+        setCurrentRoom(null);
+        setActiveMinigame(null);
+    };
 
     // Check if we're in the game world (not designer)
     const inGameWorld = currentRoom !== null;
@@ -230,6 +249,7 @@ const AppContent = () => {
                         isInMatch={isInMatch}
                         activeMatches={activeMatches}
                         spectatingMatch={spectatingMatch}
+                        onRequestAuth={handleRequestAuth}
                     />
                 </div>
             )}
@@ -276,9 +296,37 @@ const AppContent = () => {
             
             {/* Global Notification Toast */}
             <Notification />
+            
+            {/* Guest Mode Warning (shows when not authenticated) */}
+            {inGameWorld && <GuestModeWarning onRequestAuth={handleRequestAuth} />}
         </div>
     );
 };
+
+/**
+ * Clear old localStorage game data on app startup
+ * This ensures guests start fresh and removes stale migration data
+ */
+const clearOldGameData = () => {
+    const keysToRemove = [
+        'penguin_customization',  // Old cosmetic persistence
+        'clubpenguin_save',       // Old game save (coins, stamps, etc)
+        'unlocked_mounts',        // Old mount unlocks
+        'unlocked_cosmetics',     // Old cosmetic unlocks
+        'owned_puffles',          // Old puffle ownership
+        'character_type'          // Old character type selection
+    ];
+    
+    keysToRemove.forEach(key => {
+        if (localStorage.getItem(key)) {
+            console.log(`🧹 Clearing old localStorage key: ${key}`);
+            localStorage.removeItem(key);
+        }
+    });
+};
+
+// Run cleanup once on module load
+clearOldGameData();
 
 /**
  * Main App - Wraps providers

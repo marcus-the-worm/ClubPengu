@@ -120,6 +120,10 @@ const ProfileMenu = () => {
                         
                         {/* Middle: Stats (compact grid) */}
                         <div className="bg-black/30 rounded-lg p-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] min-w-[140px]">
+                            <span className="text-white/50">💰 Gold</span>
+                            <span className="text-yellow-400 font-bold text-right">
+                                {stats?.coins ?? 0}
+                            </span>
                             <span className="text-white/50">⚔️ CJ</span>
                             <span className="text-yellow-400 font-bold text-right">
                                 {stats?.cardJitsuWins ?? 0}W/{stats?.cardJitsuLosses ?? 0}L
@@ -246,6 +250,13 @@ const ProfileMenu = () => {
                     
                     {/* Stats - Compact */}
                     <div className="bg-black/30 rounded-xl p-2 sm:p-2.5 mb-3 space-y-1">
+                        {/* Gold Balance - prominent display */}
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs pb-1 mb-1 border-b border-white/10">
+                            <span className="text-white/60">💰 Gold Balance</span>
+                            <span className="text-yellow-400 font-bold">
+                                {stats?.isGuest ? '(Guest)' : (stats?.coins ?? 0)}
+                            </span>
+                        </div>
                         <div className="flex items-center justify-between text-[11px] sm:text-xs">
                             <span className="text-white/60">⚔️ Card Jitsu</span>
                             <span className="text-yellow-400 font-bold">
