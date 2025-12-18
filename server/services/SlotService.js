@@ -26,17 +26,17 @@ const SPIN_DURATION_MS = 2000; // How long a spin takes - faster!
 // This generates FOMO and encourages sign-ups
 // ========================================
 
-// Regular player symbols - balanced for ~85% RTP
-// Total weight per reel: 100
+// Regular player symbols - balanced for fun gameplay
+// Total weight per reel: 100 (rarity increases with payout)
 const SYMBOLS = [
-    { id: 'cherry', emoji: '🍒', weight: 30, name: 'Cherry' },      // Most common
-    { id: 'lemon', emoji: '🍋', weight: 26, name: 'Lemon' },
-    { id: 'orange', emoji: '🍊', weight: 18, name: 'Orange' },
-    { id: 'grape', emoji: '🍇', weight: 12, name: 'Grape' },
-    { id: 'bell', emoji: '🔔', weight: 8, name: 'Bell' },
-    { id: 'star', emoji: '⭐', weight: 4, name: 'Star' },           // Rare
-    { id: 'diamond', emoji: '💎', weight: 1.5, name: 'Diamond' },   // Very rare
-    { id: 'seven', emoji: '7️⃣', weight: 0.5, name: 'Lucky Seven' } // Ultra rare JACKPOT
+    { id: 'cherry', emoji: '🍒', weight: 28, name: 'Cherry' },      // Most common (2x)
+    { id: 'lemon', emoji: '🍋', weight: 24, name: 'Lemon' },        // Common (3x)
+    { id: 'orange', emoji: '🍊', weight: 18, name: 'Orange' },      // (5x)
+    { id: 'grape', emoji: '🍇', weight: 12, name: 'Grape' },        // (8x)
+    { id: 'bell', emoji: '🔔', weight: 8, name: 'Bell' },           // (15x)
+    { id: 'star', emoji: '⭐', weight: 5, name: 'Star' },           // Rare (40x)
+    { id: 'diamond', emoji: '💎', weight: 3, name: 'Diamond' },     // Very rare (100x) - 1 in ~37,000
+    { id: 'seven', emoji: '7️⃣', weight: 2, name: 'Lucky Seven' }   // JACKPOT (777x) - 1 in 125,000
 ];
 
 // Payout table (multipliers of SPIN_COST)
