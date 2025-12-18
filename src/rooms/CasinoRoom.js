@@ -37,6 +37,11 @@ class CasinoRoom extends BaseRoom {
         this.barStoolPositions = [];
         this.couchPositions = [];
         this.chairPositions = [];
+        
+        // Mobile/Apple GPU detection for performance optimizations
+        this.isMobileGPU = typeof window !== 'undefined' && window._isMobileGPU;
+        this.isAppleDevice = typeof window !== 'undefined' && window._isAppleDevice;
+        this.needsOptimization = this.isMobileGPU || this.isAppleDevice;
     }
 
     spawn(scene) {
@@ -1292,11 +1297,21 @@ class CasinoRoom extends BaseRoom {
     _createLighting(scene, W, D, H, CX, CZ) {
         const THREE = this.THREE;
         
-        // Ambient light - dim purple
-        const ambient = new THREE.AmbientLight(0x1a0a2e, 0.3);
+        // Apple/Mobile optimization: Use stronger ambient light instead of many point lights
+        // This dramatically reduces GPU load on Metal/WebGL bridge
+        const ambientIntensity = this.needsOptimization ? 0.6 : 0.3;
+        const ambient = new THREE.AmbientLight(0x2a1a3e, ambientIntensity);
         this.addLight(ambient, scene);
         
+        // Apple/Mobile: Add one central directional light instead of many point lights
+        if (this.needsOptimization) {
+            const dirLight = new THREE.DirectionalLight(0xFFAA55, 0.8);
+            dirLight.position.set(CX, H, CZ);
+            this.addLight(dirLight, scene);
+        }
+        
         // Chandeliers (point lights with meshes)
+        // Apple/Mobile: Only add ONE central chandelier light, Desktop: all 5
         const chandelierPositions = [
             { x: CX - 20, z: CZ - 20 },
             { x: CX + 20, z: CZ - 20 },
@@ -1306,18 +1321,23 @@ class CasinoRoom extends BaseRoom {
         ];
         
         chandelierPositions.forEach((pos, idx) => {
-            // Light
-            const light = new THREE.PointLight(0xFFAA55, 1.0, 30);
-            light.position.set(pos.x, H - 1, pos.z);
-            this.addLight(light, scene);
+            // Light - Apple/Mobile: only add center chandelier light (idx 4)
+            if (!this.needsOptimization || idx === 4) {
+                const light = new THREE.PointLight(0xFFAA55, 1.0, 30);
+                light.position.set(pos.x, H - 1, pos.z);
+                this.addLight(light, scene);
+            }
             
-            // Chandelier mesh
+            // Chandelier mesh - always add for visual (no performance cost)
             const chandelierGroup = new THREE.Group();
             
             const chainMat = this.createMaterial({
                 color: 0xFFD700,
                 roughness: 0.3,
-                metalness: 0.8
+                metalness: 0.8,
+                // Apple/Mobile: Add emissive to simulate light without point light
+                emissive: this.needsOptimization ? 0xFFAA55 : 0x000000,
+                emissiveIntensity: this.needsOptimization ? 0.3 : 0
             });
             
             // Chain
@@ -1336,11 +1356,12 @@ class CasinoRoom extends BaseRoom {
             const crystalMat = this.createMaterial({
                 color: 0xFFFFFF,
                 emissive: 0xFFAA55,
-                emissiveIntensity: 0.5,
+                emissiveIntensity: this.needsOptimization ? 0.8 : 0.5,
                 transparent: true,
                 opacity: 0.8
             });
             
+            // Crystals around chandelier
             for (let c = 0; c < 8; c++) {
                 const angle = (c / 8) * Math.PI * 2;
                 const crystalGeo = new THREE.ConeGeometry(0.1, 0.4, 6);
@@ -1360,17 +1381,21 @@ class CasinoRoom extends BaseRoom {
             this.meshes.push(chandelierGroup);
         });
         
-        // Accent lights at tables
-        this.pokerTableMeshes.forEach((table, idx) => {
-            const tableLight = new THREE.PointLight(0x00FF88, 0.5, 8);
-            tableLight.position.set(table.position.x, 3, table.position.z);
-            this.addLight(tableLight, scene);
-        });
+        // Accent lights at tables - Apple/Mobile: Skip entirely (use emissive materials instead)
+        if (!this.needsOptimization) {
+            this.pokerTableMeshes.forEach((table, idx) => {
+                const tableLight = new THREE.PointLight(0x00FF88, 0.5, 8);
+                tableLight.position.set(table.position.x, 3, table.position.z);
+                this.addLight(tableLight, scene);
+            });
+        }
         
-        // Bar backlight
-        const barLight = new THREE.PointLight(0xFF6655, 0.8, 15);
-        barLight.position.set(CX, 3, 3);
-        this.addLight(barLight, scene);
+        // Bar backlight - Apple/Mobile: Skip (bar already has emissive materials)
+        if (!this.needsOptimization) {
+            const barLight = new THREE.PointLight(0xFF6655, 0.8, 15);
+            barLight.position.set(CX, 3, 3);
+            this.addLight(barLight, scene);
+        }
     }
 
     update(time, delta, nightFactor = 0.5) {

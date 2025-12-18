@@ -31,6 +31,11 @@ class CasinoExterior {
         // Throttle state
         this.lastSignUpdate = 0;
         this.lastLedUpdate = 0;
+        
+        // Mobile/Apple GPU detection for performance optimizations
+        this.isMobileGPU = typeof window !== 'undefined' && window._isMobileGPU;
+        this.isAppleDevice = typeof window !== 'undefined' && window._isAppleDevice;
+        this.needsOptimization = this.isMobileGPU || this.isAppleDevice;
     }
     
     build(config = {}) {
@@ -242,11 +247,13 @@ class CasinoExterior {
             baseY: height + 3.5
         });
         
-        // Accent light under sign
-        const signLight = new THREE.PointLight(0xFFAA00, 2, 20);
-        signLight.position.set(0, height + 1, depth / 2 + 4);
-        group.add(signLight);
-        this.lights.push(signLight);
+        // Accent light under sign - Apple/Mobile: skip (emissive materials provide glow)
+        if (!this.needsOptimization) {
+            const signLight = new THREE.PointLight(0xFFAA00, 2, 20);
+            signLight.position.set(0, height + 1, depth / 2 + 4);
+            group.add(signLight);
+            this.lights.push(signLight);
+        }
     }
     
     /**
@@ -367,16 +374,18 @@ class CasinoExterior {
             group.add(diag);
         });
         
-        // Add accent lights for the neon (just 2 lights, not per-element)
-        const pinkLight = new THREE.PointLight(neonPink, 1.5, 15);
-        pinkLight.position.set(0, 3, depth / 2 + 3);
-        group.add(pinkLight);
-        this.lights.push(pinkLight);
-        
-        const cyanLight = new THREE.PointLight(neonCyan, 1.0, 12);
-        cyanLight.position.set(0, 7, depth / 2 + 3);
-        group.add(cyanLight);
-        this.lights.push(cyanLight);
+        // Add accent lights for the neon - Apple/Mobile: skip
+        if (!this.needsOptimization) {
+            const pinkLight = new THREE.PointLight(neonPink, 1.5, 15);
+            pinkLight.position.set(0, 3, depth / 2 + 3);
+            group.add(pinkLight);
+            this.lights.push(pinkLight);
+            
+            const cyanLight = new THREE.PointLight(neonCyan, 1.0, 12);
+            cyanLight.position.set(0, 7, depth / 2 + 3);
+            group.add(cyanLight);
+            this.lights.push(cyanLight);
+        }
     }
     
     /**
@@ -495,16 +504,18 @@ class CasinoExterior {
             colors: colors
         });
         
-        // Add accent lights at corners
-        const cornerLight1 = new THREE.PointLight(0xFF1493, 0.8, 10);
-        cornerLight1.position.set(-width / 2 - 0.5, parapetTop, frameZ + 2);
-        group.add(cornerLight1);
-        this.lights.push(cornerLight1);
-        
-        const cornerLight2 = new THREE.PointLight(0x00FFFF, 0.8, 10);
-        cornerLight2.position.set(width / 2 + 0.5, parapetTop, frameZ + 2);
-        group.add(cornerLight2);
-        this.lights.push(cornerLight2);
+        // Add accent lights at corners - Apple/Mobile: skip
+        if (!this.needsOptimization) {
+            const cornerLight1 = new THREE.PointLight(0xFF1493, 0.8, 10);
+            cornerLight1.position.set(-width / 2 - 0.5, parapetTop, frameZ + 2);
+            group.add(cornerLight1);
+            this.lights.push(cornerLight1);
+            
+            const cornerLight2 = new THREE.PointLight(0x00FFFF, 0.8, 10);
+            cornerLight2.position.set(width / 2 + 0.5, parapetTop, frameZ + 2);
+            group.add(cornerLight2);
+            this.lights.push(cornerLight2);
+        }
     }
     
     getDecorationColliders() {

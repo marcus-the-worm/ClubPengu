@@ -22,6 +22,11 @@ class Casino extends BaseBuilding {
     constructor(THREE) {
         super(THREE);
         this.exterior = null;
+        
+        // Mobile/Apple GPU detection for performance optimizations
+        this.isMobileGPU = typeof window !== 'undefined' && window._isMobileGPU;
+        this.isAppleDevice = typeof window !== 'undefined' && window._isAppleDevice;
+        this.needsOptimization = this.isMobileGPU || this.isAppleDevice;
     }
     
     build({ w = 36, h = 14, d = 32 } = {}) {
@@ -611,11 +616,13 @@ class Casino extends BaseBuilding {
         floorSign.position.set(gameRoomTriggerX, 0.05, gameRoomTriggerZ - 4);
         group.add(floorSign);
         
-        // Point light to illuminate the floor zone
-        const floorZoneLight = new THREE.PointLight(neonCyan, 0.8, 8);
-        floorZoneLight.position.set(gameRoomTriggerX, 2, gameRoomTriggerZ);
-        group.add(floorZoneLight);
-        this.lights.push(floorZoneLight);
+        // Point light to illuminate the floor zone - Apple/Mobile: skip
+        if (!this.needsOptimization) {
+            const floorZoneLight = new THREE.PointLight(neonCyan, 0.8, 8);
+            floorZoneLight.position.set(gameRoomTriggerX, 2, gameRoomTriggerZ);
+            group.add(floorZoneLight);
+            this.lights.push(floorZoneLight);
+        }
 
         // ==================== NEON DECORATIONS ====================
         const neonTrimMat = this.getMaterial(neonPink, {
@@ -639,15 +646,18 @@ class Casino extends BaseBuilding {
         group.add(neonTop);
 
         // ==================== INTERIOR LIGHTING ====================
-        const interiorLight = new THREE.PointLight(0xFFAA55, 0.6, 20);
-        interiorLight.position.set(0, h - 2, 0);
-        group.add(interiorLight);
-        this.lights.push(interiorLight);
+        // Apple/Mobile: Skip expensive point lights (ambient + emissive materials provide enough light)
+        if (!this.needsOptimization) {
+            const interiorLight = new THREE.PointLight(0xFFAA55, 0.6, 20);
+            interiorLight.position.set(0, h - 2, 0);
+            group.add(interiorLight);
+            this.lights.push(interiorLight);
 
-        const barLight = new THREE.PointLight(0xFF6655, 0.8, 12);
-        barLight.position.set(0, h - 1, -d / 2 + 3);
-        group.add(barLight);
-        this.lights.push(barLight);
+            const barLight = new THREE.PointLight(0xFF6655, 0.8, 12);
+            barLight.position.set(0, h - 1, -d / 2 + 3);
+            group.add(barLight);
+            this.lights.push(barLight);
+        }
 
         // ==================== GRAND CHANDELIER (Main Floor Ceiling) ====================
         const chandelierGroup = new THREE.Group();
@@ -733,11 +743,13 @@ class Casino extends BaseBuilding {
             chandelierGroup.add(crystal);
         }
         
-        // Chandelier center light
-        const chandelierLight = new THREE.PointLight(0xFFDD99, 1.2, 25);
-        chandelierLight.position.set(0, h - 3, 0);
-        chandelierGroup.add(chandelierLight);
-        this.lights.push(chandelierLight);
+        // Chandelier center light - Apple/Mobile: skip
+        if (!this.needsOptimization) {
+            const chandelierLight = new THREE.PointLight(0xFFDD99, 1.2, 25);
+            chandelierLight.position.set(0, h - 3, 0);
+            chandelierGroup.add(chandelierLight);
+            this.lights.push(chandelierLight);
+        }
         
         // Position chandelier at center of main floor
         chandelierGroup.position.set(0, 0, d / 4);
@@ -802,11 +814,13 @@ class Casino extends BaseBuilding {
                 group.add(cap);
             }
             
-            // Add a dim point light for each string
-            const stringLight = new THREE.PointLight(0xFFDD66, 0.3, 10);
-            stringLight.position.set(0, h - 1.5 - row.sag / 2, row.z);
-            group.add(stringLight);
-            this.lights.push(stringLight);
+            // Add a dim point light for each string - Apple/Mobile: skip
+            if (!this.needsOptimization) {
+                const stringLight = new THREE.PointLight(0xFFDD66, 0.3, 10);
+                stringLight.position.set(0, h - 1.5 - row.sag / 2, row.z);
+                group.add(stringLight);
+                this.lights.push(stringLight);
+            }
         });
         
         // ==================== WALL SCONCES ====================
@@ -854,14 +868,17 @@ class Casino extends BaseBuilding {
             sconceGroup.rotation.y = pos.rotY;
             group.add(sconceGroup);
             
-            // Sconce light
-            const sconceLight = new THREE.PointLight(0xFFAA44, 0.4, 8);
-            sconceLight.position.set(pos.x + (pos.x > 0 ? -0.5 : 0.5), 5.3, pos.z);
-            group.add(sconceLight);
-            this.lights.push(sconceLight);
+            // Sconce light - Apple/Mobile: skip
+            if (!this.needsOptimization) {
+                const sconceLight = new THREE.PointLight(0xFFAA44, 0.4, 8);
+                sconceLight.position.set(pos.x + (pos.x > 0 ? -0.5 : 0.5), 5.3, pos.z);
+                group.add(sconceLight);
+                this.lights.push(sconceLight);
+            }
         });
 
-        const entranceLight = new THREE.PointLight(neonPink, 1.5, 15);
+        // Entrance light - keep ONE for Apple/Mobile (important for visibility)
+        const entranceLight = new THREE.PointLight(neonPink, this.needsOptimization ? 0.8 : 1.5, 15);
         entranceLight.position.set(0, 3, d / 2 + 2);
         group.add(entranceLight);
         this.lights.push(entranceLight);
