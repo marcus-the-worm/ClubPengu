@@ -9,6 +9,7 @@ import PufflePanel from './components/PufflePanel';
 import VirtualJoystick from './components/VirtualJoystick';
 import TouchCameraControl from './components/TouchCameraControl';
 import SettingsMenu from './components/SettingsMenu';
+import ChangelogModal from './components/ChangelogModal';
 import EmoteWheel from './components/EmoteWheel';
 import GameManager from './engine/GameManager';
 import Puffle from './engine/Puffle';
@@ -288,6 +289,7 @@ const VoxelWorld = ({
     const [isMobile, setIsMobile] = useState(false);
     const [isLandscape, setIsLandscape] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
+    const [showChangelog, setShowChangelog] = useState(false);
     const [showMobileChat, setShowMobileChat] = useState(false);
     const [showDebugPosition, setShowDebugPosition] = useState(false);
     const showDebugPositionRef = useRef(false);
@@ -5143,6 +5145,13 @@ const VoxelWorld = ({
                 onClose={() => setShowSettings(false)}
                 settings={gameSettings}
                 onSettingsChange={setGameSettings}
+                onOpenChangelog={() => setShowChangelog(true)}
+             />
+             
+             {/* Changelog Modal */}
+             <ChangelogModal
+                isOpen={showChangelog}
+                onClose={() => setShowChangelog(false)}
              />
         </div>
     );

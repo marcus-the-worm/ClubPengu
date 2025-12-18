@@ -6,7 +6,7 @@
 import React, { useRef } from 'react';
 import { useClickOutside, useEscapeKey } from '../hooks';
 
-const SettingsMenu = ({ isOpen, onClose, settings, onSettingsChange }) => {
+const SettingsMenu = ({ isOpen, onClose, settings, onSettingsChange, onOpenChangelog }) => {
     const menuRef = useRef(null);
     
     // Use shared hooks for click outside and escape key
@@ -365,6 +365,44 @@ const SettingsMenu = ({ isOpen, onClose, settings, onSettingsChange }) => {
                         <div className="flex justify-between text-[10px] text-white/40 mt-1">
                             <span>Off</span>
                             <span>Max</span>
+                        </div>
+                    </div>
+                    
+                    {/* Changelog & Info Section */}
+                    <div className="bg-black/30 rounded-xl p-3">
+                        <h3 className="text-white font-medium text-sm mb-2">📋 Info & Updates</h3>
+                        <div className="space-y-2">
+                            <button
+                                onClick={() => {
+                                    onClose();
+                                    onOpenChangelog?.();
+                                }}
+                                className="w-full p-2.5 rounded-lg border border-green-500/30 bg-green-500/10 hover:bg-green-500/20 transition-all text-left touch-manipulation select-none"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">📋</span>
+                                    <div className="flex-1">
+                                        <div className="text-green-400 font-bold text-sm">Changelog</div>
+                                        <p className="text-white/40 text-[10px]">See what's new in Club Pengu</p>
+                                    </div>
+                                    <span className="text-white/30">→</span>
+                                </div>
+                            </button>
+                            <a
+                                href="https://clubpengu.xyz"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block w-full p-2.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 transition-all text-left touch-manipulation select-none"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">📄</span>
+                                    <div className="flex-1">
+                                        <div className="text-cyan-400 font-bold text-sm">Whitepaper</div>
+                                        <p className="text-white/40 text-[10px]">Read the full documentation</p>
+                                    </div>
+                                    <span className="text-white/30">↗</span>
+                                </div>
+                            </a>
                         </div>
                     </div>
                     
