@@ -6,7 +6,7 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import { useChallenge } from '../challenge';
-import GameManager from '../engine/GameManager';
+import { useMultiplayer } from '../multiplayer/MultiplayerContext';
 import { useDeviceDetection, useClickOutside, useEscapeKey } from '../hooks';
 
 const ProfileMenu = () => {
@@ -18,6 +18,9 @@ const ProfileMenu = () => {
         isInMatch,
         showWagerModal
     } = useChallenge();
+    
+    // Get user data from multiplayer context for server-authoritative coin balance
+    const { userData, isAuthenticated } = useMultiplayer();
     
     const [showGameDropdown, setShowGameDropdown] = useState(false);
     const menuRef = useRef(null);
@@ -38,7 +41,8 @@ const ProfileMenu = () => {
     if (!selectedPlayer) return null;
     
     const stats = selectedPlayerStats?.[selectedPlayer.id];
-    const playerCoins = GameManager.getInstance().getCoins();
+    // Use server-authoritative coins from userData for authenticated users
+    const playerCoins = isAuthenticated ? (userData?.coins ?? 0) : 0;
     
     // Get penguin color for preview
     const penguinColor = selectedPlayer.appearance?.skin || 'blue';

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useChallenge } from '../challenge';
-import GameManager from '../engine/GameManager';
+import { useMultiplayer } from '../multiplayer/MultiplayerContext';
 import { useDeviceDetection, useEscapeKey } from '../hooks';
 
 const WagerModal = () => {
@@ -17,20 +17,23 @@ const WagerModal = () => {
         sendChallenge
     } = useChallenge();
     
+    // Get user data from multiplayer context for server-authoritative coin balance
+    const { userData, isAuthenticated } = useMultiplayer();
+    
     const [wagerAmount, setWagerAmount] = useState('');
     const [error, setError] = useState('');
-    const [playerCoins, setPlayerCoins] = useState(0);
     const inputRef = useRef(null);
     const modalRef = useRef(null);
     
     // Use shared device detection hook
     const { isMobile, isLandscape } = useDeviceDetection();
     
-    // Refresh coin balance from localStorage/GameManager whenever modal opens
+    // Server-authoritative coins from userData
+    const playerCoins = isAuthenticated ? (userData?.coins ?? 0) : 0;
+    
+    // Reset form when modal opens
     useEffect(() => {
         if (showWagerModal) {
-            const currentCoins = GameManager.getInstance().getCoins();
-            setPlayerCoins(currentCoins);
             setWagerAmount('');
             setError('');
             // Only auto-focus on desktop
@@ -39,15 +42,6 @@ const WagerModal = () => {
             }
         }
     }, [showWagerModal, isMobile]);
-    
-    // Also listen for coin changes while modal is open
-    useEffect(() => {
-        const gm = GameManager.getInstance();
-        const unsubscribe = gm.on('coinsChanged', (data) => {
-            setPlayerCoins(data.coins);
-        });
-        return () => unsubscribe();
-    }, []);
     
     // Handle escape key using shared hook
     useEscapeKey(closeWagerModal, showWagerModal);

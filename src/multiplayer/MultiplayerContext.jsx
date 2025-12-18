@@ -253,6 +253,8 @@ export function MultiplayerProvider({ children }) {
                 // Server-authoritative coin update
                 if (message.coins !== undefined) {
                     GameManager.getInstance().setCoinsFromServer(message.coins);
+                    // Also update userData to keep context in sync
+                    setUserData(prev => prev ? { ...prev, coins: message.coins } : prev);
                 }
                 break;
                 
@@ -852,6 +854,12 @@ export function MultiplayerProvider({ children }) {
         send({ type: 'coins_sync' });
     }, [send]);
     
+    // Update user coins locally (called by ChallengeContext when receiving match results)
+    const updateUserCoins = useCallback((coins) => {
+        GameManager.getInstance().setCoinsFromServer(coins);
+        setUserData(prev => prev ? { ...prev, coins } : prev);
+    }, []);
+    
     const changeUsername = useCallback((newName) => {
         if (!isAuthenticated) {
             return { success: false, error: 'Not authenticated' };
@@ -989,6 +997,7 @@ export function MultiplayerProvider({ children }) {
         requestBallSync,
         registerCallbacks,
         syncCoins,
+        updateUserCoins,
         changeUsername,
         checkUsername,
         

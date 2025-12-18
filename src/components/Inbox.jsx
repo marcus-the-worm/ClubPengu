@@ -4,8 +4,8 @@
 
 import React, { useRef } from 'react';
 import { useChallenge } from '../challenge';
+import { useMultiplayer } from '../multiplayer/MultiplayerContext';
 import { useClickOutside } from '../hooks';
-import GameManager from '../engine/GameManager';
 
 const Inbox = () => {
     const {
@@ -18,8 +18,12 @@ const Inbox = () => {
         isInMatch
     } = useChallenge();
     
+    // Get user data from multiplayer context for server-authoritative coin balance
+    const { userData, isAuthenticated } = useMultiplayer();
+    
     const panelRef = useRef(null);
-    const playerCoins = GameManager.getInstance().getCoins();
+    // Server-authoritative coins from userData
+    const playerCoins = isAuthenticated ? (userData?.coins ?? 0) : 0;
     
     // Close on click/touch outside (but not when clicking inbox button)
     useClickOutside(panelRef, (e) => {

@@ -13,7 +13,7 @@ const ChallengeContext = createContext(null);
 const PROFILE_PROXIMITY_DISTANCE = 8;
 
 export function ChallengeProvider({ children }) {
-    const { connected, playerId, playersDataRef, sendChat } = useMultiplayer();
+    const { connected, playerId, playersDataRef, sendChat, updateUserCoins } = useMultiplayer();
     const wsRef = useRef(null);
     
     // Local player position tracking
@@ -161,9 +161,9 @@ export function ChallengeProvider({ children }) {
                     setShowInbox(false);
                     setSelectedPlayer(null);
                     
-                    // Update local coins from server
+                    // Update local coins from server (both GameManager and userData)
                     if (message.coins !== undefined) {
-                        GameManager.getInstance().setCoinsFromServer(message.coins);
+                        updateUserCoins(message.coins);
                     }
                     
                     showNotification(`🎮 Match started against ${message.match.yourRole === 'player1' ? message.match.player2.name : message.match.player1.name}!`, 'success');
@@ -177,9 +177,9 @@ export function ChallengeProvider({ children }) {
                     const result = message.result;
                     setIsInMatch(false);
                     
-                    // Update local coins from server
+                    // Update local coins from server (both GameManager and userData)
                     if (result.yourCoins !== undefined) {
-                        GameManager.getInstance().setCoinsFromServer(result.yourCoins);
+                        updateUserCoins(result.yourCoins);
                     }
                     
                     // Set dance flag if we won
@@ -278,7 +278,7 @@ export function ChallengeProvider({ children }) {
                     break;
                     
                 case 'coins_update':
-                    GameManager.getInstance().setCoinsFromServer(message.coins);
+                    updateUserCoins(message.coins);
                     break;
             }
         } catch (e) {
