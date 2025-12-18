@@ -21,7 +21,9 @@ import {
   X,
   Copy,
   Check,
+  ScrollText,
 } from "lucide-react";
+import Changelog from "../components/Changelog";
 
 // Custom Icons
 const GitHubIcon = ({ className }: { className?: string }) => (
@@ -105,6 +107,7 @@ function Navigation() {
     { label: "Casino", href: "#casino" },
     { label: "Wagering", href: "#wagering" },
     { label: "Roadmap", href: "#roadmap" },
+    { label: "Changelog", href: "#changelog" },
   ];
 
   const socialLinks = [
@@ -1463,6 +1466,7 @@ export default function WhitepaperPage() {
       <EconomySection />
       <WageringSection />
       <RoadmapSection />
+      <Changelog />
       <Footer />
     </main>
   );
