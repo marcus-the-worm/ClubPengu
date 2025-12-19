@@ -4179,8 +4179,18 @@ const VoxelWorld = ({
         slotInteractionRef.current = slotInteraction;
     }, [slotInteraction]);
     
+    // Ref-based lock to prevent E spam (React state updates too slowly)
+    const spinLockRef = useRef(false);
+    
     const handleSlotSpin = useCallback(async () => {
         console.log('🎰 handleSlotSpin called');
+        
+        // Check ref-based lock first (synchronous, prevents spam)
+        if (spinLockRef.current) {
+            console.log('🎰 Spin locked - ignoring spam');
+            return;
+        }
+        
         const currentSlotInteraction = slotInteractionRef.current;
         
         console.log('🎰 currentSlotInteraction:', currentSlotInteraction);
@@ -4195,6 +4205,9 @@ const VoxelWorld = ({
         
         console.log('🎰 Machine:', machineId, 'isDemo:', isDemo);
         console.log('🎰 slotMachineSystemRef.current:', !!slotMachineSystemRef.current);
+        
+        // Lock immediately to prevent spam (synchronous)
+        spinLockRef.current = true;
         
         // Show spinning animation IMMEDIATELY (don't wait for server)
         if (slotMachineSystemRef.current) {
@@ -4217,14 +4230,20 @@ const VoxelWorld = ({
                 slotMachineSystemRef.current.handleSpinError(machineId);
             }
             // Success case is handled by onSlotResult callback
+        }).finally(() => {
+            // Unlock after a short delay to allow for UI update
+            setTimeout(() => {
+                spinLockRef.current = false;
+            }, 500); // 500ms cooldown between spins
         });
     }, [spinSlot, playerId, playerName]);
     
     useEffect(() => {
         const handleSlotKeyPress = (e) => {
             if (e.code === 'KeyE') {
-                console.log('🎰 E pressed, canSpin:', slotInteractionRef.current?.canSpin, 'nearbyPortal:', nearbyPortal, 'emoteWheelOpen:', emoteWheelOpen, 'slotSpinning:', slotSpinning);
-                if (slotInteractionRef.current?.canSpin && !nearbyPortal && !emoteWheelOpen && !slotSpinning) {
+                console.log('🎰 E pressed, canSpin:', slotInteractionRef.current?.canSpin, 'nearbyPortal:', nearbyPortal, 'emoteWheelOpen:', emoteWheelOpen, 'slotSpinning:', slotSpinning, 'spinLock:', spinLockRef.current);
+                // Check both React state AND ref-based lock to prevent spam
+                if (slotInteractionRef.current?.canSpin && !nearbyPortal && !emoteWheelOpen && !slotSpinning && !spinLockRef.current) {
                     console.log('🎰 Calling handleSlotSpin...');
                     handleSlotSpin();
                 }
