@@ -842,7 +842,7 @@ const VoxelWorld = ({
                 slotMachineSystemRef.current = new SlotMachineSystem(THREE, sceneRef.current);
             }
             if (slotMachineSystemRef.current) {
-                slotMachineSystemRef.current.initForCasino(roomData.roomWidth, roomData.roomDepth);
+                slotMachineSystemRef.current.initForCasino(roomData.roomWidth, roomData.roomDepth, sceneRef.current);
             }
             
             // Initialize jackpot celebration system (disco ball, confetti, lasers)
@@ -4083,7 +4083,7 @@ const VoxelWorld = ({
             slotMachineSystemRef.current = new SlotMachineSystem(window.THREE, sceneRef.current);
             const roomData = roomDataRef.current;
             if (roomData?.roomWidth && roomData?.roomDepth) {
-                slotMachineSystemRef.current.initForCasino(roomData.roomWidth, roomData.roomDepth);
+                slotMachineSystemRef.current.initForCasino(roomData.roomWidth, roomData.roomDepth, sceneRef.current);
             }
         }
         

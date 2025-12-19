@@ -233,6 +233,51 @@ function cleanupStaleConnections(ip) {
     if (connections.size === 0) ipConnections.delete(ip);
 }
 
+// Clean up any existing connection for a wallet (prevents duplicate sessions)
+function cleanupStaleWalletConnection(walletAddress, excludePlayerId = null) {
+    for (const [existingPlayerId, existingPlayer] of players) {
+        if (existingPlayerId === excludePlayerId) continue;
+        if (existingPlayer.walletAddress === walletAddress) {
+            console.log(`[${ts()}] 🧹 Cleaning up stale connection for wallet ${walletAddress.slice(0, 8)}... (old player: ${existingPlayerId})`);
+            
+            // Close the old WebSocket
+            if (existingPlayer.ws) {
+                try {
+                    existingPlayer.ws.send(JSON.stringify({
+                        type: 'session_replaced',
+                        message: 'Your session was replaced by a new connection'
+                    }));
+                    existingPlayer.ws.close(1000, 'Session replaced');
+                } catch (e) {
+                    // WebSocket might already be closed
+                }
+            }
+            
+            // Remove from room
+            if (existingPlayer.room) {
+                const room = rooms.get(existingPlayer.room);
+                if (room) {
+                    room.delete(existingPlayerId);
+                    broadcastToRoom(existingPlayer.room, { type: 'player_left', playerId: existingPlayerId });
+                }
+            }
+            
+            // Remove from IP tracking
+            if (existingPlayer.ip) {
+                removeIPConnection(existingPlayer.ip, existingPlayerId);
+            }
+            
+            // Cleanup related data
+            playerTrailPoints.delete(existingPlayerId);
+            playerChatTimestamps.delete(existingPlayerId);
+            slotService.handleDisconnect(existingPlayerId);
+            
+            // Remove from players map
+            players.delete(existingPlayerId);
+        }
+    }
+}
+
 function joinRoom(playerId, roomId) {
     const player = players.get(playerId);
     if (player?.room) {
@@ -411,7 +456,14 @@ wss.on('connection', (ws, req) => {
         isAuthenticated: false,
         walletAddress: null,
         authToken: null,
-        guestCoins: 0  // Guests can't earn/spend coins
+        guestCoins: 0,  // Guests can't earn/spend coins
+        isAlive: true   // For heartbeat detection
+    });
+    
+    // Handle WebSocket pong (heartbeat response)
+    ws.on('pong', () => {
+        const player = players.get(playerId);
+        if (player) player.isAlive = true;
     });
     
     // Send connection confirmation
@@ -541,6 +593,9 @@ async function handleMessage(playerId, message) {
             }
             
             try {
+                // Clean up any existing connection for this wallet (prevents duplicate sessions)
+                cleanupStaleWalletConnection(walletAddress, playerId);
+                
                 // Authenticate and get/create user
                 const authResult = await authService.authenticateUser(
                     walletAddress,
@@ -759,6 +814,9 @@ async function handleMessage(playerId, message) {
                     });
                     break;
                 }
+                
+                // Clean up any existing connection for this wallet (prevents duplicate sessions)
+                cleanupStaleWalletConnection(walletAddress, playerId);
                 
                 // Update player state
                 player.isAuthenticated = true;
@@ -2302,6 +2360,32 @@ setInterval(async () => {
     
     inboxService.cleanupExpired();
 }, 30000);
+
+// WebSocket heartbeat - detect dead connections faster
+setInterval(() => {
+    for (const [playerId, player] of players) {
+        if (player.isAlive === false) {
+            // Connection didn't respond to last ping - terminate it
+            console.log(`[${ts()}] 💔 Heartbeat timeout for player ${playerId}`);
+            if (player.ws) {
+                player.ws.terminate();
+            }
+            continue;
+        }
+        
+        // Mark as not alive, will be set to true when pong received
+        player.isAlive = false;
+        
+        // Send ping
+        if (player.ws?.readyState === 1) {
+            try {
+                player.ws.ping();
+            } catch (e) {
+                // WebSocket error - will be cleaned up
+            }
+        }
+    }
+}, HEARTBEAT_INTERVAL);
 
 // Log server stats periodically
 setInterval(() => {

@@ -45,7 +45,11 @@ class SlotMachineSystem {
         this.playerPosition.z = z;
     }
     
-    initForCasino(roomWidth, roomDepth) {
+    initForCasino(roomWidth, roomDepth, scene) {
+        // Update scene reference to prevent stale reference after room transitions
+        if (scene) {
+            this.scene = scene;
+        }
         this.slotMachines = [];
         this.cleanup();
         
