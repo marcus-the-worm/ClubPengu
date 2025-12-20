@@ -16,6 +16,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import gsap from 'gsap';
 import { createPenguinBuilder, cacheAnimatedParts, animateCosmeticsFromCache } from '../engine/PenguinBuilder';
 import { PALETTE } from '../constants';
+import ChatLog from '../components/ChatLog';
 
 // --- GAME DATA ---
 const GROUPS = {
@@ -686,6 +687,94 @@ class MonopolyEngine {
         const pos = this.getPawnPos(position, playerId);
         piece.position.set(pos.x, 0.3, pos.z);
     }
+    
+    showChatBubble(playerIdx, text) {
+        const piece = this.playerMeshes[playerIdx];
+        if (!piece) return;
+        
+        // Remove existing bubble for this player
+        const existingBubble = piece.getObjectByName('chatBubble');
+        if (existingBubble) {
+            piece.remove(existingBubble);
+        }
+        
+        // Create canvas for speech bubble
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 256;
+        canvas.height = 128;
+        
+        // Truncate text
+        const displayText = text.length > 40 ? text.substring(0, 37) + '...' : text;
+        
+        // Draw bubble background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.beginPath();
+        ctx.roundRect(10, 10, canvas.width - 20, canvas.height - 30, 15);
+        ctx.fill();
+        
+        // Draw bubble pointer
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2 - 10, canvas.height - 20);
+        ctx.lineTo(canvas.width / 2, canvas.height - 5);
+        ctx.lineTo(canvas.width / 2 + 10, canvas.height - 20);
+        ctx.fill();
+        
+        // Draw text
+        ctx.fillStyle = '#1a1a1a';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // Word wrap
+        const words = displayText.split(' ');
+        let lines = [];
+        let currentLine = '';
+        for (const word of words) {
+            const testLine = currentLine + (currentLine ? ' ' : '') + word;
+            if (ctx.measureText(testLine).width > canvas.width - 40) {
+                if (currentLine) lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine = testLine;
+            }
+        }
+        if (currentLine) lines.push(currentLine);
+        
+        const lineHeight = 22;
+        const startY = (canvas.height - 15) / 2 - ((lines.length - 1) * lineHeight) / 2;
+        lines.forEach((line, i) => {
+            ctx.fillText(line, canvas.width / 2, startY + i * lineHeight);
+        });
+        
+        // Create sprite - larger for readability
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+        const sprite = new THREE.Sprite(material);
+        sprite.name = 'chatBubble';
+        sprite.scale.set(12, 6, 1); // Much larger for readability
+        sprite.position.set(0, 6, 0);
+        
+        piece.add(sprite);
+        
+        // Animate in
+        sprite.material.opacity = 0;
+        gsap.to(sprite.material, { opacity: 1, duration: 0.2 });
+        gsap.to(sprite.position, { y: 7, duration: 0.2, ease: "back.out" });
+        
+        // Remove after 4 seconds
+        setTimeout(() => {
+            gsap.to(sprite.material, { 
+                opacity: 0, 
+                duration: 0.3,
+                onComplete: () => {
+                    piece.remove(sprite);
+                    texture.dispose();
+                    material.dispose();
+                }
+            });
+        }, 4000);
+    }
 
     setPlayerLight(playerIdx) {
         // Subtle tint based on player, but keep it bright
@@ -914,6 +1003,19 @@ const P2PMonopoly = ({ onMatchEnd }) => {
     const [showEventModal, setShowEventModal] = useState(false);
     const [currentEvent, setCurrentEvent] = useState(null);
     const [showDisconnected, setShowDisconnected] = useState(false);
+    const [showMobileChat, setShowMobileChat] = useState(false);
+    
+    // Check if mobile
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Show chat bubble above character when message received
+    const handleChatMessage = useCallback((msg) => {
+        if (!engineRef.current || !activeMatch) return;
+        const isPlayer1 = msg.senderName === activeMatch.player1?.name;
+        const isPlayer2 = msg.senderName === activeMatch.player2?.name;
+        if (isPlayer1) engineRef.current.showChatBubble(0, msg.text);
+        else if (isPlayer2) engineRef.current.showChatBubble(1, msg.text);
+    }, [activeMatch]);
     
     // Refs for tracking state changes
     const initedRef = useRef(false);
@@ -1375,6 +1477,31 @@ const P2PMonopoly = ({ onMatchEnd }) => {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* === CHAT === */}
+            {isMobile ? (
+                <>
+                    {/* Mobile: Toggle button */}
+                    {!showMobileChat && (
+                        <button
+                            onClick={() => setShowMobileChat(true)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 z-30 bg-black/80 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-white/20"
+                        >
+                            💬
+                        </button>
+                    )}
+                    {/* Mobile: Chat overlay */}
+                    <ChatLog 
+                        isMobile={true}
+                        isOpen={showMobileChat}
+                        onClose={() => setShowMobileChat(false)}
+                        onNewMessage={handleChatMessage}
+                    />
+                </>
+            ) : (
+                /* Desktop: Middle-left positioning */
+                <ChatLog minigameMode={true} onNewMessage={handleChatMessage} />
             )}
         </div>
     );

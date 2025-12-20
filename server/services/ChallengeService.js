@@ -16,7 +16,8 @@ const normalizeGameType = (gameType) => {
         'tic_tac_toe': 'ticTacToe',
         'connect4': 'connect4',
         'monopoly': 'monopoly',
-        'pong': 'pong'
+        'pong': 'pong',
+        'uno': 'uno'
     };
     return mapping[gameType] || gameType;
 };

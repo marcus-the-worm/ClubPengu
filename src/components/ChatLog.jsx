@@ -20,7 +20,7 @@ const MESSAGE_COLORS = {
     emote: 'text-orange-300',      // Emotes/actions
 };
 
-const ChatLog = ({ isMobile = false, isOpen = true, onClose }) => {
+const ChatLog = ({ isMobile = false, isOpen = true, onClose, minigameMode = false, onNewMessage }) => {
     const { chatMessages, playerName, playerId, sendChat, wsRef } = useMultiplayer();
     const [isActive, setIsActive] = useState(false);
     const [inputValue, setInputValue] = useState('');
@@ -56,9 +56,17 @@ const ChatLog = ({ isMobile = false, isOpen = true, onClose }) => {
             displayText
         }]);
         
+        // Notify parent for 3D chat bubbles in minigames
+        if (onNewMessage && !latestServerMsg.isWhisper) {
+            onNewMessage({
+                senderName: latestServerMsg.name,
+                text: latestServerMsg.text
+            });
+        }
+        
         // Show chat briefly when new message arrives
         resetFadeTimer();
-    }, [chatMessages]);
+    }, [chatMessages, onNewMessage]);
     
     // Auto-scroll to bottom
     useEffect(() => {
@@ -341,7 +349,9 @@ const ChatLog = ({ isMobile = false, isOpen = true, onClose }) => {
             onClick={handleContainerClick}
             onMouseEnter={() => setIsActive(true)}
             onMouseLeave={() => !document.activeElement?.closest('.chat-log') && resetFadeTimer()}
-            className={`chat-log fixed z-30 pointer-events-auto transition-all duration-300 bottom-20 left-4 w-80 ${
+            className={`chat-log fixed z-30 pointer-events-auto transition-all duration-300 left-4 w-80 ${
+                minigameMode ? 'top-1/2 -translate-y-1/2' : 'bottom-20'
+            } ${
                 isActive ? 'opacity-100' : 'opacity-40 hover:opacity-100'
             }`}
             data-no-camera="true"

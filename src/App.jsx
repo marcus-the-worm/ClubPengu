@@ -6,6 +6,7 @@ import P2PCardJitsu from './minigames/P2PCardJitsu';
 import P2PTicTacToe from './minigames/P2PTicTacToe';
 import P2PConnect4 from './minigames/P2PConnect4';
 import P2PMonopoly from './minigames/P2PMonopoly';
+import P2PUno from './minigames/P2PUno';
 import GameManager from './engine/GameManager';
 import { MultiplayerProvider, useMultiplayer } from './multiplayer';
 import { ChallengeProvider, useChallenge } from './challenge';
@@ -289,6 +290,13 @@ const AppContent = () => {
             {isInMatch && activeMatch && activeMatch.gameType === 'monopoly' && (
                 <div className="absolute inset-0 z-40">
                     <P2PMonopoly onMatchEnd={handleP2PMatchEnd} />
+                </div>
+            )}
+            
+            {/* P2P UNO - overlay on top of game world */}
+            {isInMatch && activeMatch && activeMatch.gameType === 'uno' && (
+                <div className="absolute inset-0 z-40">
+                    <P2PUno onMatchEnd={handleP2PMatchEnd} />
                 </div>
             )}
             

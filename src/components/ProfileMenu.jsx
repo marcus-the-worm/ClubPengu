@@ -72,6 +72,7 @@ const ProfileMenu = () => {
         { id: 'tic_tac_toe', name: 'Tic Tac Toe', emoji: '⭕', available: true },
         { id: 'connect4', name: 'Connect 4', emoji: '🔴', available: true },
         { id: 'monopoly', name: 'Monopoly', emoji: '🎩', available: true },
+        { id: 'uno', name: 'UNO', emoji: '🃏', available: true },
     ];
     
     const handleMenuInteraction = (e) => {

@@ -172,7 +172,7 @@ export function ChallengeProvider({ children }) {
                 case 'match_state':
                     setMatchState(message.state);
                     break;
-                    
+                
                 case 'match_end':
                     const result = message.result;
                     setIsInMatch(false);

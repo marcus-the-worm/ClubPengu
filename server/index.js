@@ -466,6 +466,7 @@ wss.on('connection', (ws, req) => {
         authToken: null,
         guestCoins: 0,  // Guests can't earn/spend coins
         isAlive: true,   // For heartbeat detection
+        lastMessageTime: Date.now(), // Track last message for mobile heartbeat fallback
         connectedAt: Date.now()
     });
     
@@ -499,6 +500,13 @@ wss.on('connection', (ws, req) => {
     ws.on('message', async (data) => {
         try {
             const message = JSON.parse(data.toString());
+            
+            // Update last message time for heartbeat fallback (helps mobile)
+            const player = players.get(playerId);
+            if (player) {
+                player.lastMessageTime = Date.now();
+            }
+            
             await handleMessage(playerId, message);
         } catch (e) {
             console.error('Error handling message:', e);
@@ -2021,6 +2029,47 @@ async function handleMessage(playerId, message) {
             break;
         }
         
+        // ==================== MATCH CHAT ====================
+        case 'match_chat': {
+            const match = matchService.getMatch(message.matchId);
+            if (!match) {
+                sendToPlayer(playerId, {
+                    type: 'error',
+                    code: 'MATCH_NOT_FOUND',
+                    message: 'Match not found'
+                });
+                break;
+            }
+            
+            // Only players in the match can chat
+            const isInMatch = playerId === match.player1.id || playerId === match.player2.id;
+            if (!isInMatch) {
+                sendToPlayer(playerId, {
+                    type: 'error',
+                    code: 'NOT_IN_MATCH',
+                    message: 'You are not in this match'
+                });
+                break;
+            }
+            
+            const text = (message.text || '').trim().slice(0, 150); // Limit to 150 chars
+            if (!text) break;
+            
+            // Send to both players in the match
+            const chatMessage = {
+                type: 'match_chat',
+                matchId: match.id,
+                senderId: playerId,
+                senderName: player.name,
+                text,
+                timestamp: Date.now()
+            };
+            
+            sendToPlayer(match.player1.id, chatMessage);
+            sendToPlayer(match.player2.id, chatMessage);
+            break;
+        }
+        
         case 'active_matches_request': {
             if (player.room) {
                 const matches = matchService.getMatchesInRoom(player.room);
@@ -2552,15 +2601,31 @@ setInterval(async () => {
 }, 30000);
 
 // WebSocket heartbeat - detect dead connections faster
+// Mobile browsers may not respond to WebSocket-level pings during heavy rendering
+// so we also check if client has sent any message recently (fallback for mobile)
+const MOBILE_HEARTBEAT_TOLERANCE = 45000; // 45s - allows for 3 missed client pings (15s each)
+
 setInterval(() => {
+    const now = Date.now();
+    
     for (const [playerId, player] of players) {
+        // Check WebSocket pong first
         if (player.isAlive === false) {
-            // Connection didn't respond to last ping - terminate it
-            console.log(`[${ts()}] 💔 Heartbeat timeout for player ${playerId}`);
-            if (player.ws) {
-                player.ws.terminate();
+            // WebSocket pong wasn't received, but check message fallback for mobile
+            const timeSinceLastMessage = now - (player.lastMessageTime || 0);
+            
+            if (timeSinceLastMessage < MOBILE_HEARTBEAT_TOLERANCE) {
+                // Client has sent messages recently (JSON pings count) - keep alive
+                // This helps mobile browsers that don't respond to WS pings during 3D rendering
+                player.isAlive = true;
+            } else {
+                // No WebSocket pong AND no recent messages - connection is dead
+                console.log(`[${ts()}] 💔 Heartbeat timeout for player ${playerId} (no pong, no messages for ${Math.round(timeSinceLastMessage/1000)}s)`);
+                if (player.ws) {
+                    player.ws.terminate();
+                }
+                continue;
             }
-            continue;
         }
         
         // Mark as not alive, will be set to true when pong received

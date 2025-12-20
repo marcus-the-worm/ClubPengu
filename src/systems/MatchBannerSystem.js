@@ -12,6 +12,7 @@ export function createBannerCanvas(gameType = 'default') {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     // Monopoly needs taller canvas for the mini board
+    // UNO uses standard height
     canvas.height = gameType === 'monopoly' ? 280 : 200;
     return canvas;
 }
@@ -479,6 +480,134 @@ export function renderMonopolyBanner(ctx, canvas, players, state, wager) {
 }
 
 /**
+ * Render UNO match banner
+ */
+export function renderUnoBanner(ctx, canvas, players, state, wager) {
+    // Color mapping for UNO
+    const COLOR_HEX = {
+        Red: '#ff3333',
+        Blue: '#1155ff',
+        Green: '#00aa00',
+        Yellow: '#ffcc00',
+        Black: '#111111'
+    };
+    
+    const isComplete = state.winner || state.status === 'complete';
+    const activeColor = state.activeColor || 'Red';
+    const activeValue = state.activeValue || '';
+    
+    // Header - UNO themed (multicolor gradient or winner gold)
+    if (isComplete) {
+        ctx.fillStyle = '#FBBF24';
+    } else {
+        const grad = ctx.createLinearGradient(0, 20, canvas.width, 35);
+        grad.addColorStop(0, '#ff3333');
+        grad.addColorStop(0.33, '#1155ff');
+        grad.addColorStop(0.66, '#00aa00');
+        grad.addColorStop(1, '#ffcc00');
+        ctx.fillStyle = grad;
+    }
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🃏 UNO • 💰 ${wager}`, canvas.width / 2, 35);
+    
+    // Player names
+    const p1Name = (players[0]?.name || 'Player 1').substring(0, 10);
+    const p2Name = (players[1]?.name || 'Player 2').substring(0, 10);
+    
+    ctx.font = 'bold 22px Arial';
+    ctx.fillStyle = '#22D3EE'; // Cyan for player 1
+    ctx.textAlign = 'left';
+    ctx.fillText(p1Name, 30, 70);
+    
+    ctx.fillStyle = '#F472B6'; // Pink for player 2
+    ctx.textAlign = 'right';
+    ctx.fillText(p2Name, canvas.width - 30, 70);
+    
+    // Card counts
+    const p1Cards = state.player1CardCount ?? 7;
+    const p2Cards = state.player2CardCount ?? 7;
+    
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'left';
+    ctx.fillText(`🃏 ${p1Cards} cards`, 30, 95);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${p2Cards} cards 🃏`, canvas.width - 30, 95);
+    
+    // Current card display (center)
+    const cardCenterX = canvas.width / 2;
+    const cardCenterY = 115;
+    const cardW = 50;
+    const cardH = 70;
+    
+    // Draw card background
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.roundRect(cardCenterX - cardW/2, cardCenterY - cardH/2, cardW, cardH, 8);
+    ctx.fill();
+    
+    // Draw card color
+    ctx.fillStyle = COLOR_HEX[activeColor] || '#111111';
+    ctx.beginPath();
+    ctx.roundRect(cardCenterX - cardW/2 + 4, cardCenterY - cardH/2 + 4, cardW - 8, cardH - 8, 6);
+    ctx.fill();
+    
+    // Draw card value
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let displayValue = activeValue;
+    if (displayValue === 'Skip') displayValue = '⊘';
+    else if (displayValue === 'Reverse') displayValue = '⇄';
+    else if (displayValue === 'Wild') displayValue = '★';
+    else if (displayValue === 'Wild +4') displayValue = '+4';
+    ctx.fillText(displayValue, cardCenterX, cardCenterY);
+    ctx.textBaseline = 'alphabetic';
+    
+    // Active color indicator
+    ctx.font = '14px Arial';
+    ctx.fillStyle = COLOR_HEX[activeColor] || '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Active: ${activeColor}`, canvas.width / 2, cardCenterY + cardH/2 + 15);
+    
+    // Status
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.font = '16px Arial';
+    let statusText = '';
+    
+    if (isComplete) {
+        const winnerName = state.winner === 'player1' ? players[0]?.name : players[1]?.name;
+        statusText = `🏆 ${winnerName} wins!`;
+        if (state.reason) statusText += ` (${state.reason})`;
+    } else if (state.phase === 'selectColor') {
+        const selectingPlayer = state.currentTurn === 'player1' ? players[0]?.name : players[1]?.name;
+        statusText = `${selectingPlayer} choosing color...`;
+    } else {
+        const turnName = state.currentTurn === 'player1' ? players[0]?.name : players[1]?.name;
+        statusText = `${turnName}'s turn`;
+    }
+    
+    ctx.fillText(statusText.substring(0, 35), canvas.width / 2, 175);
+    
+    // UNO call indicator
+    if (state.calledUno?.player1 || state.calledUno?.player2) {
+        ctx.font = 'bold 16px Arial';
+        if (state.calledUno?.player1) {
+            ctx.fillStyle = '#ff4757';
+            ctx.textAlign = 'left';
+            ctx.fillText('UNO!', 30, 120);
+        }
+        if (state.calledUno?.player2) {
+            ctx.fillStyle = '#ff4757';
+            ctx.textAlign = 'right';
+            ctx.fillText('UNO!', canvas.width - 30, 120);
+        }
+    }
+}
+
+/**
  * Render banner content to canvas based on game type
  */
 export function renderBannerToCanvas(ctx, matchData) {
@@ -502,6 +631,9 @@ export function renderBannerToCanvas(ctx, matchData) {
             break;
         case 'monopoly':
             renderMonopolyBanner(ctx, canvas, players, state, wager);
+            break;
+        case 'uno':
+            renderUnoBanner(ctx, canvas, players, state, wager);
             break;
         case 'card_jitsu':
         case 'cardJitsu':
@@ -572,7 +704,7 @@ export function updateMatchBanners(params) {
                 depthTest: false
             });
             const sprite = new THREE.Sprite(material);
-            // Monopoly banner is taller (280px vs 200px)
+            // Monopoly banner is taller (280px vs 200px), UNO and others use standard
             const isMonopoly = matchData.gameType === 'monopoly';
             sprite.scale.set(8, isMonopoly ? 4.4 : 3.2, 1); // Banner size in world units
             sprite.renderOrder = 999; // Render on top
@@ -610,6 +742,7 @@ export default {
     renderTicTacToeBanner,
     renderConnect4Banner,
     renderMonopolyBanner,
+    renderUnoBanner,
     renderBannerToCanvas,
     updateMatchBanners,
     cleanupMatchBanners

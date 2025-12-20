@@ -50,7 +50,8 @@ const Inbox = () => {
         'connect4': 'Connect 4',
         'pong': 'Pong',
         'tic_tac_toe': 'Tic Tac Toe',
-        'monopoly': 'Monopoly'
+        'monopoly': 'Monopoly',
+        'uno': 'UNO'
     };
     
     const renderMessage = (msg) => {

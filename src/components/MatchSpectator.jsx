@@ -373,6 +373,111 @@ const MonopolySpectator = ({ players, state, totalPot }) => {
 };
 
 /**
+ * UNO spectator display - Shows card counts, active color, current turn
+ */
+const UnoSpectator = ({ players, state, totalPot }) => {
+    const currentTurn = state?.currentTurn || 'player1';
+    const winner = state?.winner;
+    const isComplete = state?.status === 'complete' || state?.phase === 'complete';
+    const activeColor = state?.activeColor || 'Red';
+    const activeValue = state?.activeValue || '';
+    const p1Cards = state?.player1CardCount ?? 7;
+    const p2Cards = state?.player2CardCount ?? 7;
+    const calledUno = state?.calledUno || {};
+    
+    const COLOR_STYLES = {
+        Red: 'bg-red-500',
+        Blue: 'bg-blue-600',
+        Green: 'bg-green-500',
+        Yellow: 'bg-yellow-500',
+        Black: 'bg-gray-800'
+    };
+    
+    const winnerName = winner === 'player1' ? players[0]?.name : players[1]?.name;
+    const turnName = currentTurn === 'player1' ? players[0]?.name : players[1]?.name;
+    
+    return (
+        <div className="bg-gradient-to-br from-gray-900/95 to-gray-800/95 backdrop-blur-xl rounded-2xl border-2 border-purple-400/50 shadow-2xl px-4 py-3 min-w-[260px] animate-fade-in">
+            {/* Header - UNO themed gradient */}
+            <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-blue-500 to-yellow-500 text-sm font-black">
+                    🃏 UNO
+                </span>
+                <span className="text-gray-500 text-xs">•</span>
+                <span className="text-yellow-400 text-xs font-bold">💰 {totalPot}</span>
+            </div>
+            
+            {/* Players and Card Counts */}
+            <div className="flex items-center justify-between gap-3">
+                <div className="text-center flex-1">
+                    <div className="flex items-center gap-1 justify-center">
+                        <p className={`text-white font-bold text-xs truncate max-w-[70px] ${currentTurn === 'player1' ? 'text-cyan-400' : ''}`}>
+                            {players[0]?.name || 'Player 1'}
+                        </p>
+                        {calledUno.player1 && <span className="text-red-500 text-[8px] font-black animate-pulse">UNO!</span>}
+                    </div>
+                    <p className="text-xl font-bold text-white mt-1">🃏 {p1Cards}</p>
+                    {currentTurn === 'player1' && !isComplete && (
+                        <div className="w-2 h-2 rounded-full bg-green-400 mx-auto mt-1 animate-pulse" />
+                    )}
+                </div>
+                
+                <div className="flex flex-col items-center gap-1">
+                    {/* Current card preview */}
+                    <div className={`w-8 h-12 ${COLOR_STYLES[activeColor]} rounded-md flex items-center justify-center shadow-lg border-2 border-white/20`}>
+                        <span className="text-white text-[10px] font-bold">
+                            {activeValue === 'Skip' ? '⊘' : 
+                             activeValue === 'Reverse' ? '⇄' :
+                             activeValue === 'Wild' ? '★' :
+                             activeValue === 'Wild +4' ? '+4' : activeValue}
+                        </span>
+                    </div>
+                    <span className="text-white/40 text-[8px]">{activeColor}</span>
+                </div>
+                
+                <div className="text-center flex-1">
+                    <div className="flex items-center gap-1 justify-center">
+                        {calledUno.player2 && <span className="text-red-500 text-[8px] font-black animate-pulse">UNO!</span>}
+                        <p className={`text-white font-bold text-xs truncate max-w-[70px] ${currentTurn === 'player2' ? 'text-pink-400' : ''}`}>
+                            {players[1]?.name || 'Player 2'}
+                        </p>
+                    </div>
+                    <p className="text-xl font-bold text-white mt-1">🃏 {p2Cards}</p>
+                    {currentTurn === 'player2' && !isComplete && (
+                        <div className="w-2 h-2 rounded-full bg-green-400 mx-auto mt-1 animate-pulse" />
+                    )}
+                </div>
+            </div>
+            
+            {/* Status */}
+            <div className="text-center mt-2 pt-2 border-t border-white/10">
+                {!isComplete && (
+                    <span className="text-white/50 text-[10px]">
+                        {state?.phase === 'selectColor' ? `${turnName} choosing color...` : `${turnName}'s turn`}
+                    </span>
+                )}
+                {isComplete && winner && (
+                    <span className="text-green-400 text-[10px] font-bold">
+                        🏆 {winnerName} wins! {state?.reason && `(${state.reason})`}
+                    </span>
+                )}
+            </div>
+            
+            {/* Last action indicator */}
+            {state?.lastAction && !isComplete && (
+                <div className="text-center mt-1">
+                    <span className="text-white/40 text-[9px]">
+                        {state.lastAction.type === 'play' ? 
+                            `Played ${state.lastAction.card?.c} ${state.lastAction.card?.v}` :
+                            'Drew a card'}
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+/**
  * Single match spectator display - routes to appropriate game view
  */
 const MatchSpectatorBubble = ({ matchData }) => {
@@ -395,6 +500,10 @@ const MatchSpectatorBubble = ({ matchData }) => {
     
     if (gameType === 'monopoly') {
         return <MonopolySpectator players={players} state={state} totalPot={totalPot} />;
+    }
+    
+    if (gameType === 'uno') {
+        return <UnoSpectator players={players} state={state} totalPot={totalPot} />;
     }
     
     // Default: Card Jitsu

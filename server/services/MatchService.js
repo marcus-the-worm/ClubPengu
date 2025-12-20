@@ -117,6 +117,46 @@ const MONOPOLY_CHEST_CARDS = [
 
 const MONOPOLY_STARTING_MONEY = 1500;
 
+// UNO constants
+const UNO_COLORS = ['Red', 'Blue', 'Green', 'Yellow'];
+const UNO_VALUES = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Skip', 'Reverse', '+2'];
+const UNO_WILDS = ['Wild', 'Wild +4'];
+const UNO_INITIAL_CARDS = 7;
+
+// Create a fresh UNO deck
+function createUnoDeck() {
+    const deck = [];
+    let uid = 0;
+    
+    // Add colored cards
+    UNO_COLORS.forEach(color => {
+        UNO_VALUES.forEach(value => {
+            // 0 appears once per color, others appear twice
+            const count = (value === '0') ? 1 : 2;
+            for (let i = 0; i < count; i++) {
+                deck.push({ c: color, v: value, uid: uid++ });
+            }
+        });
+    });
+    
+    // Add wild cards (4 of each)
+    for (let i = 0; i < 4; i++) {
+        deck.push({ c: 'Black', v: 'Wild', uid: uid++ });
+        deck.push({ c: 'Black', v: 'Wild +4', uid: uid++ });
+    }
+    
+    return deck;
+}
+
+// Shuffle array in-place
+function shuffleArray(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
 // Normalize game type
 const normalizeGameType = (gameType) => {
     const mapping = {
@@ -124,7 +164,8 @@ const normalizeGameType = (gameType) => {
         'tic_tac_toe': 'ticTacToe',
         'connect4': 'connect4',
         'monopoly': 'monopoly',
-        'pong': 'pong'
+        'pong': 'pong',
+        'uno': 'uno'
     };
     return mapping[gameType] || gameType;
 };
@@ -135,7 +176,8 @@ const denormalizeGameType = (gameType) => {
         'cardJitsu': 'card_jitsu',
         'ticTacToe': 'tic_tac_toe',
         'connect4': 'connect4',
-        'monopoly': 'monopoly'
+        'monopoly': 'monopoly',
+        'uno': 'uno'
     };
     return mapping[gameType] || gameType;
 };
@@ -297,6 +339,9 @@ class MatchService {
                     pendingPropertyLanding: false // For card-based movement
                 };
             
+            case 'uno':
+                return this._createUnoInitialState();
+            
             case 'card_jitsu':
             default:
                 return {
@@ -330,6 +375,267 @@ class MatchService {
         return Array(5).fill(null).map(() => this._generateCard());
     }
 
+    // ========== UNO METHODS ==========
+    
+    _createUnoInitialState() {
+        // Create and shuffle deck
+        const deck = shuffleArray(createUnoDeck());
+        
+        // Deal 7 cards to each player
+        const player1Hand = [];
+        const player2Hand = [];
+        for (let i = 0; i < UNO_INITIAL_CARDS; i++) {
+            player1Hand.push(deck.pop());
+            player2Hand.push(deck.pop());
+        }
+        
+        // Find a non-wild starting card for the discard pile
+        let startCard = deck.pop();
+        while (startCard.c === 'Black') {
+            deck.unshift(startCard); // Put wild back at bottom
+            startCard = deck.pop();
+        }
+        
+        return {
+            deck,
+            discard: [startCard],
+            player1Hand,
+            player2Hand,
+            currentTurn: 'player1',
+            phase: 'playing', // 'playing' | 'selectColor' | 'complete'
+            activeColor: startCard.c,
+            activeValue: startCard.v,
+            winner: null,
+            turnStartedAt: Date.now(),
+            skipNextTurn: false,
+            lastAction: null, // { type: 'play'|'draw', player: 'player1'|'player2', card?: {...} }
+            mustDraw: 0, // For +2 and +4 stacking
+            calledUno: { player1: false, player2: false }
+        };
+    }
+    
+    _playUno(match, playerId, action) {
+        console.log(`[UNO] _playUno called - action:`, JSON.stringify(action));
+        const state = match.state;
+        console.log(`[UNO] Current state - activeColor: ${state.activeColor}, activeValue: ${state.activeValue}, currentTurn: ${state.currentTurn}`);
+        if (state.phase === 'complete') return { error: 'GAME_OVER' };
+        
+        const isPlayer1 = playerId === match.player1.id;
+        const isPlayer2 = playerId === match.player2.id;
+        if (!isPlayer1 && !isPlayer2) return { error: 'NOT_IN_MATCH' };
+        
+        const playerKey = isPlayer1 ? 'player1' : 'player2';
+        
+        // Handle UNO call
+        if (action.action === 'callUno') {
+            state.calledUno[playerKey] = true;
+            return { success: true };
+        }
+        
+        // Handle color selection (after playing a wild)
+        if (action.action === 'selectColor') {
+            if (state.phase !== 'selectColor') return { error: 'NOT_SELECTING_COLOR' };
+            if (state.waitingForColor !== playerKey) return { error: 'NOT_YOUR_TURN' };
+            
+            if (!UNO_COLORS.includes(action.color)) return { error: 'INVALID_COLOR' };
+            
+            state.activeColor = action.color;
+            state.phase = 'playing';
+            
+            // Apply any effects from the wild card
+            if (state.pendingWildEffect) {
+                this._applyUnoCardEffect(match, state.pendingWildEffect, playerKey);
+                state.pendingWildEffect = null;
+            }
+            
+            // Move to next turn
+            this._unoNextTurn(match);
+            state.waitingForColor = null;
+            
+            return { success: true };
+        }
+        
+        // Check if it's player's turn
+        const isMyTurn = state.currentTurn === playerKey;
+        if (!isMyTurn) return { error: 'NOT_YOUR_TURN' };
+        
+        if (state.phase === 'selectColor') return { error: 'MUST_SELECT_COLOR' };
+        
+        const hand = isPlayer1 ? state.player1Hand : state.player2Hand;
+        
+        // Handle draw action
+        if (action.action === 'draw') {
+            // Draw from deck
+            this._unoDrawCards(match, playerKey, 1);
+            
+            state.lastAction = { type: 'draw', player: playerKey };
+            state.calledUno[playerKey] = false;
+            
+            // After drawing, turn passes
+            this._unoNextTurn(match);
+            return { success: true };
+        }
+        
+        // Handle play action
+        if (action.action === 'play') {
+            // Find the card in hand by uid
+            const cardIndex = hand.findIndex(c => c.uid === action.cardUid);
+            if (cardIndex === -1) {
+                console.log(`[UNO] CARD_NOT_IN_HAND - looking for uid ${action.cardUid}, hand uids: ${hand.map(c => c.uid).join(',')}`);
+                return { error: 'CARD_NOT_IN_HAND' };
+            }
+            
+            const card = hand[cardIndex];
+            
+            // Validate the card can be played
+            console.log(`[UNO] Validating play: card=${card.c} ${card.v}, activeColor=${state.activeColor}, activeValue=${state.activeValue}`);
+            if (!this._unoIsValidPlay(card, state.activeColor, state.activeValue)) {
+                console.log(`[UNO] INVALID_PLAY - card ${card.c} ${card.v} does not match ${state.activeColor}/${state.activeValue}`);
+                return { error: 'INVALID_PLAY' };
+            }
+            
+            // Remove card from hand and add to discard
+            hand.splice(cardIndex, 1);
+            state.discard.push(card);
+            
+            // Update active values
+            state.activeValue = card.v;
+            if (card.c !== 'Black') {
+                state.activeColor = card.c;
+            }
+            
+            state.lastAction = { type: 'play', player: playerKey, card };
+            
+            // Check for win condition
+            if (hand.length === 0) {
+                // Check if UNO was called when they had 1 card
+                state.phase = 'complete';
+                state.winner = playerKey;
+                match.status = 'complete';
+                match.winnerId = isPlayer1 ? match.player1.id : match.player2.id;
+                match.winnerWallet = isPlayer1 ? match.player1.wallet : match.player2.wallet;
+                match.endedAt = Date.now();
+                return { success: true, gameComplete: true };
+            }
+            
+            // Reset UNO call status after playing
+            if (hand.length !== 1) {
+                state.calledUno[playerKey] = false;
+            }
+            
+            // Handle wild cards - need color selection
+            if (card.c === 'Black') {
+                state.phase = 'selectColor';
+                state.waitingForColor = playerKey;
+                state.pendingWildEffect = card.v;
+                return { success: true, needColorSelection: true };
+            }
+            
+            // Apply card effects
+            this._applyUnoCardEffect(match, card.v, playerKey);
+            
+            // Move to next turn
+            this._unoNextTurn(match);
+            return { success: true };
+        }
+        
+        return { error: 'INVALID_ACTION' };
+    }
+    
+    _unoIsValidPlay(card, activeColor, activeValue) {
+        // Wild cards can always be played
+        if (card.c === 'Black') return true;
+        // Match color
+        if (card.c === activeColor) return true;
+        // Match value
+        if (card.v === activeValue) return true;
+        return false;
+    }
+    
+    _unoDrawCards(match, playerKey, count) {
+        const state = match.state;
+        const hand = playerKey === 'player1' ? state.player1Hand : state.player2Hand;
+        
+        for (let i = 0; i < count; i++) {
+            // Reshuffle if deck is empty
+            if (state.deck.length === 0) {
+                this._unoReshuffleDeck(state);
+            }
+            
+            if (state.deck.length > 0) {
+                hand.push(state.deck.pop());
+            }
+        }
+    }
+    
+    _unoReshuffleDeck(state) {
+        // Keep the top card on discard
+        const topCard = state.discard.pop();
+        // Shuffle the rest back into deck
+        state.deck = shuffleArray([...state.discard]);
+        state.discard = [topCard];
+    }
+    
+    _applyUnoCardEffect(match, value, playerKey) {
+        const state = match.state;
+        const opponentKey = playerKey === 'player1' ? 'player2' : 'player1';
+        
+        switch (value) {
+            case 'Skip':
+                state.skipNextTurn = true;
+                break;
+            case 'Reverse':
+                // In 2-player, Reverse acts like Skip
+                state.skipNextTurn = true;
+                break;
+            case '+2':
+                this._unoDrawCards(match, opponentKey, 2);
+                state.skipNextTurn = true;
+                break;
+            case 'Wild +4':
+                this._unoDrawCards(match, opponentKey, 4);
+                state.skipNextTurn = true;
+                break;
+        }
+    }
+    
+    _unoNextTurn(match) {
+        const state = match.state;
+        
+        if (state.skipNextTurn) {
+            state.skipNextTurn = false;
+            // Turn stays with same player (opponent was skipped)
+        } else {
+            state.currentTurn = state.currentTurn === 'player1' ? 'player2' : 'player1';
+        }
+        
+        state.turnStartedAt = Date.now();
+    }
+    
+    _handleUnoTimeout(match) {
+        const state = match.state;
+        if (state.phase === 'complete') return;
+        
+        const currentPlayer = state.currentTurn;
+        
+        if (state.phase === 'selectColor') {
+            // Auto-select a random color
+            state.activeColor = UNO_COLORS[Math.floor(Math.random() * UNO_COLORS.length)];
+            state.phase = 'playing';
+            if (state.pendingWildEffect) {
+                this._applyUnoCardEffect(match, state.pendingWildEffect, state.waitingForColor);
+                state.pendingWildEffect = null;
+            }
+            this._unoNextTurn(match);
+            state.waitingForColor = null;
+        } else {
+            // Auto-draw a card
+            this._unoDrawCards(match, currentPlayer, 1);
+            state.lastAction = { type: 'draw', player: currentPlayer };
+            this._unoNextTurn(match);
+        }
+    }
+
     getMatch(matchId) {
         return this.matches.get(matchId);
     }
@@ -350,6 +656,7 @@ class MatchService {
     /**
      * Play a card/make a move
      * For Monopoly: cardIndex is an action object { action: 'roll' | 'buy' | 'endTurn' | 'completMove' }
+     * For UNO: cardIndex is an action object { action: 'play' | 'draw' | 'selectColor', cardUid?, color? }
      */
     playCard(matchId, playerId, cardIndex) {
         const match = this.matches.get(matchId);
@@ -364,6 +671,9 @@ class MatchService {
         }
         if (match.gameType === 'monopoly') {
             return this._playMonopoly(match, playerId, cardIndex);
+        }
+        if (match.gameType === 'uno') {
+            return this._playUno(match, playerId, cardIndex);
         }
         return this._playCardJitsu(match, playerId, cardIndex);
     }
@@ -986,6 +1296,8 @@ class MatchService {
                 this._handleConnect4Timeout(match);
             } else if (match.gameType === 'monopoly') {
                 this._handleMonopolyTimeout(match);
+            } else if (match.gameType === 'uno') {
+                this._handleUnoTimeout(match);
             } else {
                 this._handleCardJitsuTimeout(match);
             }
@@ -1115,6 +1427,23 @@ class MatchService {
                 status: match.status,
                 winnerId: match.winnerId
             };
+        } else if (match.gameType === 'uno') {
+            // Get top discard card
+            const topDiscard = match.state.discard[match.state.discard.length - 1];
+            spectatorState = {
+                player1CardCount: match.state.player1Hand.length,
+                player2CardCount: match.state.player2Hand.length,
+                currentTurn: match.state.currentTurn,
+                phase: match.state.phase,
+                activeColor: match.state.activeColor,
+                activeValue: match.state.activeValue,
+                topCard: topDiscard,
+                lastAction: match.state.lastAction,
+                winner: match.state.winner,
+                status: match.status,
+                winnerId: match.winnerId,
+                calledUno: match.state.calledUno
+            };
         } else {
             spectatorState = {
                 round: match.state.round,
@@ -1162,7 +1491,62 @@ class MatchService {
         if (match.gameType === 'monopoly') {
             return this._getMonopolyState(match, playerId, isPlayer1, timeRemaining);
         }
+        if (match.gameType === 'uno') {
+            return this._getUnoState(match, playerId, isPlayer1, timeRemaining);
+        }
         return this._getCardJitsuState(match, playerId, isPlayer1, timeRemaining);
+    }
+    
+    _getUnoState(match, playerId, isPlayer1, timeRemaining) {
+        const state = match.state;
+        const currentPlayer = isPlayer1 ? 'player1' : 'player2';
+        const opponent = isPlayer1 ? 'player2' : 'player1';
+        const isMyTurn = state.currentTurn === currentPlayer;
+        
+        // Get top discard card
+        const topDiscard = state.discard[state.discard.length - 1];
+        
+        // My hand shows full cards, opponent's hand shows only count
+        const myHand = isPlayer1 ? state.player1Hand : state.player2Hand;
+        const opponentHandCount = isPlayer1 ? state.player2Hand.length : state.player1Hand.length;
+        
+        return {
+            // My hand (with full card data)
+            myHand: [...myHand],
+            opponentCardCount: opponentHandCount,
+            
+            // Discard/deck info
+            topCard: topDiscard,
+            deckCount: state.deck.length,
+            
+            // Game state
+            activeColor: state.activeColor,
+            activeValue: state.activeValue,
+            currentTurn: state.currentTurn,
+            phase: state.phase,
+            isMyTurn,
+            
+            // For color selection
+            waitingForColor: state.waitingForColor === currentPlayer,
+            
+            // Last action
+            lastAction: state.lastAction,
+            
+            // UNO call status
+            myUnoCall: state.calledUno[currentPlayer],
+            opponentUnoCall: state.calledUno[opponent],
+            
+            // Win state
+            winner: state.winner,
+            gameComplete: state.phase === 'complete',
+            
+            // Timer
+            timeRemaining,
+            
+            // Match info
+            status: match.status,
+            matchId: match.id
+        };
     }
     
     _getMonopolyState(match, playerId, isPlayer1, timeRemaining) {
@@ -1418,6 +1802,21 @@ class MatchService {
                         propertyOwners: match.state.propertyOwners,
                         winner: match.state.winner,
                         status: match.status
+                    };
+                } else if (match.gameType === 'uno') {
+                    const topDiscard = match.state.discard[match.state.discard.length - 1];
+                    spectatorState = {
+                        player1CardCount: match.state.player1Hand.length,
+                        player2CardCount: match.state.player2Hand.length,
+                        currentTurn: match.state.currentTurn,
+                        phase: match.state.phase,
+                        activeColor: match.state.activeColor,
+                        activeValue: match.state.activeValue,
+                        topCard: topDiscard,
+                        lastAction: match.state.lastAction,
+                        winner: match.state.winner,
+                        status: match.status,
+                        calledUno: match.state.calledUno
                     };
                 } else {
                     spectatorState = {

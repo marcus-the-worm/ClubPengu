@@ -127,8 +127,9 @@ export function MultiplayerProvider({ children }) {
                 
                 // Ping to keep connection alive
                 // Mobile browsers suspend WebSockets more aggressively, so ping faster
+                // During minigames with 3D rendering, mobile may not respond to WS-level pings
                 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                const pingInterval = isMobile ? 15000 : 25000; // 15s mobile, 25s desktop
+                const pingInterval = isMobile ? 10000 : 25000; // 10s mobile (critical for minigames), 25s desktop
                 
                 pingIntervalRef.current = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
