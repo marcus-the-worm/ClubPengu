@@ -40,7 +40,7 @@ const CardJitsu = ({ penguinData, onExit }) => {
     
     // Handle card selection
     const handleCardSelect = useCallback((index) => {
-        if (game.phase !== 'select' || showResult) return;
+        if (game.phase !== 'select' || showResult || gameOver) return;
         
         setSelectedCard(index);
         setAnimatingCard(index);
@@ -60,6 +60,9 @@ const CardJitsu = ({ penguinData, onExit }) => {
                     
                     if (battleResult?.gameResult) {
                         setTimeout(() => {
+                            // Clear round result before showing game over to prevent overlap
+                            setShowResult(false);
+                            setBattleResult(null);
                             setGameOver({
                                 won: battleResult.gameResult === 'player',
                                 coins: battleResult.gameResult === 'player' 
@@ -72,16 +75,19 @@ const CardJitsu = ({ penguinData, onExit }) => {
             }
             setAnimatingCard(null);
         }, 300);
-    }, [game, showResult]);
+    }, [game, showResult, gameOver]);
     
     // Continue to next round
     const handleContinue = useCallback(() => {
+        // Don't continue if game is already over
+        if (gameOver) return;
+        
         setShowResult(false);
         setBattleResult(null);
         setSelectedCard(null);
         game.nextPhase();
         setGameState(game.getState());
-    }, [game]);
+    }, [game, gameOver]);
     
     // Restart game
     const handleRestart = useCallback(() => {
@@ -266,12 +272,20 @@ const CardJitsu = ({ penguinData, onExit }) => {
                          battleResult.result === 'opponent' ? '😵 YOU LOSE' : 
                          '🤝 TIE'}
                     </div>
-                    <button 
-                        onClick={handleContinue}
-                        className="mt-4 bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-2 rounded-lg retro-text text-sm"
-                    >
-                        CONTINUE →
-                    </button>
+                    {/* Hide continue button if game is ending (gameResult exists) */}
+                    {!battleResult.gameResult && (
+                        <button 
+                            onClick={handleContinue}
+                            className="mt-4 bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-2 rounded-lg retro-text text-sm"
+                        >
+                            CONTINUE →
+                        </button>
+                    )}
+                    {battleResult.gameResult && (
+                        <p className="mt-4 text-white/80 text-sm retro-text animate-pulse">
+                            {battleResult.gameResult === 'player' ? '🏆 Victory incoming...' : '💔 Defeat incoming...'}
+                        </p>
+                    )}
                 </div>
             )}
             
