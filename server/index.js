@@ -18,8 +18,11 @@ import {
     UserService,
     PromoCodeService,
     SlotService,
-    FishingService
+    FishingService,
+    IglooService
 } from './services/index.js';
+import { handleIglooMessage } from './handlers/iglooHandlers.js';
+import rentScheduler from './schedulers/RentScheduler.js';
 
 const PORT = process.env.PORT || 3001;
 const MAX_CONNECTIONS_PER_IP = 2;
@@ -580,6 +583,12 @@ wss.on('connection', (ws, req) => {
 async function handleMessage(playerId, message) {
     const player = players.get(playerId);
     if (!player) return;
+    
+    // Handle igloo messages first (returns true if handled)
+    if (message.type?.startsWith('igloo_')) {
+        const handled = await handleIglooMessage(playerId, player, message, sendToPlayer);
+        if (handled) return;
+    }
     
     switch (message.type) {
         // ==================== AUTHENTICATION ====================
@@ -2657,6 +2666,12 @@ async function start() {
     const dbConnected = await connectDB();
     if (dbConnected) {
         console.log('✅ Database connected');
+        
+        // Initialize igloo database records
+        await IglooService.initializeIgloos();
+        
+        // Start rent scheduler (checks for overdue rentals)
+        rentScheduler.start();
     } else {
         console.log('⚠️ Running without database - guest mode only');
     }
@@ -2671,6 +2686,7 @@ async function start() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
     console.log('Shutting down...');
+    rentScheduler.stop();
     await statsService.shutdown();
     await disconnectDB();
     process.exit(0);
@@ -2678,6 +2694,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
     console.log('Shutting down...');
+    rentScheduler.stop();
     await statsService.shutdown();
     await disconnectDB();
     process.exit(0);

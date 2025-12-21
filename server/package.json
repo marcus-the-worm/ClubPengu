@@ -5,7 +5,11 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ci": "vitest run --coverage --reporter=verbose --reporter=junit --outputFile=./coverage/junit.xml"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
@@ -15,6 +19,10 @@
     "mongoose": "^9.0.1",
     "tweetnacl": "^1.0.3",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8",
+    "@vitest/coverage-v8": "^2.1.8"
   }
 }
 

@@ -1,6 +1,11 @@
 /**
  * IglooOccupancySystem - Handles MapleStory-style igloo occupancy banner sprites
  * Extracted from VoxelWorld.jsx for maintainability
+ * 
+ * Now supports dynamic igloo data with:
+ * - Custom banner titles, tickers, descriptions
+ * - Lock status display (private/public/token-gated/entry-fee)
+ * - Owner information
  */
 
 import { IGLOO_BANNER_STYLES, IGLOO_BANNER_CONTENT } from '../config';
@@ -13,8 +18,9 @@ import { IGLOO_BANNER_STYLES, IGLOO_BANNER_CONTENT } from '../config';
  * @param {number} h - Canvas height
  * @param {number} iglooIndex - Index for special styling
  * @param {number} animPhase - Animation phase (0-1) for animated banners
+ * @param {Object} iglooData - Optional dynamic igloo data from server
  */
-function drawBannerBackground(ctx, style, w, h, iglooIndex = 0, animPhase = 0) {
+function drawBannerBackground(ctx, style, w, h, iglooIndex = 0, animPhase = 0, iglooData = null) {
     const padding = 12;
     const cornerRadius = 16;
     const isNightclub = iglooIndex === 2; // SKNY GANG nightclub
@@ -122,32 +128,39 @@ function drawBannerBackground(ctx, style, w, h, iglooIndex = 0, animPhase = 0) {
  * @param {Object} content - Content configuration
  * @param {number} w - Canvas width
  * @param {number} h - Canvas height
+ * @param {Object} iglooData - Optional dynamic igloo data
  */
-function drawBannerContent(ctx, style, content, w, h) {
+function drawBannerContent(ctx, style, content, w, h, iglooData = null) {
     const padding = 12;
+    
+    // Use dynamic data if available, otherwise fall back to static content
+    const title = iglooData?.banner?.title || content.title;
+    const ticker = iglooData?.banner?.ticker || content.ticker || '';
+    const shill = iglooData?.banner?.shill || content.shill || '';
+    const owner = iglooData?.ownerUsername || content.owner;
     
     // Draw title
     ctx.font = 'bold 20px "Comic Sans MS", cursive, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = style.textColor;
-    ctx.fillText(content.title, w / 2, padding + 24);
+    ctx.fillText(title, w / 2, padding + 24);
     
     // Draw ticker (if not empty)
-    if (content.ticker) {
+    if (ticker) {
         ctx.font = 'bold 24px "Arial Black", sans-serif';
         ctx.fillStyle = style.borderColor;
-        ctx.fillText(content.ticker, w / 2, padding + 56);
+        ctx.fillText(ticker, w / 2, padding + 56);
     }
     
     // Draw shill/description text (adjust position if no ticker)
     // Split on • for line breaks
-    const shillY = content.ticker ? padding + 80 : padding + 54;
+    const shillY = ticker ? padding + 80 : padding + 54;
     ctx.font = '12px "Segoe UI", Arial, sans-serif';
     ctx.fillStyle = style.textColor;
     ctx.globalAlpha = 0.9;
     
-    const shillLines = content.shill.split(' • ');
+    const shillLines = shill.split(' • ');
     const lineHeight = 15;
     shillLines.forEach((line, idx) => {
         ctx.fillText(line.trim(), w / 2, shillY + idx * lineHeight);
@@ -158,11 +171,11 @@ function drawBannerContent(ctx, style, content, w, h) {
     const shillEndY = shillY + (shillLines.length - 1) * lineHeight;
     
     // Draw owner (if exists)
-    if (content.owner) {
+    if (owner) {
         ctx.font = 'italic 12px "Segoe UI", Arial, sans-serif';
         ctx.fillStyle = style.accentColor;
         ctx.globalAlpha = 0.8;
-        ctx.fillText(`owned by ${content.owner}`, w / 2, shillEndY + 16);
+        ctx.fillText(`owned by ${owner}`, w / 2, shillEndY + 16);
         ctx.globalAlpha = 1;
     }
     
@@ -176,14 +189,15 @@ function drawBannerContent(ctx, style, content, w, h) {
 }
 
 /**
- * Draw the penguin icon and count
+ * Draw the penguin icon, count, and access status
  * @param {CanvasRenderingContext2D} ctx 
  * @param {Object} style - Style configuration
  * @param {number} count - Occupancy count
  * @param {number} w - Canvas width
  * @param {number} h - Canvas height
+ * @param {Object} iglooData - Optional dynamic igloo data for access status
  */
-function drawPenguinCount(ctx, style, count, w, h) {
+function drawPenguinCount(ctx, style, count, w, h, iglooData = null) {
     const padding = 12;
     const penguinX = w / 2 - 25;
     const penguinY = h - 28;
@@ -223,11 +237,54 @@ function drawPenguinCount(ctx, style, count, w, h) {
     const countText = count > 0 ? `${count}` : '0';
     ctx.fillText(countText, penguinX + 18, penguinY + 6);
     
-    // Status indicator
+    // Access status indicator based on igloo data
     ctx.font = '12px Arial, sans-serif';
-    ctx.fillStyle = count > 0 ? '#22c55e' : '#888888';
     ctx.textAlign = 'right';
-    ctx.fillText(count > 0 ? '● OPEN' : '○ EMPTY', w - padding - 15, h - 22);
+    
+    if (iglooData) {
+        const accessType = iglooData.accessType || 'private';
+        const hasEntryFee = iglooData.hasEntryFee;
+        const hasTokenGate = iglooData.hasTokenGate;
+        const isRented = iglooData.isRented;
+        
+        // Not rented - show "FOR RENT"
+        if (!isRented && !iglooData.isPermanent) {
+            ctx.fillStyle = '#22c55e';
+            ctx.fillText('🏷️ FOR RENT', w - padding - 15, h - 22);
+        }
+        // Private - locked
+        else if (accessType === 'private') {
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText('🔒 LOCKED', w - padding - 15, h - 22);
+        }
+        // Token gated
+        else if (accessType === 'token' || (accessType === 'both' && hasTokenGate)) {
+            ctx.fillStyle = '#a855f7';
+            const tokenInfo = iglooData.tokenGateInfo;
+            const tokenText = tokenInfo?.symbol ? `🪙 ${tokenInfo.symbol}` : '🪙 TOKEN';
+            ctx.fillText(tokenText, w - padding - 15, h - 22);
+        }
+        // Entry fee required
+        else if (accessType === 'fee' || (accessType === 'both' && hasEntryFee)) {
+            ctx.fillStyle = '#eab308';
+            const feeText = iglooData.entryFeeAmount ? `💰 ${iglooData.entryFeeAmount}` : '💰 FEE';
+            ctx.fillText(feeText, w - padding - 15, h - 22);
+        }
+        // Public
+        else if (accessType === 'public') {
+            ctx.fillStyle = count > 0 ? '#22c55e' : '#888888';
+            ctx.fillText(count > 0 ? '🔓 OPEN' : '🔓 EMPTY', w - padding - 15, h - 22);
+        }
+        else {
+            // Default
+            ctx.fillStyle = count > 0 ? '#22c55e' : '#888888';
+            ctx.fillText(count > 0 ? '● OPEN' : '○ EMPTY', w - padding - 15, h - 22);
+        }
+    } else {
+        // No igloo data - use default status
+        ctx.fillStyle = count > 0 ? '#22c55e' : '#888888';
+        ctx.fillText(count > 0 ? '● OPEN' : '○ EMPTY', w - padding - 15, h - 22);
+    }
 }
 
 /**
@@ -235,22 +292,25 @@ function drawPenguinCount(ctx, style, count, w, h) {
  * @param {CanvasRenderingContext2D} ctx 
  * @param {number} count - Occupancy count
  * @param {number} iglooIndex - Index for style/content selection
+ * @param {Object} iglooData - Optional dynamic igloo data from server
  */
-export function renderIglooBanner(ctx, count, iglooIndex = 0) {
+export function renderIglooBanner(ctx, count, iglooIndex = 0, iglooData = null) {
     const canvas = ctx.canvas;
     const w = canvas.width;
     const h = canvas.height;
     
-    const style = IGLOO_BANNER_STYLES[iglooIndex % IGLOO_BANNER_STYLES.length];
+    // Use style from igloo data if available, otherwise use index
+    const styleIndex = iglooData?.banner?.styleIndex ?? iglooIndex;
+    const style = IGLOO_BANNER_STYLES[styleIndex % IGLOO_BANNER_STYLES.length];
     const content = IGLOO_BANNER_CONTENT[iglooIndex % IGLOO_BANNER_CONTENT.length];
     
     // Clear canvas
     ctx.clearRect(0, 0, w, h);
     
-    // Draw all components
-    drawBannerBackground(ctx, style, w, h);
-    drawBannerContent(ctx, style, content, w, h);
-    drawPenguinCount(ctx, style, count, w, h);
+    // Draw all components with igloo data
+    drawBannerBackground(ctx, style, w, h, iglooIndex, 0, iglooData);
+    drawBannerContent(ctx, style, content, w, h, iglooData);
+    drawPenguinCount(ctx, style, count, w, h, iglooData);
 }
 
 /**
@@ -258,9 +318,10 @@ export function renderIglooBanner(ctx, count, iglooIndex = 0) {
  * @param {Object} THREE - THREE.js library
  * @param {number} count - Initial occupancy count
  * @param {number} iglooIndex - Index for style/content selection
+ * @param {Object} iglooData - Optional dynamic igloo data from server
  * @returns {THREE.Sprite}
  */
-export function createIglooOccupancySprite(THREE, count, iglooIndex = 0) {
+export function createIglooOccupancySprite(THREE, count, iglooIndex = 0, iglooData = null) {
     const canvas = document.createElement('canvas');
     const w = 280;
     const h = 180;
@@ -268,7 +329,7 @@ export function createIglooOccupancySprite(THREE, count, iglooIndex = 0) {
     canvas.height = h;
     
     const ctx = canvas.getContext('2d');
-    renderIglooBanner(ctx, count, iglooIndex);
+    renderIglooBanner(ctx, count, iglooIndex, iglooData);
     
     const texture = new THREE.CanvasTexture(canvas);
     const material = new THREE.SpriteMaterial({ 
@@ -286,9 +347,10 @@ export function createIglooOccupancySprite(THREE, count, iglooIndex = 0) {
     sprite.renderOrder = 998;
     sprite.visible = false; // Start hidden, show when player is close
     
-    // Store index for updates
+    // Store index and data for updates
     sprite.userData.styleIndex = iglooIndex;
     sprite.userData.iglooIndex = iglooIndex;
+    sprite.userData.iglooData = iglooData;
     
     return sprite;
 }
@@ -298,11 +360,19 @@ export function createIglooOccupancySprite(THREE, count, iglooIndex = 0) {
  * @param {Object} THREE - THREE.js library
  * @param {THREE.Sprite} sprite - The sprite to update
  * @param {number} count - New occupancy count
+ * @param {Object} iglooData - Optional updated igloo data from server
  */
-export function updateIglooOccupancySprite(THREE, sprite, count) {
+export function updateIglooOccupancySprite(THREE, sprite, count, iglooData = null) {
     if (!sprite || !sprite.material) return;
     
     const iglooIndex = sprite.userData.iglooIndex || 0;
+    // Use new data if provided, otherwise use stored data
+    const data = iglooData || sprite.userData.iglooData || null;
+    
+    // Store updated data
+    if (iglooData) {
+        sprite.userData.iglooData = iglooData;
+    }
     
     const canvas = document.createElement('canvas');
     const w = 280;
@@ -311,7 +381,7 @@ export function updateIglooOccupancySprite(THREE, sprite, count) {
     canvas.height = h;
     
     const ctx = canvas.getContext('2d');
-    renderIglooBanner(ctx, count, iglooIndex);
+    renderIglooBanner(ctx, count, iglooIndex, data);
     
     // Update sprite texture
     if (sprite.material.map) {

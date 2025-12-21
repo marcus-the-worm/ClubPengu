@@ -11,5 +11,6 @@ export { default as Puffle, PUFFLE_PRICES, PUFFLE_TIERS } from './Puffle.js';
 export { default as Transaction } from './Transaction.js';
 export { default as PromoCode } from './PromoCode.js';
 export { default as PromoRedemption } from './PromoRedemption.js';
+export { default as Igloo } from './Igloo.js';
 
 

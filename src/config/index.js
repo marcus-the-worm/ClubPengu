@@ -1,6 +1,8 @@
 /**
- * Config exports
+ * Config Index - Central export for all configuration
  */
+
+// Room configuration
 export {
     CITY_SIZE,
     BUILDING_SCALE,
@@ -18,4 +20,18 @@ export {
     ROOM_PORTALS,
     IGLOO_BANNER_STYLES,
     IGLOO_BANNER_CONTENT
-} from './roomConfig';
+} from './roomConfig.js';
+
+// Solana / x402 configuration
+export {
+    CPW3_TOKEN_ADDRESS,
+    USDC_TOKEN_ADDRESS,
+    RENT_WALLET_ADDRESS,
+    SOLANA_NETWORK_ID,
+    SOLANA_DEVNET_NETWORK_ID,
+    CURRENT_NETWORK_ID,
+    X402_FACILITATOR_URL,
+    IGLOO_CONFIG,
+    PAYMENT_STATUS,
+    IGLOO_ACCESS
+} from './solana.js';
