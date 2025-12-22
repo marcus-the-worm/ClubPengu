@@ -6,15 +6,21 @@ import P2PCardJitsu from './minigames/P2PCardJitsu';
 import P2PTicTacToe from './minigames/P2PTicTacToe';
 import P2PConnect4 from './minigames/P2PConnect4';
 import P2PMonopoly from './minigames/P2PMonopoly';
-import P2PUno from './minigames/P2PUno';
 import GameManager from './engine/GameManager';
 import { MultiplayerProvider, useMultiplayer } from './multiplayer';
 import { ChallengeProvider, useChallenge } from './challenge';
+import { IglooProvider, useIgloo } from './igloo';
 import ProfileMenu from './components/ProfileMenu';
 import WagerModal from './components/WagerModal';
 import Inbox from './components/Inbox';
 import Notification from './components/Notification';
 import GuestModeWarning from './components/GuestModeWarning';
+import IglooSettingsPanel from './components/IglooSettingsPanel';
+import IglooRentalModal from './components/IglooRentalModal';
+import IglooEntryModal from './components/IglooEntryModal';
+import IglooDetailsPanel from './components/IglooDetailsPanel';
+import IglooRequirementsPanel from './components/IglooRequirementsPanel';
+import TipNotification from './components/TipNotification';
 
 // Default penguin appearance for guests
 const DEFAULT_PENGUIN = {
@@ -159,6 +165,29 @@ const AppContent = () => {
     // Custom spawn position (when exiting dojo/igloo to town)
     const [spawnPosition, setSpawnPosition] = useState(null);
     
+    // Tip notification state
+    const [incomingTip, setIncomingTip] = useState(null);
+    
+    // Listen for incoming tips via WebSocket
+    useEffect(() => {
+        const ws = window.__multiplayerWs;
+        if (!ws) return;
+        
+        const handleTip = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'tip_received') {
+                    setIncomingTip(data);
+                }
+            } catch (e) {
+                // Ignore parse errors
+            }
+        };
+        
+        ws.addEventListener('message', handleTip);
+        return () => ws.removeEventListener('message', handleTip);
+    }, []);
+    
     // Challenge context for P2P matches
     const { isInMatch, activeMatch, matchState, selectPlayer, activeMatches, spectatingMatch } = useChallenge();
     
@@ -293,13 +322,6 @@ const AppContent = () => {
                 </div>
             )}
             
-            {/* P2P UNO - overlay on top of game world */}
-            {isInMatch && activeMatch && activeMatch.gameType === 'uno' && (
-                <div className="absolute inset-0 z-40">
-                    <P2PUno onMatchEnd={handleP2PMatchEnd} />
-                </div>
-            )}
-            
             {/* Challenge UI Overlays - show when in game world */}
             {inGameWorld && (
                 <>
@@ -310,12 +332,144 @@ const AppContent = () => {
                 </>
             )}
             
+            {/* Igloo UI Modals - show when in game world */}
+            {inGameWorld && <IglooUI currentRoom={currentRoom} onEnterRoom={handleChangeRoom} />}
+            
             {/* Global Notification Toast */}
             <Notification />
+            
+            {/* Tip Received Notification */}
+            {incomingTip && (
+                <TipNotification
+                    tip={incomingTip}
+                    onClose={() => setIncomingTip(null)}
+                />
+            )}
             
             {/* Guest Mode Warning (shows when not authenticated) */}
             {inGameWorld && <GuestModeWarning onRequestAuth={handleRequestAuth} />}
         </div>
+    );
+};
+
+/**
+ * IglooUI - Renders igloo-related modals and settings panel
+ * Uses IglooContext for state management
+ */
+const IglooUI = ({ currentRoom, onEnterRoom }) => {
+    const {
+        showSettingsPanel,
+        showRentalModal,
+        showEntryModal,
+        showDetailsPanel,
+        showRequirementsPanel,
+        selectedIgloo,
+        entryCheckResult,
+        setShowSettingsPanel,
+        setShowRentalModal,
+        setShowEntryModal,
+        setShowDetailsPanel,
+        setShowRequirementsPanel,
+        updateSettings,
+        openSettingsPanel,
+        openRentalModal,
+        enterIglooDemo,
+        checkIglooEntry,
+        isOwner,
+        myRentals,
+        walletAddress
+    } = useIgloo();
+    
+    const { send } = useMultiplayer();
+    
+    // Check if we're inside an igloo we own
+    const isInsideOwnedIgloo = currentRoom?.startsWith('igloo') && isOwner(currentRoom);
+    
+    // Find the igloo data for settings
+    const currentIglooData = myRentals.find(i => i.iglooId === currentRoom);
+    
+    // Handle rental success
+    const handleRentSuccess = (result) => {
+        console.log('🏠 Rental success:', result);
+        setShowRentalModal(false);
+        // Refresh data
+        send({ type: 'igloo_list' });
+        send({ type: 'igloo_my_rentals' });
+    };
+    
+    // Handle entry success
+    const handleEntrySuccess = () => {
+        console.log('🏠 Entry success');
+        setShowEntryModal(false);
+    };
+    
+    return (
+        <>
+            {/* Settings Panel */}
+            <IglooSettingsPanel
+                isOpen={showSettingsPanel}
+                onClose={() => setShowSettingsPanel(false)}
+                iglooData={selectedIgloo || currentIglooData}
+                onSave={(updatedIgloo) => {
+                    console.log('🏠 Settings saved:', updatedIgloo);
+                }}
+            />
+            
+            {/* Rental Modal */}
+            <IglooRentalModal
+                isOpen={showRentalModal}
+                onClose={() => setShowRentalModal(false)}
+                iglooData={selectedIgloo}
+                walletAddress={walletAddress}
+                onRentSuccess={handleRentSuccess}
+            />
+            
+            {/* Entry Modal (for access restrictions) */}
+            <IglooEntryModal
+                isOpen={showEntryModal}
+                onClose={() => setShowEntryModal(false)}
+                iglooData={selectedIgloo}
+                entryCheck={entryCheckResult}
+                walletAddress={walletAddress}
+                onEntrySuccess={handleEntrySuccess}
+            />
+            
+            {/* Details Panel (marketing view for available igloos) */}
+            <IglooDetailsPanel
+                isOpen={showDetailsPanel}
+                onClose={() => setShowDetailsPanel(false)}
+                iglooData={selectedIgloo}
+                walletAddress={walletAddress}
+                onRent={() => openRentalModal(selectedIgloo?.iglooId)}
+                onPreview={() => enterIglooDemo(selectedIgloo?.iglooId, onEnterRoom)}
+            />
+            
+            {/* Requirements Panel (for restricted igloos with token gate/entry fee) */}
+            <IglooRequirementsPanel
+                isOpen={showRequirementsPanel}
+                onClose={() => setShowRequirementsPanel(false)}
+                iglooData={selectedIgloo}
+                walletAddress={walletAddress}
+                onEnterSuccess={(iglooId) => {
+                    // Entry allowed - transition to room
+                    setShowRequirementsPanel(false);
+                    if (onEnterRoom) {
+                        onEnterRoom(iglooId);
+                    }
+                }}
+            />
+            
+            {/* Settings Button - Show when inside your own igloo */}
+            {isInsideOwnedIgloo && (
+                <button
+                    onClick={() => openSettingsPanel(currentRoom)}
+                    className="fixed top-4 right-4 z-30 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-all flex items-center gap-2"
+                >
+                    <span>⚙️</span>
+                    <span className="hidden sm:inline">Igloo Settings</span>
+                </button>
+            )}
+        </>
     );
 };
 
@@ -350,10 +504,12 @@ clearOldGameData();
 const App = () => {
     return (
         <MultiplayerProvider>
-            <ChallengeProvider>
-                <BackgroundMusic />
-                <AppContent />
-            </ChallengeProvider>
+            <IglooProvider>
+                <ChallengeProvider>
+                    <BackgroundMusic />
+                    <AppContent />
+                </ChallengeProvider>
+            </IglooProvider>
         </MultiplayerProvider>
     );
 };

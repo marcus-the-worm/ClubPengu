@@ -15,11 +15,15 @@
     "test:coverage": "vitest run --coverage",
     "test:ci": "vitest run --coverage --reporter=verbose --reporter=junit --outputFile=./coverage/junit.xml",
     "test:server": "cd server && npm test",
-    "test:all": "npm test && npm run test:server"
+    "test:server:coverage": "cd server && npm run test:coverage",
+    "test:all": "npm test && npm run test:server",
+    "test:all:coverage": "npm run test:coverage && npm run test:server:coverage"
   },
   "dependencies": {
+    "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "bs58": "^6.0.0",
+    "buffer": "^6.0.3",
     "gsap": "^3.14.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

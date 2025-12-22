@@ -12,6 +12,7 @@ vi.mock('../services/IglooService.js', () => ({
     default: {
         getAllIgloos: vi.fn(),
         getIgloo: vi.fn(),
+        getIglooRaw: vi.fn(),
         getIglooForOwner: vi.fn(),
         canRent: vi.fn(),
         canEnter: vi.fn(),
@@ -32,7 +33,15 @@ vi.mock('../services/X402Service.js', () => ({
     }
 }));
 
+vi.mock('../services/SolanaPaymentService.js', () => ({
+    default: {
+        checkMinimumBalance: vi.fn(),
+        verifyTransaction: vi.fn()
+    }
+}));
+
 import iglooService from '../services/IglooService.js';
+import solanaPaymentService from '../services/SolanaPaymentService.js';
 import { handleIglooMessage } from '../handlers/iglooHandlers.js';
 
 // ==================== TEST HELPERS ====================
@@ -174,7 +183,7 @@ describe('Igloo Handlers', () => {
             
             const handled = await handleIglooMessage(
                 playerId, unauthPlayer, 
-                { type: 'igloo_rent', iglooId: 'igloo1', paymentPayload: 'payload' }, 
+                { type: 'igloo_rent', iglooId: 'igloo1', transactionSignature: 'txSig123456789012345678901234567890123456789012345678901234567890123456789012345678901234' }, 
                 sendToPlayer
             );
             
@@ -186,7 +195,7 @@ describe('Igloo Handlers', () => {
             });
         });
         
-        it('should require payment payload', async () => {
+        it('should require transaction signature', async () => {
             const handled = await handleIglooMessage(
                 playerId, player, 
                 { type: 'igloo_rent', iglooId: 'igloo1' }, 
@@ -198,11 +207,13 @@ describe('Igloo Handlers', () => {
                 type: 'igloo_rent_result',
                 success: false,
                 error: 'MISSING_PAYMENT',
-                message: 'Payment authorization required'
+                message: 'Transaction signature required'
             });
         });
         
-        it('should complete rental with valid payment', async () => {
+        it('should complete rental with valid transaction signature', async () => {
+            const txSig = 'txSig123456789012345678901234567890123456789012345678901234567890123456789012345678901234';
+            
             iglooService.startRental.mockResolvedValue({
                 success: true,
                 iglooId: 'igloo1',
@@ -213,7 +224,7 @@ describe('Igloo Handlers', () => {
             
             const handled = await handleIglooMessage(
                 playerId, player, 
-                { type: 'igloo_rent', iglooId: 'igloo1', paymentPayload: 'validPayload' }, 
+                { type: 'igloo_rent', iglooId: 'igloo1', transactionSignature: txSig }, 
                 sendToPlayer
             );
             
@@ -221,7 +232,7 @@ describe('Igloo Handlers', () => {
             expect(iglooService.startRental).toHaveBeenCalledWith(
                 'TestWallet123',
                 'igloo1',
-                'validPayload'
+                txSig
             );
             expect(sendToPlayer).toHaveBeenCalledWith(playerId, expect.objectContaining({
                 type: 'igloo_rent_result',
@@ -232,55 +243,73 @@ describe('Igloo Handlers', () => {
     });
     
     describe('igloo_can_enter', () => {
-        it('should check entry for any user (including guests)', async () => {
-            const guestPlayer = createMockPlayer({ walletAddress: null });
-            
-            iglooService.canEnter.mockResolvedValue({ canEnter: true });
-            iglooService.getIgloo.mockResolvedValue({ iglooId: 'igloo1' });
-            
-            const handled = await handleIglooMessage(
-                playerId, guestPlayer, 
-                { type: 'igloo_can_enter', iglooId: 'igloo1', tokenBalance: 0 }, 
-                sendToPlayer
-            );
-            
-            expect(handled).toBe(true);
-            expect(iglooService.canEnter).toHaveBeenCalledWith(null, 'igloo1', 0);
-        });
-        
-        it('should return entry check result with igloo info', async () => {
-            iglooService.canEnter.mockResolvedValue({ 
-                canEnter: false, 
-                reason: 'ENTRY_FEE_REQUIRED',
-                requiresPayment: true,
-                paymentAmount: 500
-            });
-            iglooService.getIgloo.mockResolvedValue({ 
+        it('should allow owner to enter', async () => {
+            // Mock igloo with owner being the player
+            iglooService.getIglooRaw.mockResolvedValue({ 
                 iglooId: 'igloo1', 
-                ownerUsername: 'Owner' 
+                ownerWallet: 'TestWallet123',
+                ownerUsername: 'Owner',
+                getPublicInfo: () => ({ iglooId: 'igloo1', ownerUsername: 'Owner' })
             });
             
             const handled = await handleIglooMessage(
                 playerId, player, 
-                { type: 'igloo_can_enter', iglooId: 'igloo1', tokenBalance: 0 }, 
+                { type: 'igloo_can_enter', iglooId: 'igloo1' }, 
                 sendToPlayer
             );
             
             expect(handled).toBe(true);
-            expect(sendToPlayer).toHaveBeenCalledWith(playerId, {
+            expect(sendToPlayer).toHaveBeenCalledWith(playerId, expect.objectContaining({
                 type: 'igloo_can_enter',
                 iglooId: 'igloo1',
-                igloo: { iglooId: 'igloo1', ownerUsername: 'Owner' },
-                canEnter: false,
-                reason: 'ENTRY_FEE_REQUIRED',
-                requiresPayment: true,
-                paymentAmount: 500
+                canEnter: true,
+                isOwner: true
+            }));
+        });
+        
+        it('should check entry requirements for non-owner', async () => {
+            // Mock igloo with different owner and entry fee requirement
+            iglooService.getIglooRaw.mockResolvedValue({ 
+                iglooId: 'igloo1', 
+                ownerWallet: 'OtherWallet',
+                ownerUsername: 'Owner',
+                tokenGate: { enabled: false },
+                entryFee: { enabled: true, amount: 500, tokenSymbol: 'TOKEN' },
+                paidEntryFees: [],
+                getPublicInfo: () => ({ iglooId: 'igloo1', ownerUsername: 'Owner' })
             });
+            
+            const handled = await handleIglooMessage(
+                playerId, player, 
+                { type: 'igloo_can_enter', iglooId: 'igloo1' }, 
+                sendToPlayer
+            );
+            
+            expect(handled).toBe(true);
+            expect(sendToPlayer).toHaveBeenCalledWith(playerId, expect.objectContaining({
+                type: 'igloo_can_enter',
+                iglooId: 'igloo1',
+                canEnter: false,
+                blockingReason: 'FEE_REQUIRED'
+            }));
         });
     });
     
     describe('igloo_pay_entry', () => {
-        it('should process entry fee payment', async () => {
+        it('should process entry fee payment with transaction signature', async () => {
+            // Mock the igloo for recording payment
+            const mockIgloo = {
+                iglooId: 'igloo1',
+                ownerWallet: 'OwnerWallet',
+                entryFee: { enabled: true, amount: 500, tokenAddress: 'TokenAddr' },
+                tokenGate: { enabled: false },
+                paidEntryFees: [],
+                recordEntryFeePayment: vi.fn(),
+                save: vi.fn().mockResolvedValue(true)
+            };
+            iglooService.getIglooRaw.mockResolvedValue(mockIgloo);
+            
+            // Mock the payEntryFee service call
             iglooService.payEntryFee.mockResolvedValue({
                 success: true,
                 transactionHash: 'tx456'
@@ -288,21 +317,15 @@ describe('Igloo Handlers', () => {
             
             const handled = await handleIglooMessage(
                 playerId, player, 
-                { type: 'igloo_pay_entry', iglooId: 'igloo1', paymentPayload: 'payload' }, 
+                { type: 'igloo_pay_entry', iglooId: 'igloo1', transactionSignature: 'tx456' }, 
                 sendToPlayer
             );
             
             expect(handled).toBe(true);
-            expect(iglooService.payEntryFee).toHaveBeenCalledWith(
-                'TestWallet123',
-                'igloo1',
-                'payload'
-            );
-            expect(sendToPlayer).toHaveBeenCalledWith(playerId, {
+            expect(sendToPlayer).toHaveBeenCalledWith(playerId, expect.objectContaining({
                 type: 'igloo_pay_entry_result',
-                success: true,
-                transactionHash: 'tx456'
-            });
+                success: true
+            }));
         });
     });
     
@@ -455,4 +478,6 @@ describe('Igloo Handlers', () => {
         });
     });
 });
+
+
 

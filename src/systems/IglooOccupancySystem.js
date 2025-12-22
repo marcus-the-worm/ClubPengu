@@ -247,8 +247,8 @@ function drawPenguinCount(ctx, style, count, w, h, iglooData = null) {
         const hasTokenGate = iglooData.hasTokenGate;
         const isRented = iglooData.isRented;
         
-        // Not rented - show "FOR RENT"
-        if (!isRented && !iglooData.isPermanent) {
+        // Not rented and not reserved - show "FOR RENT"
+        if (!isRented && !iglooData.isReserved) {
             ctx.fillStyle = '#22c55e';
             ctx.fillText('🏷️ FOR RENT', w - padding - 15, h - 22);
         }

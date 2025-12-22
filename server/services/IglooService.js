@@ -1,22 +1,22 @@
 /**
  * IglooService - Business logic for igloo rental, ownership, and access control
  * Server-authoritative for all igloo operations
+ * Uses Solana SPL token transfers for payments
  */
 
 import Igloo from '../db/models/Igloo.js';
 import User from '../db/models/User.js';
-import x402Service from './X402Service.js';
+import solanaPaymentService from './SolanaPaymentService.js';
 
 // ==================== CONFIGURATION ====================
 const DAILY_RENT_CPW3 = parseInt(process.env.DAILY_RENT_CPW3 || '10000');
 const MINIMUM_BALANCE_CPW3 = parseInt(process.env.MINIMUM_BALANCE_CPW3 || '70000'); // 7 days
 const GRACE_PERIOD_HOURS = parseInt(process.env.GRACE_PERIOD_HOURS || '12');
 
-// Permanent igloos (not rentable)
-const RESERVED_IGLOOS = {
-    'igloo3': { ownerWallet: process.env.SKNY_GANG_WALLET, ownerName: 'SKNY GANG' },
-    'igloo8': { ownerWallet: process.env.REGEN_WALLET, ownerName: 'REGEN' }
-};
+// Permanent igloos - these are marked as reserved but owner wallet comes from DATABASE only
+// Do NOT use env variables for owner wallets - they must be set in the database
+// Reserved rental igloos - pre-set owners, not available for public rent
+const RESERVED_IGLOO_IDS = ['igloo3', 'igloo8'];
 
 // Igloo positions
 const IGLOO_POSITIONS = {
@@ -41,6 +41,8 @@ class IglooService {
     
     /**
      * Initialize all igloos in database (run once on server startup)
+     * NOTE: Permanent igloos (igloo3, igloo8) must have their ownerWallet set manually in the database
+     * Do NOT rely on env variables for owner wallets - use database migration scripts instead
      */
     async initializeIgloos() {
         console.log('🏠 Initializing igloo database...');
@@ -49,25 +51,71 @@ class IglooService {
             const existing = await Igloo.findOne({ iglooId });
             
             if (!existing) {
-                const isPermanent = iglooId in RESERVED_IGLOOS;
-                const permanentData = RESERVED_IGLOOS[iglooId];
+                const isReserved = RESERVED_IGLOO_IDS.includes(iglooId);
                 
                 const newIgloo = new Igloo({
                     iglooId,
                     position,
-                    isPermanent,
-                    permanentOwnerName: permanentData?.ownerName || null,
-                    ownerWallet: permanentData?.ownerWallet || null,
-                    isRented: isPermanent,
-                    accessType: isPermanent ? 'public' : 'private'
+                    isReserved,
+                    // Owner wallet must be set via database migration, not from env
+                    ownerWallet: null,
+                    isRented: false,
+                    accessType: 'private'
                 });
                 
                 await newIgloo.save();
-                console.log(`  Created ${iglooId} (${isPermanent ? 'permanent: ' + permanentData?.ownerName : 'rentable'})`);
+                console.log(`  Created ${iglooId} (${isReserved ? 'reserved - needs owner wallet in DB' : 'available for rent'})`);
+            } else {
+                // Auto-fix existing igloos with missing data
+                let needsSave = false;
+                const isReserved = RESERVED_IGLOO_IDS.includes(iglooId);
+                
+                // Migrate old isPermanent field to isReserved
+                if (existing.isPermanent !== undefined && existing.isReserved === undefined) {
+                    existing.isReserved = existing.isPermanent;
+                    needsSave = true;
+                    console.log(`  📋 Migrated ${iglooId}: isPermanent → isReserved`);
+                }
+                
+                // Fix reserved igloos that are rented but missing rent data
+                if (isReserved && existing.isRented && existing.ownerWallet) {
+                    // Ensure reserved rental igloos have proper rent data
+                    if (!existing.rentStartDate) {
+                        existing.rentStartDate = new Date();
+                        needsSave = true;
+                        console.log(`  📋 Fixed ${iglooId}: Added rentStartDate`);
+                    }
+                    if (!existing.lastRentPaidDate) {
+                        existing.lastRentPaidDate = new Date();
+                        needsSave = true;
+                        console.log(`  📋 Fixed ${iglooId}: Added lastRentPaidDate`);
+                    }
+                    if (!existing.rentDueDate) {
+                        // Reserved igloos: set rent due far in future (100 years) since they're pre-paid
+                        existing.rentDueDate = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
+                        needsSave = true;
+                        console.log(`  📋 Fixed ${iglooId}: Added rentDueDate (reserved rental)`);
+                    }
+                    if (!existing.rentStatus || existing.rentStatus === null) {
+                        existing.rentStatus = 'current';
+                        needsSave = true;
+                        console.log(`  📋 Fixed ${iglooId}: Added rentStatus`);
+                    }
+                    if (existing.stats.timesRented === 0) {
+                        existing.stats.timesRented = 1;
+                        needsSave = true;
+                        console.log(`  📋 Fixed ${iglooId}: Set timesRented to 1`);
+                    }
+                }
+                
+                if (needsSave) {
+                    await existing.save();
+                }
             }
         }
         
         console.log('🏠 Igloo initialization complete');
+        console.log('⚠️  IMPORTANT: Set ownerWallet for permanent igloos in database!');
     }
     
     /**
@@ -85,6 +133,13 @@ class IglooService {
         const igloo = await Igloo.findOne({ iglooId });
         if (!igloo) return null;
         return igloo.getPublicInfo();
+    }
+    
+    /**
+     * Get raw igloo document (for internal use)
+     */
+    async getIglooRaw(iglooId) {
+        return await Igloo.findOne({ iglooId });
     }
     
     /**
@@ -113,8 +168,8 @@ class IglooService {
             return { canRent: false, error: 'IGLOO_NOT_FOUND' };
         }
         
-        if (igloo.isPermanent) {
-            return { canRent: false, error: 'PERMANENTLY_OWNED', message: `Owned by ${igloo.permanentOwnerName}` };
+        if (igloo.isReserved) {
+            return { canRent: false, error: 'RESERVED', message: `Reserved rental - owned by ${igloo.ownerUsername || 'reserved owner'}` };
         }
         
         if (igloo.isRented) {
@@ -126,8 +181,31 @@ class IglooService {
             };
         }
         
-        // Check balance eligibility
-        const balanceCheck = await x402Service.checkRentEligibility(walletAddress, this.minimumBalance);
+        // Check if user already has maximum rentals (2 igloos max)
+        const MAX_RENTALS_PER_USER = 2;
+        const currentRentals = await Igloo.countDocuments({ 
+            ownerWallet: walletAddress, 
+            isRented: true,
+            isReserved: false  // Don't count reserved igloos toward limit
+        });
+        
+        if (currentRentals >= MAX_RENTALS_PER_USER) {
+            return { 
+                canRent: false, 
+                error: 'MAX_RENTALS_REACHED',
+                message: `You can only rent up to ${MAX_RENTALS_PER_USER} igloos at a time`,
+                currentRentals,
+                maxRentals: MAX_RENTALS_PER_USER
+            };
+        }
+        
+        // Check balance eligibility using CPw3 token
+        const cpw3TokenAddress = process.env.CPW3_TOKEN_ADDRESS || '63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump';
+        const balanceCheck = await solanaPaymentService.checkMinimumBalance(
+            walletAddress, 
+            cpw3TokenAddress, 
+            this.minimumBalance
+        );
         
         if (!balanceCheck.hasBalance) {
             return { 
@@ -135,7 +213,7 @@ class IglooService {
                 error: 'INSUFFICIENT_BALANCE',
                 message: `Minimum balance of ${this.minimumBalance} CPw3 required (7 days rent)`,
                 required: this.minimumBalance,
-                current: balanceCheck.currentBalance
+                current: balanceCheck.balance
             };
         }
         
@@ -152,29 +230,27 @@ class IglooService {
      * @param {string} iglooId - Target igloo
      * @param {string} paymentPayload - x402 payment authorization
      */
-    async startRental(walletAddress, iglooId, paymentPayload) {
+    async startRental(walletAddress, iglooId, transactionSignature) {
         // Verify rental eligibility
         const eligibility = await this.canRent(walletAddress, iglooId);
         if (!eligibility.canRent) {
             return { success: false, ...eligibility };
         }
         
-        // Verify payment payload
-        const verification = await x402Service.verifyPayload(paymentPayload, {
-            amount: this.dailyRent,
-            recipient: process.env.RENT_WALLET_ADDRESS
-        });
+        // Verify rent payment on-chain
+        const result = await solanaPaymentService.verifyRentPayment(
+            transactionSignature,
+            walletAddress,
+            process.env.RENT_WALLET_ADDRESS,
+            this.dailyRent,
+            { iglooId, isRenewal: false }  // Audit trail options
+        );
         
-        if (!verification.valid) {
-            return { success: false, error: verification.error, message: verification.message };
+        if (!result.success) {
+            return { success: false, error: result.error, message: result.message };
         }
         
-        // Settle the first day's rent payment
-        const settlement = await x402Service.settlePayment(paymentPayload);
-        
-        if (!settlement.success) {
-            return { success: false, error: settlement.error, message: settlement.message };
-        }
+        const settlement = result;
         
         // Get user info
         const user = await User.findOne({ walletAddress });
@@ -182,10 +258,20 @@ class IglooService {
         
         // Assign igloo to renter
         const igloo = await Igloo.findOne({ iglooId });
-        igloo.startRental(walletAddress, username);
+        igloo.startRental(walletAddress, username, this.dailyRent);
         await igloo.save();
         
-        console.log(`🏠 ${username} rented ${iglooId}, tx: ${settlement.transactionHash}`);
+        // Audit log
+        console.log(`═══════════════════════════════════════════════════════════`);
+        console.log(`🏠 [RENTAL STARTED] Igloo Rented`);
+        console.log(`═══════════════════════════════════════════════════════════`);
+        console.log(`   Timestamp:    ${new Date().toISOString()}`);
+        console.log(`   Igloo:        ${iglooId}`);
+        console.log(`   New Owner:    ${username} (${walletAddress.slice(0, 8)}...)`);
+        console.log(`   Rent Paid:    ${this.dailyRent} CPw3`);
+        console.log(`   TX Signature: ${settlement.transactionHash.slice(0, 16)}...`);
+        console.log(`   Solscan:      https://solscan.io/tx/${settlement.transactionHash}`);
+        console.log(`═══════════════════════════════════════════════════════════`);
         
         return {
             success: true,
@@ -199,7 +285,7 @@ class IglooService {
     /**
      * Process rent payment (called daily by user)
      */
-    async payRent(walletAddress, iglooId, paymentPayload) {
+    async payRent(walletAddress, iglooId, transactionSignature) {
         const igloo = await Igloo.findOne({ iglooId });
         
         if (!igloo) {
@@ -210,22 +296,20 @@ class IglooService {
             return { success: false, error: 'NOT_OWNER', message: 'You do not own this igloo' };
         }
         
-        // Verify payment
-        const verification = await x402Service.verifyPayload(paymentPayload, {
-            amount: this.dailyRent,
-            recipient: process.env.RENT_WALLET_ADDRESS
-        });
+        // Verify rent payment on-chain
+        const result = await solanaPaymentService.verifyRentPayment(
+            transactionSignature,
+            walletAddress,
+            process.env.RENT_WALLET_ADDRESS,
+            this.dailyRent,
+            { iglooId, isRenewal: true }  // Mark as renewal for audit trail
+        );
         
-        if (!verification.valid) {
-            return { success: false, error: verification.error, message: verification.message };
+        if (!result.success) {
+            return { success: false, error: result.error, message: result.message };
         }
         
-        // Settle payment
-        const settlement = await x402Service.settlePayment(paymentPayload);
-        
-        if (!settlement.success) {
-            return { success: false, error: settlement.error, message: settlement.message };
-        }
+        const settlement = result;
         
         // Update igloo
         igloo.payRent(this.dailyRent);
@@ -255,8 +339,9 @@ class IglooService {
     
     /**
      * Process entry fee payment
+     * Now accepts a real Solana transaction signature instead of a signed intent
      */
-    async payEntryFee(walletAddress, iglooId, paymentPayload) {
+    async payEntryFee(walletAddress, iglooId, transactionSignature) {
         const igloo = await Igloo.findOne({ iglooId });
         
         if (!igloo) {
@@ -267,28 +352,50 @@ class IglooService {
             return { success: false, error: 'NO_ENTRY_FEE', message: 'This igloo has no entry fee' };
         }
         
-        // Verify payment
-        const verification = await x402Service.verifyPayload(paymentPayload, {
-            amount: igloo.entryFee.amount,
-            recipient: igloo.ownerWallet // Entry fees go to igloo owner
-        });
-        
-        if (!verification.valid) {
-            return { success: false, error: verification.error, message: verification.message };
+        // Check if already paid
+        const existingPayment = igloo.paidEntryFees?.find(p => p.walletAddress === walletAddress);
+        if (existingPayment) {
+            return { success: true, alreadyPaid: true, message: 'Entry fee already paid' };
         }
         
-        // Settle payment
-        const settlement = await x402Service.settlePayment(paymentPayload);
-        
-        if (!settlement.success) {
-            return { success: false, error: settlement.error, message: settlement.message };
+        // Require transaction signature (real on-chain payment)
+        if (!transactionSignature) {
+            return { 
+                success: false, 
+                error: 'PAYMENT_REQUIRED', 
+                message: 'Transaction signature required for entry fee',
+                amount: igloo.entryFee.amount,
+                tokenAddress: igloo.entryFee.tokenAddress,
+                tokenSymbol: igloo.entryFee.tokenSymbol,
+                recipient: igloo.ownerWallet
+            };
         }
         
-        // Record payment
-        igloo.recordEntryFeePayment(walletAddress, igloo.entryFee.amount, settlement.transactionHash);
+        // Verify the transaction on-chain
+        const verifyResult = await solanaPaymentService.verifyTransaction(
+            transactionSignature,
+            walletAddress,           // Expected sender
+            igloo.ownerWallet,       // Expected recipient
+            igloo.entryFee.tokenAddress,
+            igloo.entryFee.amount,
+            {
+                transactionType: 'igloo_entry_fee',
+                iglooId,
+                tokenSymbol: igloo.entryFee.tokenSymbol || 'CPw3'
+            }
+        );
+        
+        if (!verifyResult.success) {
+            return { success: false, error: verifyResult.error, message: verifyResult.message };
+        }
+        
+        // Record payment with real transaction signature
+        igloo.recordEntryFeePayment(walletAddress, igloo.entryFee.amount, transactionSignature);
         await igloo.save();
         
-        return { success: true, transactionHash: settlement.transactionHash };
+        console.log(`💰 Entry fee paid for ${iglooId}: ${transactionSignature.slice(0, 16)}...`);
+        
+        return { success: true, transactionSignature };
     }
     
     /**
@@ -370,10 +477,10 @@ class IglooService {
         const now = new Date();
         const gracePeriodEnd = new Date(now.getTime() - (this.gracePeriodHours * 60 * 60 * 1000));
         
-        // Find rentals that are past grace period
+        // Find rentals that are past grace period (exclude reserved igloos)
         const overdueIgloos = await Igloo.find({
             isRented: true,
-            isPermanent: false,
+            isReserved: { $ne: true },
             rentDueDate: { $lt: gracePeriodEnd }
         });
         
@@ -386,10 +493,10 @@ class IglooService {
             evictions.push({ iglooId: igloo.iglooId, previousOwner: igloo.ownerUsername });
         }
         
-        // Mark igloos entering grace period
+        // Mark igloos entering grace period (exclude reserved igloos)
         const newlyOverdue = await Igloo.find({
             isRented: true,
-            isPermanent: false,
+            isReserved: { $ne: true },
             rentDueDate: { $lt: now, $gte: gracePeriodEnd },
             rentStatus: 'current'
         });
@@ -425,8 +532,8 @@ class IglooService {
             return { success: false, error: 'NOT_OWNER' };
         }
         
-        if (igloo.isPermanent) {
-            return { success: false, error: 'PERMANENT_OWNER', message: 'Cannot leave permanent igloo' };
+        if (igloo.isReserved) {
+            return { success: false, error: 'RESERVED_OWNER', message: 'Cannot leave reserved rental igloo' };
         }
         
         igloo.evict();
@@ -439,4 +546,5 @@ class IglooService {
 // Export singleton instance
 const iglooService = new IglooService();
 export default iglooService;
+
 

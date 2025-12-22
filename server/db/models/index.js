@@ -9,6 +9,7 @@ export { default as Match } from './Match.js';
 export { default as Challenge } from './Challenge.js';
 export { default as Puffle, PUFFLE_PRICES, PUFFLE_TIERS } from './Puffle.js';
 export { default as Transaction } from './Transaction.js';
+export { default as SolanaTransaction } from './SolanaTransaction.js';
 export { default as PromoCode } from './PromoCode.js';
 export { default as PromoRedemption } from './PromoRedemption.js';
 export { default as Igloo } from './Igloo.js';

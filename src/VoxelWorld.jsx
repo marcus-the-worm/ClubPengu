@@ -5,6 +5,7 @@ import { IconSend } from './Icons';
 import GameHUD from './components/GameHUD';
 import ChatLog from './components/ChatLog';
 import Portal from './components/Portal';
+import IglooPortal from './components/IglooPortal';
 import PufflePanel from './components/PufflePanel';
 import VirtualJoystick from './components/VirtualJoystick';
 import TouchCameraControl from './components/TouchCameraControl';
@@ -21,6 +22,7 @@ import { generateIglooInterior } from './rooms/BaseRoom';
 import { generateSKNYIglooInterior } from './rooms/SKNYIglooInterior';
 import { useMultiplayer } from './multiplayer';
 import { useChallenge } from './challenge';
+import { useIgloo } from './igloo';
 import { EMOTE_WHEEL_ITEMS, LOOPING_EMOTES, EMOTE_EMOJI_MAP } from './systems';
 import { 
     CITY_SIZE, 
@@ -160,6 +162,7 @@ const VoxelWorld = ({
         chatMessages,
         worldTimeRef: serverWorldTimeRef, // Server-synchronized world time
         isAuthenticated, // For determining persistence mode
+        walletAddress, // User's wallet address for igloo ownership checks
         // Slot machine
         spinSlot,
         slotSpinning,
@@ -185,6 +188,20 @@ const VoxelWorld = ({
     
     // Challenge context for position updates and dance trigger
     const { updateLocalPosition, shouldDance, clearDance } = useChallenge();
+    
+    // Igloo context for rental state and access control
+    const { 
+        igloos, 
+        getIgloo, 
+        isOwner: isIglooOwner, 
+        myRentals, 
+        openDetailsPanel,
+        openRequirementsPanel,
+        checkIglooEntry,
+        enterIglooRoom,
+        leaveIglooRoom,
+        userClearance
+    } = useIgloo();
     
     // Refs for other player meshes and state
     const otherPlayerMeshesRef = useRef(new Map()); // playerId -> { mesh, bubble, puffle }
@@ -387,9 +404,8 @@ const VoxelWorld = ({
                         savedAt: Date.now()
                     };
                     localStorage.setItem('player_position', JSON.stringify(posData));
-                    console.log('💾 Saved player position:', posData);
                 } catch (e) {
-                    console.warn('Failed to save position:', e);
+                    // Ignore position save errors
                 }
             }
         };
@@ -709,8 +725,11 @@ const VoxelWorld = ({
             iglooOccupancySpritesRef.current.clear();
             
             // Create sprite for each igloo with unique MapleStory-style banners
+            // Use igloo data from IglooContext if available
             iglooData.forEach((igloo, index) => {
-                const sprite = createIglooOccupancySprite(THREE, 0, index); // Start with 0, unique style per igloo
+                // Get server-side igloo state if available
+                const serverIglooData = getIgloo ? getIgloo(igloo.id) : null;
+                const sprite = createIglooOccupancySprite(THREE, 0, index, serverIglooData); // Pass igloo state
                 sprite.position.set(
                     townCenterX + igloo.x,
                     10, // Higher above igloo for bigger banners
@@ -1439,7 +1458,7 @@ const VoxelWorld = ({
                     }
                 }
             } catch (e) {
-                console.warn('Failed to load saved position:', e);
+                // Ignore position load errors
             }
             
             // If no saved position, use default spawn at TOWN CENTER (same as /spawn command)
@@ -3992,7 +4011,8 @@ const VoxelWorld = ({
                             id: clickedPlayerId,
                             name: playerData.name,
                             appearance: playerData.appearance,
-                            position: playerData.position
+                            position: playerData.position,
+                            isAuthenticated: playerData.isAuthenticated
                         });
                     }
                 }
@@ -4194,7 +4214,17 @@ const VoxelWorld = ({
             
             if (dist < portal.doorRadius) {
                 if (nearbyPortal?.id !== portal.id) {
-                    setNearbyPortal(portal);
+                    // Enrich igloo portals with dynamic state data
+                    if (portal.targetRoom?.startsWith('igloo')) {
+                        const iglooData = getIgloo(portal.targetRoom);
+                        setNearbyPortal({
+                            ...portal,
+                            isIgloo: true,
+                            iglooData: iglooData || null
+                        });
+                    } else {
+                        setNearbyPortal(portal);
+                    }
                 }
                 return;
             }
@@ -4458,7 +4488,6 @@ const VoxelWorld = ({
                 localStorage.setItem('player_position', JSON.stringify({
                     x: roofX, y: roofY, z: roofZ, room: 'town', savedAt: Date.now()
                 }));
-                console.log('💾 Saved roof position:', { x: roofX, y: roofY, z: roofZ });
             } catch (e) { /* ignore */ }
             
             setNearbyPortal(null);
@@ -4467,6 +4496,67 @@ const VoxelWorld = ({
         
         // Room transition
         if (nearbyPortal.targetRoom && onChangeRoom) {
+            // === IGLOO ENTRY REQUIREMENTS CHECK ===
+            // Only check requirements when ENTERING an igloo, not when EXITING to town
+            const isEnteringIgloo = nearbyPortal.targetRoom.startsWith('igloo');
+            const isExitingToTown = nearbyPortal.targetRoom === 'town';
+            
+            // If entering an igloo (from town), check requirements
+            if (isEnteringIgloo && !isExitingToTown && nearbyPortal.isIgloo && nearbyPortal.iglooData) {
+                const iglooData = nearbyPortal.iglooData;
+                const isOwner = walletAddress && iglooData.ownerWallet === walletAddress;
+                
+                // If not rented (available), show details panel instead
+                if (!iglooData.isRented) {
+                    console.log('🏠 Igloo not rented - showing details panel');
+                    openDetailsPanel(nearbyPortal.targetRoom);
+                    return;
+                }
+                
+                // Owner always has direct entry
+                if (isOwner) {
+                    console.log('🏠 Owner entering igloo directly');
+                    // Continue to room transition below
+                } else {
+                    // Check if igloo has requirements (token gate or entry fee)
+                    const hasTokenGate = iglooData.tokenGate?.enabled || iglooData.hasTokenGate;
+                    const hasEntryFee = iglooData.entryFee?.enabled || iglooData.hasEntryFee;
+                    const accessType = iglooData.accessType;
+                    
+                    // Determine if entry is restricted
+                    const isRestricted = hasTokenGate || hasEntryFee || 
+                        accessType === 'token' || accessType === 'fee' || accessType === 'both';
+                    
+                    if (isRestricted) {
+                        // Check if user is already cleared (from previous check or payment)
+                        const clearance = userClearance?.[nearbyPortal.targetRoom];
+                        if (clearance?.canEnter) {
+                            console.log('✅ User already cleared - entering directly');
+                            // Continue to room transition below
+                        } else {
+                            // Ask server if user can enter (server checks real balances + paid status)
+                            // If allowed: enters directly | If blocked: shows requirements panel
+                            console.log('🔍 Checking entry requirements with server...');
+                            checkIglooEntry(nearbyPortal.targetRoom, (iglooId) => {
+                                // This callback is called if user CAN enter directly
+                                console.log('✅ Server approved entry - entering:', iglooId);
+                                
+                                let exitSpawnPos = nearbyPortal.exitSpawnPos;
+                                if (room === 'town' && iglooId.startsWith('igloo')) {
+                                    iglooEntrySpawnRef.current = exitSpawnPos;
+                                }
+                                
+                                onChangeRoom(iglooId, exitSpawnPos);
+                            });
+                            return; // Wait for server response
+                        }
+                    }
+                    
+                    // Public igloo (no restrictions) - allow entry
+                    console.log('🏠 Public igloo - entering directly');
+                }
+            }
+            
             let exitSpawnPos = nearbyPortal.exitSpawnPos;
             
             // If entering an igloo from town, store the exit spawn position
@@ -5021,13 +5111,30 @@ const VoxelWorld = ({
             iglooOccupancySpritesRef.current.forEach((sprite, iglooId) => {
                 const roomName = sprite.userData.iglooRoom || iglooId;
                 const count = counts[roomName] || 0;
-                updateIglooOccupancySprite(window.THREE, sprite, count);
+                // Get server igloo data for dynamic banner content
+                const serverIglooData = getIgloo ? getIgloo(iglooId) : null;
+                updateIglooOccupancySprite(window.THREE, sprite, count, serverIglooData);
             });
         };
         
         window.addEventListener('roomCounts', handleRoomCounts);
         return () => window.removeEventListener('roomCounts', handleRoomCounts);
-    }, []);
+    }, [getIgloo]);
+    
+    // Update igloo banners when igloo data changes from server
+    useEffect(() => {
+        if (!igloos || igloos.length === 0) return;
+        
+        // Update each igloo sprite with the latest server data
+        iglooOccupancySpritesRef.current.forEach((sprite, iglooId) => {
+            const serverIglooData = igloos.find(i => i.iglooId === iglooId);
+            if (serverIglooData) {
+                // Get current occupancy count from sprite
+                const currentCount = sprite.userData.lastCount || 0;
+                updateIglooOccupancySprite(window.THREE, sprite, currentCount, serverIglooData);
+            }
+        });
+    }, [igloos]);
     
 
     // ==================== MULTIPLAYER SYNC (OPTIMIZED) ====================
@@ -5641,6 +5748,43 @@ const VoxelWorld = ({
         }
     }, [room, connected, playerId]);
     
+    // Track igloo room entry/exit for eligibility checks
+    useEffect(() => {
+        const isIgloo = room?.startsWith('igloo');
+        
+        if (isIgloo) {
+            // Entering an igloo - set up eligibility tracking with kick callback
+            const handleKick = (reason) => {
+                console.log('🚪 Kicked from igloo due to:', reason);
+                // Show notification
+                window.dispatchEvent(new CustomEvent('notification', {
+                    detail: {
+                        type: 'warning',
+                        message: reason === 'AUTH_LOST' 
+                            ? '🔌 Wallet disconnected - returning to town' 
+                            : '🚫 Access to this igloo has been revoked',
+                        duration: 5000
+                    }
+                }));
+                // Return to town
+                if (onChangeRoom) {
+                    onChangeRoom('town', null);
+                }
+            };
+            enterIglooRoom(room, handleKick);
+        } else {
+            // Left an igloo (or in a non-igloo room)
+            leaveIglooRoom();
+        }
+        
+        // Cleanup when leaving
+        return () => {
+            if (isIgloo) {
+                leaveIglooRoom();
+            }
+        };
+    }, [room, enterIglooRoom, leaveIglooRoom, onChangeRoom]);
+    
     // Reset casino zoom state when changing rooms (so zoom triggers properly on re-entry)
     useEffect(() => {
         // When room changes, reset the casino tracking so zoom can trigger fresh
@@ -5805,16 +5949,30 @@ const VoxelWorld = ({
                 onClose={() => setShowMobileChat(false)}
              />
              
-             {/* Door/Portal Prompt */}
-             <Portal 
-                name={nearbyPortal?.name}
-                emoji={nearbyPortal?.emoji}
-                description={nearbyPortal?.description}
-                isNearby={!!nearbyPortal}
-                onEnter={handlePortalEnter}
-                color={nearbyPortal?.targetRoom || nearbyPortal?.minigame || nearbyPortal?.teleportToRoof ? 'green' : 'gray'}
-                hasGame={!!(nearbyPortal?.targetRoom || nearbyPortal?.minigame || nearbyPortal?.teleportToRoof)}
-             />
+             {/* Door/Portal Prompt - Use IglooPortal for igloos, regular Portal otherwise */}
+             {nearbyPortal?.isIgloo ? (
+                <IglooPortal
+                    portal={nearbyPortal}
+                    iglooData={nearbyPortal.iglooData}
+                    isNearby={!!nearbyPortal}
+                    onEnter={handlePortalEnter}
+                    onViewDetails={() => openDetailsPanel(nearbyPortal.targetRoom)}
+                    onViewRequirements={() => openRequirementsPanel(nearbyPortal.targetRoom)}
+                    walletAddress={walletAddress}
+                    isAuthenticated={isAuthenticated}
+                    userClearance={userClearance?.[nearbyPortal?.targetRoom]}
+                />
+             ) : (
+                <Portal 
+                    name={nearbyPortal?.name}
+                    emoji={nearbyPortal?.emoji}
+                    description={nearbyPortal?.description}
+                    isNearby={!!nearbyPortal}
+                    onEnter={handlePortalEnter}
+                    color={nearbyPortal?.targetRoom || nearbyPortal?.minigame || nearbyPortal?.teleportToRoof ? 'green' : 'gray'}
+                    hasGame={!!(nearbyPortal?.targetRoom || nearbyPortal?.minigame || nearbyPortal?.teleportToRoof)}
+                />
+             )}
              
              {/* Slot Machine Interaction Prompt */}
              {slotInteraction && !nearbyPortal && room === 'casino_game_room' && (

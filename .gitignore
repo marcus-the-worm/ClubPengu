@@ -93,3 +93,5 @@ yarn-error.log*
 *.key
 secrets/
 .secrets
+
+DATABASE_SCHEMA.md

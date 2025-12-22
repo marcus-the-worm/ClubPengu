@@ -11,7 +11,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('../../db/models/Igloo.js', () => ({
     default: {
         findOne: vi.fn(),
-        find: vi.fn()
+        find: vi.fn(),
+        countDocuments: vi.fn().mockResolvedValue(0)  // Default: user has no current rentals
     }
 }));
 
@@ -29,16 +30,25 @@ vi.mock('../../services/X402Service.js', () => ({
     }
 }));
 
+vi.mock('../../services/SolanaPaymentService.js', () => ({
+    default: {
+        checkMinimumBalance: vi.fn(),
+        verifyRentPayment: vi.fn(),
+        verifyTransaction: vi.fn()
+    }
+}));
+
 import Igloo from '../../db/models/Igloo.js';
 import User from '../../db/models/User.js';
 import x402Service from '../../services/X402Service.js';
+import solanaPaymentService from '../../services/SolanaPaymentService.js';
 
 // ==================== TEST HELPERS ====================
 const createMockIgloo = (id, overrides = {}) => ({
     iglooId: id,
     position: { x: 0, z: 0, row: 'north' },
     isRented: false,
-    isPermanent: false,
+    isReserved: false,
     ownerWallet: null,
     ownerUsername: null,
     rentStartDate: null,
@@ -80,7 +90,7 @@ describe('End-to-End Igloo Flows', () => {
             // Step 1: User finds available igloo
             const availableIgloo = createMockIgloo(iglooId);
             Igloo.findOne.mockResolvedValue(availableIgloo);
-            x402Service.checkRentEligibility.mockResolvedValue({ hasBalance: true, currentBalance: 100000 });
+            solanaPaymentService.checkMinimumBalance.mockResolvedValue({ hasBalance: true, balance: 100000 });
             
             const { default: iglooService } = await import('../../services/IglooService.js');
             
@@ -89,12 +99,11 @@ describe('End-to-End Igloo Flows', () => {
             
             // Step 2: User rents igloo
             User.findOne.mockResolvedValue({ username: 'CoolPenguin' });
-            x402Service.verifyPayload.mockResolvedValue({ valid: true, payload: {} });
-            x402Service.settlePayment.mockResolvedValue({ success: true, transactionHash: 'tx_rent' });
+            solanaPaymentService.verifyRentPayment.mockResolvedValue({ success: true, transactionHash: 'tx_rent' });
             
-            const rentResult = await iglooService.startRental(walletAddress, iglooId, 'paymentPayload');
+            const rentResult = await iglooService.startRental(walletAddress, iglooId, 'txSignature123');
             expect(rentResult.success).toBe(true);
-            expect(availableIgloo.startRental).toHaveBeenCalledWith(walletAddress, 'CoolPenguin');
+            expect(availableIgloo.startRental).toHaveBeenCalledWith(walletAddress, 'CoolPenguin', 10000);
             
             // Step 3: User customizes their igloo
             const rentedIgloo = createMockIgloo(iglooId, {
@@ -148,7 +157,7 @@ describe('End-to-End Igloo Flows', () => {
                 isRented: true,
                 ownerWallet: ownerWallet,
                 accessType: 'fee',
-                entryFee: { enabled: true, amount: 500 }
+                entryFee: { enabled: true, amount: 500, tokenAddress: 'TOKEN123' }
             });
             feeIgloo.canEnter.mockReturnValue({ 
                 canEnter: false, 
@@ -164,14 +173,17 @@ describe('End-to-End Igloo Flows', () => {
             expect(canEnterResult.canEnter).toBe(false);
             expect(canEnterResult.reason).toBe('ENTRY_FEE_REQUIRED');
             
-            // Step 2: Pay entry fee
-            x402Service.verifyPayload.mockResolvedValue({ valid: true });
-            x402Service.settlePayment.mockResolvedValue({ success: true, transactionHash: 'tx_entry' });
+            // Step 2: Pay entry fee with real transaction signature
+            solanaPaymentService.verifyTransaction.mockResolvedValue({ 
+                success: true, 
+                transactionHash: 'tx_entry',
+                amount: 500
+            });
             
-            const payResult = await iglooService.payEntryFee(visitorWallet, iglooId, 'entryPayload');
+            const payResult = await iglooService.payEntryFee(visitorWallet, iglooId, 'txSignature456');
             expect(payResult.success).toBe(true);
             expect(feeIgloo.recordEntryFeePayment).toHaveBeenCalledWith(
-                visitorWallet, 500, 'tx_entry'
+                visitorWallet, 500, 'txSignature456'
             );
             
             // Step 3: Now can enter
@@ -230,12 +242,14 @@ describe('End-to-End Igloo Flows', () => {
             });
             Igloo.findOne.mockResolvedValue(rentedIgloo);
             
-            x402Service.verifyPayload.mockResolvedValue({ valid: true });
-            x402Service.settlePayment.mockResolvedValue({ success: true, transactionHash: 'tx_daily' });
+            solanaPaymentService.verifyRentPayment.mockResolvedValue({ 
+                success: true, 
+                transactionHash: 'tx_daily' 
+            });
             
             const { default: iglooService } = await import('../../services/IglooService.js');
             
-            const result = await iglooService.payRent(ownerWallet, iglooId, 'rentPayload');
+            const result = await iglooService.payRent(ownerWallet, iglooId, 'txSignature789');
             expect(result.success).toBe(true);
             expect(rentedIgloo.payRent).toHaveBeenCalledWith(10000);
         });
@@ -248,7 +262,7 @@ describe('End-to-End Igloo Flows', () => {
             
             const overdueIgloo = createMockIgloo('igloo1', {
                 isRented: true,
-                isPermanent: false,
+                isReserved: false,
                 ownerWallet: 'OverdueOwner',
                 ownerUsername: 'OverdueUser',
                 rentDueDate: pastDate,
@@ -315,42 +329,43 @@ describe('End-to-End Igloo Flows', () => {
         });
     });
     
-    describe('Permanent Igloo Handling', () => {
-        it('should not allow renting permanent igloos', async () => {
-            const iglooId = 'igloo3'; // SKNY GANG igloo
+    describe('Reserved Igloo Handling', () => {
+        it('should not allow renting reserved igloos', async () => {
+            const iglooId = 'igloo3'; // Reserved igloo
             
-            const permanentIgloo = createMockIgloo(iglooId, {
-                isPermanent: true,
-                permanentOwnerName: 'SKNY GANG',
-                isRented: true // Permanently "rented" to owner
+            const reservedIgloo = createMockIgloo(iglooId, {
+                isReserved: true,
+                ownerUsername: 'Reserved Owner',
+                isRented: true // Reserved = always "rented" to owner
             });
-            Igloo.findOne.mockResolvedValue(permanentIgloo);
+            Igloo.findOne.mockResolvedValue(reservedIgloo);
             
             const { default: iglooService } = await import('../../services/IglooService.js');
             
             const result = await iglooService.canRent('SomeUser', iglooId);
             
             expect(result.canRent).toBe(false);
-            expect(result.error).toBe('PERMANENTLY_OWNED');
-            expect(result.message).toContain('SKNY GANG');
+            expect(result.error).toBe('RESERVED');
+            expect(result.message).toContain('Reserved Owner');
         });
         
-        it('should not allow leaving permanent igloos', async () => {
+        it('should not allow leaving reserved igloos', async () => {
             const iglooId = 'igloo3';
             
-            const permanentIgloo = createMockIgloo(iglooId, {
-                isPermanent: true,
-                ownerWallet: 'SKNYWallet'
+            const reservedIgloo = createMockIgloo(iglooId, {
+                isReserved: true,
+                ownerWallet: 'ReservedWallet'
             });
-            Igloo.findOne.mockResolvedValue(permanentIgloo);
+            Igloo.findOne.mockResolvedValue(reservedIgloo);
             
             const { default: iglooService } = await import('../../services/IglooService.js');
             
-            const result = await iglooService.leaveIgloo('SKNYWallet', iglooId);
+            const result = await iglooService.leaveIgloo('ReservedWallet', iglooId);
             
             expect(result.success).toBe(false);
-            expect(result.error).toBe('PERMANENT_OWNER');
+            expect(result.error).toBe('RESERVED_OWNER');
         });
     });
 });
+
 

@@ -3,9 +3,10 @@
  * Shows rental agreement, costs, and can/can't afford status
  */
 
-import React, { useState, useEffect } from 'react';
-import { IGLOO_CONFIG } from '../config/solana.js';
-import X402Service from '../wallet/X402Service.js';
+import React, { useState, useEffect, useCallback } from 'react';
+import { IGLOO_CONFIG, RENT_WALLET_ADDRESS, CPW3_TOKEN_ADDRESS } from '../config/solana.js';
+import { useMultiplayer } from '../multiplayer/MultiplayerContext.jsx';
+import { payIglooRent } from '../wallet/SolanaPayment.js';
 
 const IglooRentalModal = ({ 
     isOpen, 
@@ -14,33 +15,70 @@ const IglooRentalModal = ({
     walletAddress,
     onRentSuccess
 }) => {
+    const { send } = useMultiplayer();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [canAfford, setCanAfford] = useState(null);
     const [balanceInfo, setBalanceInfo] = useState(null);
     
-    const x402 = X402Service.getInstance();
-    
-    // Check affordability when modal opens
+    // Listen for rent result from server
     useEffect(() => {
-        if (isOpen && walletAddress) {
-            checkAffordability();
+        if (!isOpen) return;
+        
+        const ws = window.__multiplayerWs;
+        if (!ws) return;
+        
+        const handleMessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                
+                if (msg.type === 'igloo_rent_result') {
+                    setIsLoading(false);
+                    if (msg.success) {
+                        if (onRentSuccess) {
+                            onRentSuccess(msg);
+                        }
+                        onClose();
+                    } else {
+                        setError(msg.message || msg.error || 'Rental failed');
+                    }
+                }
+                
+                if (msg.type === 'igloo_can_rent') {
+                    setCanAfford(msg.canRent);
+                    if (!msg.canRent) {
+                        setError(msg.message || msg.error);
+                    }
+                    setBalanceInfo({
+                        current: msg.current || 0,
+                        required: msg.required || IGLOO_CONFIG.MINIMUM_BALANCE_CPW3
+                    });
+                }
+            } catch (e) {
+                // Ignore parse errors
+            }
+        };
+        
+        ws.addEventListener('message', handleMessage);
+        
+        // Check if user can afford to rent
+        if (iglooData?.iglooId) {
+            send({ type: 'igloo_can_rent', iglooId: iglooData.iglooId });
         }
-    }, [isOpen, walletAddress]);
+        
+        return () => {
+            ws.removeEventListener('message', handleMessage);
+        };
+    }, [isOpen, iglooData?.iglooId, send, onRentSuccess, onClose]);
     
-    const checkAffordability = async () => {
-        // TODO: Actually check token balance
-        // For now, we'll check this server-side during the rent flow
-        setCanAfford(true);
-        setBalanceInfo({
-            current: 100000, // Mock
-            required: IGLOO_CONFIG.MINIMUM_BALANCE_CPW3
-        });
-    };
-    
-    const handleRent = async () => {
+    const handleRent = useCallback(async () => {
         if (!walletAddress) {
             setError('Please connect your wallet first');
+            return;
+        }
+        
+        if (!iglooData?.iglooId) {
+            setError('No igloo selected');
             return;
         }
         
@@ -48,55 +86,80 @@ const IglooRentalModal = ({
         setError(null);
         
         try {
-            // Create payment authorization
-            const paymentResult = await x402.createRentPayment(
+            // Step 1: Check eligibility BEFORE payment
+            console.log('🔍 Checking rental eligibility...');
+            
+            const eligibilityCheck = await new Promise((resolve) => {
+                const ws = window.__multiplayerWs;
+                if (!ws) {
+                    resolve({ canRent: false, error: 'NO_CONNECTION', message: 'Not connected to server' });
+                    return;
+                }
+                
+                const timeout = setTimeout(() => {
+                    resolve({ canRent: false, error: 'TIMEOUT', message: 'Server did not respond' });
+                }, 10000);
+                
+                const handleResponse = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'igloo_can_rent' && msg.iglooId === iglooData.iglooId) {
+                            clearTimeout(timeout);
+                            ws.removeEventListener('message', handleResponse);
+                            resolve(msg);
+                        }
+                    } catch (e) {}
+                };
+                
+                ws.addEventListener('message', handleResponse);
+                send({ type: 'igloo_can_rent', iglooId: iglooData.iglooId });
+            });
+            
+            if (!eligibilityCheck.canRent) {
+                console.log('❌ Not eligible to rent:', eligibilityCheck.error);
+                setError(eligibilityCheck.message || 'Cannot rent this igloo');
+                setIsLoading(false);
+                return;
+            }
+            
+            console.log('✅ Eligible to rent! Proceeding with payment...');
+            
+            // Step 2: Pay rent via Solana transaction (only after eligibility confirmed)
+            console.log('💰 Starting rent payment...');
+            const paymentResult = await payIglooRent(
                 iglooData.iglooId,
-                1, // 1 day
-                IGLOO_CONFIG.DAILY_RENT_CPW3
+                IGLOO_CONFIG.DAILY_RENT_CPW3,
+                RENT_WALLET_ADDRESS,
+                CPW3_TOKEN_ADDRESS
             );
             
             if (!paymentResult.success) {
-                setError(paymentResult.message || 'Failed to create payment');
+                setError(paymentResult.message || 'Payment failed');
                 setIsLoading(false);
                 return;
             }
             
-            // Send to server
-            const response = await fetch('/api/igloo/rent', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    iglooId: iglooData.iglooId,
-                    paymentPayload: paymentResult.payload
-                }),
-                credentials: 'include'
+            console.log('✅ Rent payment successful:', paymentResult.signature);
+            
+            // Step 3: Send rental request with transaction signature as proof
+            send({
+                type: 'igloo_rent',
+                iglooId: iglooData.iglooId,
+                transactionSignature: paymentResult.signature // Transaction signature as proof of payment
             });
             
-            const result = await response.json();
-            
-            if (!result.success) {
-                setError(result.message || 'Rental failed');
-                setIsLoading(false);
-                return;
-            }
-            
-            // Success!
-            if (onRentSuccess) {
-                onRentSuccess(result);
-            }
-            onClose();
-            
-        } catch (err) {
-            console.error('Rental error:', err);
-            setError('An unexpected error occurred');
-        } finally {
+        } catch (error) {
+            console.error('❌ Rent payment error:', error);
+            setError(error.message || 'Payment failed');
             setIsLoading(false);
         }
-    };
+        
+    }, [walletAddress, iglooData?.iglooId, send]);
     
     if (!isOpen) return null;
     
-    const isPermanent = IGLOO_CONFIG.RESERVED_IGLOOS[iglooData?.iglooId];
+    // Use database values only - no hardcoded env fallbacks
+    const isReserved = iglooData?.isReserved || false;
     const isRented = iglooData?.isRented;
     
     return (
@@ -125,10 +188,10 @@ const IglooRentalModal = ({
                 {/* Content */}
                 <div className="p-6 space-y-4">
                     {/* Status Badge */}
-                    {isPermanent ? (
+                    {isReserved ? (
                         <div className="bg-purple-500/20 border border-purple-500/40 rounded-lg p-4 text-center">
                             <span className="text-purple-400 font-bold">
-                                👑 Permanently Owned by {isPermanent.ownerName}
+                                🔒 Reserved Rental - {iglooData?.ownerUsername || 'Reserved Owner'}
                             </span>
                         </div>
                     ) : isRented ? (
@@ -146,7 +209,7 @@ const IglooRentalModal = ({
                     )}
                     
                     {/* Rental Agreement */}
-                    {!isPermanent && !isRented && (
+                    {!isReserved && !isRented && (
                         <>
                             <div className="bg-slate-700/50 rounded-lg p-4 space-y-3">
                                 <h3 className="text-lg font-semibold text-cyan-400 border-b border-cyan-400/30 pb-2">
@@ -261,4 +324,5 @@ const IglooRentalModal = ({
 };
 
 export default IglooRentalModal;
+
 

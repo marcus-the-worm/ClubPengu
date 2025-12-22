@@ -200,6 +200,54 @@ class PhantomWallet {
     }
     
     /**
+     * Sign a Solana transaction
+     * @param {Transaction} transaction - The transaction to sign
+     * @returns {Promise<{ success: boolean, signedTransaction?: Transaction, error?: string }>}
+     */
+    async signTransaction(transaction) {
+        const provider = this.getProvider();
+        
+        if (!provider || !this.connected) {
+            return {
+                success: false,
+                error: 'NOT_CONNECTED',
+                message: 'Wallet not connected'
+            };
+        }
+        
+        try {
+            console.log('✍️ Requesting transaction signature from Phantom...');
+            
+            // Sign the transaction
+            const signedTransaction = await provider.signTransaction(transaction);
+            
+            console.log('✅ Transaction signed successfully');
+            
+            return {
+                success: true,
+                signedTransaction
+            };
+        } catch (error) {
+            console.error('Sign transaction error:', error);
+            
+            // User rejected the signature
+            if (error.code === 4001 || error.message?.includes('User rejected')) {
+                return {
+                    success: false,
+                    error: 'USER_REJECTED',
+                    message: 'Transaction cancelled by user'
+                };
+            }
+            
+            return {
+                success: false,
+                error: error.code || 'SIGN_FAILED',
+                message: error.message || 'Failed to sign transaction'
+            };
+        }
+    }
+    
+    /**
      * Sign a message for authentication
      * @param {string} message - The message to sign (from server challenge)
      * @returns {Promise<{ success: boolean, signature?: string, error?: string }>}

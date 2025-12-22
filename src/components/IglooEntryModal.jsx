@@ -3,8 +3,8 @@
  * Displays entry requirements and handles entry fee payments
  */
 
-import React, { useState } from 'react';
-import X402Service from '../wallet/X402Service.js';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useMultiplayer } from '../multiplayer/MultiplayerContext.jsx';
 
 const IglooEntryModal = ({ 
     isOpen, 
@@ -14,70 +14,77 @@ const IglooEntryModal = ({
     walletAddress,
     onEntrySuccess
 }) => {
+    const { send } = useMultiplayer();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     
-    const x402 = X402Service.getInstance();
+    // Listen for entry payment result from server
+    useEffect(() => {
+        if (!isOpen) return;
+        
+        const ws = window.__multiplayerWs;
+        if (!ws) return;
+        
+        const handleMessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                
+                if (msg.type === 'igloo_pay_entry_result') {
+                    setIsLoading(false);
+                    if (msg.success) {
+                        if (onEntrySuccess) {
+                            onEntrySuccess();
+                        }
+                        onClose();
+                    } else {
+                        setError(msg.message || msg.error || 'Payment failed');
+                    }
+                }
+            } catch (e) {
+                // Ignore parse errors
+            }
+        };
+        
+        ws.addEventListener('message', handleMessage);
+        
+        return () => {
+            ws.removeEventListener('message', handleMessage);
+        };
+    }, [isOpen, onEntrySuccess, onClose]);
     
-    const handlePayEntryFee = async () => {
+    const handlePayEntryFee = useCallback(() => {
         if (!walletAddress) {
             setError('Please connect your wallet');
+            return;
+        }
+        
+        if (!iglooData?.iglooId) {
+            setError('No igloo selected');
             return;
         }
         
         setIsLoading(true);
         setError(null);
         
-        try {
-            // Create entry fee payment
-            const paymentResult = await x402.createEntryFeePayment(
-                iglooData.iglooId,
-                entryCheck.paymentAmount,
-                iglooData.ownerWallet
-            );
-            
-            if (!paymentResult.success) {
-                setError(paymentResult.message || 'Failed to create payment');
-                setIsLoading(false);
-                return;
-            }
-            
-            // Send to server
-            const response = await fetch('/api/igloo/pay-entry', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    iglooId: iglooData.iglooId,
-                    paymentPayload: paymentResult.payload
-                }),
-                credentials: 'include'
-            });
-            
-            const result = await response.json();
-            
-            if (!result.success) {
-                setError(result.message || 'Payment failed');
-                setIsLoading(false);
-                return;
-            }
-            
-            // Success - can now enter
-            if (onEntrySuccess) {
-                onEntrySuccess();
-            }
-            onClose();
-            
-        } catch (err) {
-            console.error('Entry fee error:', err);
-            setError('An unexpected error occurred');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+        // Send entry payment request via WebSocket
+        // Note: Payment is handled server-side for now
+        // TODO: Implement x402 payment flow
+        send({
+            type: 'igloo_pay_entry',
+            iglooId: iglooData.iglooId,
+            paymentPayload: null // Will be implemented with x402
+        });
+        
+    }, [walletAddress, iglooData?.iglooId, send]);
     
     if (!isOpen) return null;
     
     const { reason, message, tokenRequired, paymentAmount, requiresPayment } = entryCheck || {};
+    
+    // Get entry fee token info from igloo data
+    const entryFeeToken = iglooData?.entryFeeToken || iglooData?.entryFee;
+    const feeTokenSymbol = entryFeeToken?.tokenSymbol || 'TOKEN';
+    const feeTokenAddress = entryFeeToken?.tokenAddress;
     
     // Determine display based on denial reason
     const getReasonDisplay = () => {
@@ -100,9 +107,11 @@ const IglooEntryModal = ({
                 return {
                     icon: '💰',
                     title: 'Entry Fee Required',
-                    description: `One-time entry fee: ${paymentAmount?.toLocaleString() || 0} CPw3`,
+                    description: `One-time entry fee: ${paymentAmount?.toLocaleString() || 0} ${feeTokenSymbol}`,
                     color: 'yellow',
-                    canPay: true
+                    canPay: true,
+                    feeTokenSymbol,
+                    feeTokenAddress
                 };
             default:
                 return {
@@ -161,6 +170,16 @@ const IglooEntryModal = ({
                     {/* Entry Fee Payment */}
                     {display.canPay && (
                         <>
+                            {/* Show token info */}
+                            {display.feeTokenAddress && (
+                                <div className="bg-slate-800/50 rounded-lg p-2 text-xs">
+                                    <div className="text-slate-400">Payment Token:</div>
+                                    <div className="text-yellow-400 font-mono text-[10px] break-all">
+                                        {display.feeTokenAddress}
+                                    </div>
+                                </div>
+                            )}
+                            
                             {error && (
                                 <div className="bg-red-500/20 border border-red-500/40 rounded-lg p-2 text-red-400 text-sm">
                                     {error}
@@ -187,12 +206,12 @@ const IglooEntryModal = ({
                                 ) : !walletAddress ? (
                                     'Connect Wallet to Pay'
                                 ) : (
-                                    `💰 Pay ${paymentAmount?.toLocaleString() || 0} CPw3`
+                                    `💰 Pay ${paymentAmount?.toLocaleString() || 0} ${display.feeTokenSymbol || 'TOKEN'}`
                                 )}
                             </button>
                             
                             <p className="text-xs text-slate-500">
-                                One-time payment - you won't be charged again for this igloo.
+                                One-time payment to igloo owner - you won't be charged again.
                             </p>
                         </>
                     )}
@@ -213,4 +232,5 @@ const IglooEntryModal = ({
 };
 
 export default IglooEntryModal;
+
 

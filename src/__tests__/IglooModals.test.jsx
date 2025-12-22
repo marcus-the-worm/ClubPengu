@@ -5,22 +5,52 @@
  * Run with: npm test
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 
-// Mock X402Service
-const mockCreateRentPayment = vi.fn();
-const mockCreateEntryFeePayment = vi.fn();
+// Create mock WebSocket
+const createMockWebSocket = () => {
+    const listeners = {};
+    return {
+        addEventListener: vi.fn((type, callback) => {
+            if (!listeners[type]) listeners[type] = [];
+            listeners[type].push(callback);
+        }),
+        removeEventListener: vi.fn((type, callback) => {
+            if (listeners[type]) {
+                listeners[type] = listeners[type].filter(cb => cb !== callback);
+            }
+        }),
+        simulateMessage: (msg) => {
+            const event = { data: JSON.stringify(msg) };
+            if (listeners['message']) {
+                listeners['message'].forEach(cb => cb(event));
+            }
+        }
+    };
+};
 
-vi.mock('../wallet/X402Service.js', () => ({
-    default: {
-        getInstance: vi.fn(() => ({
-            isReady: vi.fn(() => true),
-            createRentPayment: mockCreateRentPayment,
-            createEntryFeePayment: mockCreateEntryFeePayment
-        }))
-    }
+let mockWs = createMockWebSocket();
+const mockSend = vi.fn();
+
+// Mock MultiplayerContext - must come before component imports
+vi.mock('../multiplayer/MultiplayerContext.jsx', () => ({
+    useMultiplayer: () => ({
+        send: mockSend,
+        connected: true,
+        isAuthenticated: true,
+        walletAddress: 'TestWallet123'
+    })
+}));
+
+// Mock IglooContext
+const mockUpdateSettings = vi.fn();
+vi.mock('../igloo/IglooContext.jsx', () => ({
+    useIgloo: () => ({
+        updateSettings: mockUpdateSettings,
+        isLoading: false
+    })
 }));
 
 // Mock config
@@ -31,7 +61,7 @@ vi.mock('../config/solana.js', () => ({
         DAILY_RENT_CPW3: 10000,
         MINIMUM_BALANCE_CPW3: 70000,
         GRACE_PERIOD_HOURS: 12,
-        RESERVED_IGLOOS: {}
+        RESERVED_IGLOO_IDS: []
     }
 }));
 
@@ -45,6 +75,11 @@ vi.mock('../config/roomConfig.js', () => ({
     ]
 }));
 
+// Import components after mocks are set up
+import IglooRentalModal from '../components/IglooRentalModal.jsx';
+import IglooEntryModal from '../components/IglooEntryModal.jsx';
+import IglooSettingsPanel from '../components/IglooSettingsPanel.jsx';
+
 // ==================== RENTAL MODAL TESTS ====================
 describe('IglooRentalModal', () => {
     const mockOnClose = vi.fn();
@@ -52,12 +87,15 @@ describe('IglooRentalModal', () => {
     
     beforeEach(() => {
         vi.clearAllMocks();
-        mockCreateRentPayment.mockReset();
+        mockWs = createMockWebSocket();
+        window.__multiplayerWs = mockWs;
     });
     
-    it('should render rental information when open', async () => {
-        const { default: IglooRentalModal } = await import('../components/IglooRentalModal.jsx');
-        
+    afterEach(() => {
+        delete window.__multiplayerWs;
+    });
+    
+    it('should render rental information when open', () => {
         render(
             <IglooRentalModal 
                 isOpen={true}
@@ -71,9 +109,7 @@ describe('IglooRentalModal', () => {
         expect(screen.getByText(/Rental Agreement/i)).toBeInTheDocument();
     });
     
-    it('should show available status for unrented igloo', async () => {
-        const { default: IglooRentalModal } = await import('../components/IglooRentalModal.jsx');
-        
+    it('should show available status for unrented igloo', () => {
         render(
             <IglooRentalModal 
                 isOpen={true}
@@ -86,9 +122,7 @@ describe('IglooRentalModal', () => {
         expect(screen.getByText(/Available for Rent/i)).toBeInTheDocument();
     });
     
-    it('should show rented status when igloo is rented', async () => {
-        const { default: IglooRentalModal } = await import('../components/IglooRentalModal.jsx');
-        
+    it('should show rented status when igloo is rented', () => {
         render(
             <IglooRentalModal 
                 isOpen={true}
@@ -106,9 +140,7 @@ describe('IglooRentalModal', () => {
         expect(screen.getByText(/SomeOwner/i)).toBeInTheDocument();
     });
     
-    it('should close modal on close button click', async () => {
-        const { default: IglooRentalModal } = await import('../components/IglooRentalModal.jsx');
-        
+    it('should close modal on close button click', () => {
         render(
             <IglooRentalModal 
                 isOpen={true}
@@ -125,9 +157,7 @@ describe('IglooRentalModal', () => {
         expect(mockOnClose).toHaveBeenCalled();
     });
     
-    it('should show rent cost information', async () => {
-        const { default: IglooRentalModal } = await import('../components/IglooRentalModal.jsx');
-        
+    it('should show rent cost information', () => {
         render(
             <IglooRentalModal 
                 isOpen={true}
@@ -143,9 +173,7 @@ describe('IglooRentalModal', () => {
         expect(screen.getAllByText(/10,000/i).length).toBeGreaterThanOrEqual(1);
     });
     
-    it('should not render when closed', async () => {
-        const { default: IglooRentalModal } = await import('../components/IglooRentalModal.jsx');
-        
+    it('should not render when closed', () => {
         const { container } = render(
             <IglooRentalModal 
                 isOpen={false}
@@ -166,12 +194,15 @@ describe('IglooEntryModal', () => {
     
     beforeEach(() => {
         vi.clearAllMocks();
-        mockCreateEntryFeePayment.mockReset();
+        mockWs = createMockWebSocket();
+        window.__multiplayerWs = mockWs;
     });
     
-    it('should show locked message for private igloo', async () => {
-        const { default: IglooEntryModal } = await import('../components/IglooEntryModal.jsx');
-        
+    afterEach(() => {
+        delete window.__multiplayerWs;
+    });
+    
+    it('should show locked message for private igloo', () => {
         render(
             <IglooEntryModal 
                 isOpen={true}
@@ -190,9 +221,7 @@ describe('IglooEntryModal', () => {
         expect(screen.getByText(/private/i)).toBeInTheDocument();
     });
     
-    it('should show token requirement for token-gated igloo', async () => {
-        const { default: IglooEntryModal } = await import('../components/IglooEntryModal.jsx');
-        
+    it('should show token requirement for token-gated igloo', () => {
         render(
             <IglooEntryModal 
                 isOpen={true}
@@ -211,9 +240,7 @@ describe('IglooEntryModal', () => {
         expect(screen.getByText(/\$COOL/i)).toBeInTheDocument();
     });
     
-    it('should show entry fee payment option', async () => {
-        const { default: IglooEntryModal } = await import('../components/IglooEntryModal.jsx');
-        
+    it('should show entry fee payment option', () => {
         render(
             <IglooEntryModal 
                 isOpen={true}
@@ -221,7 +248,8 @@ describe('IglooEntryModal', () => {
                 iglooData={{ 
                     iglooId: 'igloo1', 
                     ownerUsername: 'SomeOwner',
-                    ownerWallet: 'OwnerWallet123' 
+                    ownerWallet: 'OwnerWallet123',
+                    entryFee: { tokenSymbol: '$BONK', tokenAddress: 'BonkAddr123' }
                 }}
                 entryCheck={{
                     canEnter: false,
@@ -235,12 +263,10 @@ describe('IglooEntryModal', () => {
         
         expect(screen.getByText(/Entry Fee Required/i)).toBeInTheDocument();
         // Fee amount appears in description and button - check the button specifically
-        expect(screen.getByRole('button', { name: /Pay 500 CPw3/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Pay 500 \$BONK/i })).toBeInTheDocument();
     });
     
-    it('should close on close/cancel button click', async () => {
-        const { default: IglooEntryModal } = await import('../components/IglooEntryModal.jsx');
-        
+    it('should close on close/cancel button click', () => {
         render(
             <IglooEntryModal 
                 isOpen={true}
@@ -260,9 +286,7 @@ describe('IglooEntryModal', () => {
         expect(mockOnClose).toHaveBeenCalled();
     });
     
-    it('should not render when closed', async () => {
-        const { default: IglooEntryModal } = await import('../components/IglooEntryModal.jsx');
-        
+    it('should not render when closed', () => {
         const { container } = render(
             <IglooEntryModal 
                 isOpen={false}
@@ -284,12 +308,9 @@ describe('IglooSettingsPanel', () => {
     
     beforeEach(() => {
         vi.clearAllMocks();
-        global.fetch = vi.fn();
     });
     
-    it('should render all access type options', async () => {
-        const { default: IglooSettingsPanel } = await import('../components/IglooSettingsPanel.jsx');
-        
+    it('should render all access type options', () => {
         render(
             <IglooSettingsPanel 
                 isOpen={true}
@@ -312,9 +333,7 @@ describe('IglooSettingsPanel', () => {
         expect(screen.getByText('💰 Entry Fee')).toBeInTheDocument();
     });
     
-    it('should show token gate fields when token access selected', async () => {
-        const { default: IglooSettingsPanel } = await import('../components/IglooSettingsPanel.jsx');
-        
+    it('should show token gate fields when token access selected', () => {
         render(
             <IglooSettingsPanel 
                 isOpen={true}
@@ -335,9 +354,7 @@ describe('IglooSettingsPanel', () => {
         expect(screen.getByPlaceholderText(/Token contract address/i)).toBeInTheDocument();
     });
     
-    it('should show entry fee field when fee access selected', async () => {
-        const { default: IglooSettingsPanel } = await import('../components/IglooSettingsPanel.jsx');
-        
+    it('should show entry fee field when fee access selected', () => {
         render(
             <IglooSettingsPanel 
                 isOpen={true}
@@ -346,7 +363,7 @@ describe('IglooSettingsPanel', () => {
                     iglooId: 'igloo1',
                     accessType: 'fee',
                     tokenGate: { enabled: false },
-                    entryFee: { enabled: true, amount: 500 },
+                    entryFee: { enabled: true, amount: 500, tokenAddress: '', tokenSymbol: '' },
                     banner: {}
                 }}
                 onSave={mockOnSave}
@@ -355,12 +372,11 @@ describe('IglooSettingsPanel', () => {
         
         // Should show entry fee settings section
         expect(screen.getByText(/Entry Fee Settings/i)).toBeInTheDocument();
-        expect(screen.getByText(/Fee Amount \(CPw3\)/i)).toBeInTheDocument();
+        expect(screen.getByText(/Fee Amount/i)).toBeInTheDocument();
+        expect(screen.getByText(/Token Symbol/i)).toBeInTheDocument();
     });
     
-    it('should have save and cancel buttons', async () => {
-        const { default: IglooSettingsPanel } = await import('../components/IglooSettingsPanel.jsx');
-        
+    it('should have save and cancel buttons', () => {
         render(
             <IglooSettingsPanel 
                 isOpen={true}
@@ -380,9 +396,7 @@ describe('IglooSettingsPanel', () => {
         expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
     });
     
-    it('should call onClose when cancel clicked', async () => {
-        const { default: IglooSettingsPanel } = await import('../components/IglooSettingsPanel.jsx');
-        
+    it('should call onClose when cancel clicked', () => {
         render(
             <IglooSettingsPanel 
                 isOpen={true}
@@ -404,9 +418,7 @@ describe('IglooSettingsPanel', () => {
         expect(mockOnClose).toHaveBeenCalled();
     });
     
-    it('should not render when closed', async () => {
-        const { default: IglooSettingsPanel } = await import('../components/IglooSettingsPanel.jsx');
-        
+    it('should not render when closed', () => {
         const { container } = render(
             <IglooSettingsPanel 
                 isOpen={false}
@@ -417,5 +429,28 @@ describe('IglooSettingsPanel', () => {
         );
         
         expect(container.firstChild).toBeNull();
+    });
+    
+    it('should call updateSettings when save is clicked', () => {
+        render(
+            <IglooSettingsPanel 
+                isOpen={true}
+                onClose={mockOnClose}
+                iglooData={{
+                    iglooId: 'igloo5',
+                    accessType: 'private',
+                    tokenGate: { enabled: false },
+                    entryFee: { enabled: false, amount: 0 },
+                    banner: { title: '', ticker: '', shill: '', styleIndex: 0 }
+                }}
+                onSave={mockOnSave}
+            />
+        );
+        
+        const saveButton = screen.getByRole('button', { name: /Save Settings/i });
+        fireEvent.click(saveButton);
+        
+        // Should call the IglooContext updateSettings function
+        expect(mockUpdateSettings).toHaveBeenCalledWith('igloo5', expect.any(Object));
     });
 });

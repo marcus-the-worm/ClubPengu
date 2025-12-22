@@ -163,12 +163,13 @@ class X402Service {
      * @param {string} iglooId - The igloo to enter
      * @param {number} entryFee - Entry fee amount
      * @param {string} ownerWallet - Igloo owner's wallet (receives fee)
+     * @param {string} tokenAddress - Token address for the fee (defaults to CPw3)
      * @returns {Promise<Object>}
      */
-    async createEntryFeePayment(iglooId, entryFee, ownerWallet) {
+    async createEntryFeePayment(iglooId, entryFee, ownerWallet, tokenAddress = null) {
         return this.createPaymentPayload({
             amount: entryFee,
-            token: CPW3_TOKEN_ADDRESS,
+            token: tokenAddress || CPW3_TOKEN_ADDRESS,
             recipient: ownerWallet,
             memo: `entry:${iglooId}`,
             validityMinutes: 10 // Entry fees valid for 10 minutes
@@ -235,4 +236,5 @@ class X402Service {
 }
 
 export default X402Service;
+
 

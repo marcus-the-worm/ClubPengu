@@ -5,21 +5,49 @@
  * Run with: npm test
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 
-// Mock MultiplayerContext
+// Mock send function
 const mockSend = vi.fn();
-let messageCallback = null;
 
+// Create a mock WebSocket with event listener support
+const createMockWebSocket = () => {
+    const listeners = {};
+    return {
+        addEventListener: vi.fn((type, callback) => {
+            if (!listeners[type]) listeners[type] = [];
+            listeners[type].push(callback);
+        }),
+        removeEventListener: vi.fn((type, callback) => {
+            if (listeners[type]) {
+                listeners[type] = listeners[type].filter(cb => cb !== callback);
+            }
+        }),
+        dispatchEvent: (event) => {
+            const type = event.type || 'message';
+            if (listeners[type]) {
+                listeners[type].forEach(cb => cb(event));
+            }
+        },
+        // Helper to simulate server message
+        simulateMessage: (msg) => {
+            const event = { data: JSON.stringify(msg) };
+            if (listeners['message']) {
+                listeners['message'].forEach(cb => cb(event));
+            }
+        }
+    };
+};
+
+let mockWs = createMockWebSocket();
+
+// Mock MultiplayerContext
 vi.mock('../multiplayer/MultiplayerContext.jsx', () => ({
     useMultiplayer: () => ({
         send: mockSend,
-        onMessage: (callback) => {
-            messageCallback = callback;
-            return () => { messageCallback = null; };
-        },
+        connected: true,
         isAuthenticated: true,
         walletAddress: 'TestWallet123'
     })
@@ -31,10 +59,7 @@ vi.mock('../config/solana.js', () => ({
         DAILY_RENT_CPW3: 10000,
         MINIMUM_BALANCE_CPW3: 70000,
         GRACE_PERIOD_HOURS: 12,
-        RESERVED_IGLOOS: {
-            'igloo3': { owner: 'SKNY', ownerName: 'SKNY GANG' },
-            'igloo8': { owner: 'REGEN', ownerName: 'REGEN' }
-        },
+        RESERVED_IGLOO_IDS: ['igloo3', 'igloo8'],
         RENTABLE_IGLOOS: ['igloo1', 'igloo2', 'igloo4', 'igloo5', 'igloo6', 'igloo7', 'igloo9', 'igloo10']
     }
 }));
@@ -44,31 +69,35 @@ import { IglooProvider, useIgloo } from '../igloo/IglooContext.jsx';
 // ==================== HELPER ====================
 const wrapper = ({ children }) => <IglooProvider>{children}</IglooProvider>;
 
-// Helper to simulate server message
-const simulateServerMessage = (msg) => {
-    if (messageCallback) {
-        messageCallback(msg);
-    }
-};
-
 // ==================== TESTS ====================
 describe('IglooContext', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        messageCallback = null;
+        // Reset mock WebSocket
+        mockWs = createMockWebSocket();
+        window.__multiplayerWs = mockWs;
+    });
+    
+    afterEach(() => {
+        delete window.__multiplayerWs;
     });
     
     describe('initialization', () => {
-        it('should request igloo list on mount', () => {
+        it('should request igloo list on mount', async () => {
             renderHook(() => useIgloo(), { wrapper });
             
-            expect(mockSend).toHaveBeenCalledWith({ type: 'igloo_list' });
+            // Wait for the useEffect to run
+            await waitFor(() => {
+                expect(mockSend).toHaveBeenCalledWith({ type: 'igloo_list' });
+            });
         });
         
-        it('should request user rentals when authenticated', () => {
+        it('should request user rentals when authenticated', async () => {
             renderHook(() => useIgloo(), { wrapper });
             
-            expect(mockSend).toHaveBeenCalledWith({ type: 'igloo_my_rentals' });
+            await waitFor(() => {
+                expect(mockSend).toHaveBeenCalledWith({ type: 'igloo_my_rentals' });
+            });
         });
     });
     
@@ -76,9 +105,14 @@ describe('IglooContext', () => {
         it('should update igloos when server responds', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            // Wait for WebSocket to be set up
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             // Simulate server response
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_list',
                     igloos: [
                         { iglooId: 'igloo1', isRented: false },
@@ -96,8 +130,12 @@ describe('IglooContext', () => {
         it('should update myRentals when server responds', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_my_rentals',
                     igloos: [
                         { iglooId: 'igloo5', ownerWallet: 'TestWallet123' }
@@ -116,8 +154,12 @@ describe('IglooContext', () => {
         it('should return igloo by id', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_list',
                     igloos: [
                         { iglooId: 'igloo1', isRented: false },
@@ -150,8 +192,12 @@ describe('IglooContext', () => {
         it('should return true when user owns igloo', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_my_rentals',
                     igloos: [{ iglooId: 'igloo5' }]
                 });
@@ -167,8 +213,12 @@ describe('IglooContext', () => {
         it('should return false when user does not own igloo', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_my_rentals',
                     igloos: [{ iglooId: 'igloo5' }]
                 });
@@ -180,14 +230,40 @@ describe('IglooContext', () => {
             
             expect(result.current.isOwner('igloo1')).toBe(false);
         });
+        
+        it('should return true when wallet matches igloo owner in igloos list', async () => {
+            const { result } = renderHook(() => useIgloo(), { wrapper });
+            
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
+            act(() => {
+                mockWs.simulateMessage({
+                    type: 'igloo_list',
+                    igloos: [{ iglooId: 'igloo3', ownerWallet: 'TestWallet123' }]
+                });
+            });
+            
+            await waitFor(() => {
+                expect(result.current.igloos).toHaveLength(1);
+            });
+            
+            // Should return true because walletAddress matches ownerWallet
+            expect(result.current.isOwner('igloo3')).toBe(true);
+        });
     });
     
     describe('openRentalModal', () => {
         it('should set selected igloo and request can_rent', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_list',
                     igloos: [{ iglooId: 'igloo1', isRented: false }]
                 });
@@ -210,8 +286,12 @@ describe('IglooContext', () => {
         it('should set selected igloo and request owner_info', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_my_rentals',
                     igloos: [{ iglooId: 'igloo5' }]
                 });
@@ -256,8 +336,12 @@ describe('IglooContext', () => {
         it('should return banner info for igloo', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_list',
                     igloos: [{
                         iglooId: 'igloo1',
@@ -294,11 +378,15 @@ describe('IglooContext', () => {
     });
     
     describe('entry check flow', () => {
-        it('should show entry modal when entry is blocked', async () => {
+        it('should show requirements panel when entry is blocked', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_can_enter',
                     iglooId: 'igloo7',
                     igloo: { iglooId: 'igloo7', ownerUsername: 'SomeOwner' },
@@ -311,7 +399,7 @@ describe('IglooContext', () => {
             });
             
             await waitFor(() => {
-                expect(result.current.showEntryModal).toBe(true);
+                expect(result.current.showRequirementsPanel).toBe(true);
             });
             expect(result.current.entryCheckResult.reason).toBe('ENTRY_FEE_REQUIRED');
             expect(result.current.entryCheckResult.paymentAmount).toBe(500);
@@ -320,8 +408,12 @@ describe('IglooContext', () => {
         it('should not show modal when entry is allowed', async () => {
             const { result } = renderHook(() => useIgloo(), { wrapper });
             
+            await waitFor(() => {
+                expect(mockWs.addEventListener).toHaveBeenCalled();
+            });
+            
             act(() => {
-                simulateServerMessage({
+                mockWs.simulateMessage({
                     type: 'igloo_can_enter',
                     iglooId: 'igloo1',
                     igloo: { iglooId: 'igloo1' },
@@ -331,9 +423,10 @@ describe('IglooContext', () => {
             });
             
             // Wait a tick for any potential state updates
-            await new Promise(resolve => setTimeout(resolve, 0));
+            await new Promise(resolve => setTimeout(resolve, 50));
             
-            expect(result.current.showEntryModal).toBe(false);
+            // Should not show requirements panel when entry is allowed
+            expect(result.current.showRequirementsPanel).toBe(false);
         });
     });
     

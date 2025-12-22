@@ -11,7 +11,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 vi.mock('../db/models/Igloo.js', () => ({
     default: {
         findOne: vi.fn(),
-        find: vi.fn()
+        find: vi.fn(),
+        countDocuments: vi.fn().mockResolvedValue(0)  // Default: user has no current rentals
     }
 }));
 
@@ -29,10 +30,19 @@ vi.mock('../services/X402Service.js', () => ({
     }
 }));
 
+vi.mock('../services/SolanaPaymentService.js', () => ({
+    default: {
+        checkMinimumBalance: vi.fn(),
+        verifyRentPayment: vi.fn(),
+        verifyTransaction: vi.fn()
+    }
+}));
+
 // Import after mocks
 import Igloo from '../db/models/Igloo.js';
 import User from '../db/models/User.js';
 import x402Service from '../services/X402Service.js';
+import solanaPaymentService from '../services/SolanaPaymentService.js';
 
 // ==================== TEST DATA ====================
 const mockWallet = 'TestWallet123';
@@ -41,7 +51,7 @@ const mockIglooId = 'igloo1';
 const createMockIgloo = (overrides = {}) => ({
     iglooId: mockIglooId,
     isRented: false,
-    isPermanent: false,
+    isReserved: false,
     ownerWallet: null,
     ownerUsername: null,
     accessType: 'private',
@@ -75,7 +85,7 @@ describe('IglooService', () => {
         it('should allow renting available igloo with sufficient balance', async () => {
             const mockIgloo = createMockIgloo();
             Igloo.findOne.mockResolvedValue(mockIgloo);
-            x402Service.checkRentEligibility.mockResolvedValue({ hasBalance: true, currentBalance: 100000 });
+            solanaPaymentService.checkMinimumBalance.mockResolvedValue({ hasBalance: true, balance: 100000 });
             
             // Import service (after mocks are set up)
             const { default: iglooService } = await import('../services/IglooService.js');
@@ -98,8 +108,8 @@ describe('IglooService', () => {
             expect(result.error).toBe('ALREADY_RENTED');
         });
         
-        it('should reject renting permanent igloo', async () => {
-            const mockIgloo = createMockIgloo({ isPermanent: true, permanentOwnerName: 'SKNY GANG' });
+        it('should reject renting reserved igloo', async () => {
+            const mockIgloo = createMockIgloo({ isReserved: true, ownerUsername: 'Reserved Owner' });
             Igloo.findOne.mockResolvedValue(mockIgloo);
             
             const { default: iglooService } = await import('../services/IglooService.js');
@@ -107,13 +117,13 @@ describe('IglooService', () => {
             const result = await iglooService.canRent(mockWallet, 'igloo3');
             
             expect(result.canRent).toBe(false);
-            expect(result.error).toBe('PERMANENTLY_OWNED');
+            expect(result.error).toBe('RESERVED');
         });
         
         it('should reject when insufficient balance', async () => {
             const mockIgloo = createMockIgloo();
             Igloo.findOne.mockResolvedValue(mockIgloo);
-            x402Service.checkRentEligibility.mockResolvedValue({ hasBalance: false, currentBalance: 5000 });
+            solanaPaymentService.checkMinimumBalance.mockResolvedValue({ hasBalance: false, balance: 5000 });
             
             const { default: iglooService } = await import('../services/IglooService.js');
             
@@ -288,20 +298,21 @@ describe('IglooService', () => {
             Igloo.findOne.mockResolvedValue(mockIgloo);
             User.findOne.mockResolvedValue({ username: 'TestUser' });
             
-            x402Service.checkRentEligibility.mockResolvedValue({ hasBalance: true });
-            x402Service.verifyPayload.mockResolvedValue({ valid: true, payload: {} });
-            x402Service.settlePayment.mockResolvedValue({ 
+            // Mock balance check (for canRent)
+            solanaPaymentService.checkMinimumBalance.mockResolvedValue({ hasBalance: true, balance: 100000 });
+            // Mock rent payment verification
+            solanaPaymentService.verifyRentPayment.mockResolvedValue({ 
                 success: true, 
                 transactionHash: 'tx123' 
             });
             
             const { default: iglooService } = await import('../services/IglooService.js');
             
-            const result = await iglooService.startRental(mockWallet, mockIglooId, 'validPayload');
+            const result = await iglooService.startRental(mockWallet, mockIglooId, 'validTxSignature');
             
             expect(result.success).toBe(true);
             expect(result.transactionHash).toBe('tx123');
-            expect(mockIgloo.startRental).toHaveBeenCalledWith(mockWallet, 'TestUser');
+            expect(mockIgloo.startRental).toHaveBeenCalledWith(mockWallet, 'TestUser', 10000);
             expect(mockIgloo.save).toHaveBeenCalled();
         });
         
@@ -309,15 +320,17 @@ describe('IglooService', () => {
             const mockIgloo = createMockIgloo();
             Igloo.findOne.mockResolvedValue(mockIgloo);
             
-            x402Service.checkRentEligibility.mockResolvedValue({ hasBalance: true });
-            x402Service.verifyPayload.mockResolvedValue({ 
-                valid: false, 
+            // Mock balance check (for canRent) - pass
+            solanaPaymentService.checkMinimumBalance.mockResolvedValue({ hasBalance: true, balance: 100000 });
+            // Mock rent payment verification - fail
+            solanaPaymentService.verifyRentPayment.mockResolvedValue({ 
+                success: false, 
                 error: 'INVALID_SIGNATURE' 
             });
             
             const { default: iglooService } = await import('../services/IglooService.js');
             
-            const result = await iglooService.startRental(mockWallet, mockIglooId, 'invalidPayload');
+            const result = await iglooService.startRental(mockWallet, mockIglooId, 'invalidTxSignature');
             
             expect(result.success).toBe(false);
             expect(result.error).toBe('INVALID_SIGNATURE');
@@ -325,4 +338,5 @@ describe('IglooService', () => {
         });
     });
 });
+
 

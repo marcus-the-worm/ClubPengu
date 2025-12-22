@@ -25,9 +25,10 @@ const iglooSchema = new mongoose.Schema({
     // Rental status
     isRented: { type: Boolean, default: false },
     
-    // Permanent ownership (SKNY GANG, REGEN - not rentable)
-    isPermanent: { type: Boolean, default: false },
-    permanentOwnerName: { type: String, default: null },
+    // Reserved rental igloo (pre-set owner, not available for public rent)
+    // Note: These are still rental igloos, just pre-configured
+    isReserved: { type: Boolean, default: false },
+    reservedOwnerName: { type: String, default: null },
     
     // Current owner (wallet address)
     ownerWallet: { type: String, default: null },
@@ -63,7 +64,9 @@ const iglooSchema = new mongoose.Schema({
     // Entry fee settings
     entryFee: {
         enabled: { type: Boolean, default: false },
-        amount: { type: Number, default: 0 },  // In CPw3 tokens
+        amount: { type: Number, default: 0 },
+        tokenAddress: { type: String, default: null },  // Token CA for fee payment
+        tokenSymbol: { type: String, default: null },   // e.g., "$BONK", "$USDC"
         // One-time payment per user - tracked in paidEntryFees array
     },
     
@@ -110,7 +113,7 @@ const iglooSchema = new mongoose.Schema({
 });
 
 // ==================== INDEXES ====================
-iglooSchema.index({ iglooId: 1 }, { unique: true });
+// Note: iglooId already has unique:true in schema definition, no need to duplicate
 iglooSchema.index({ ownerWallet: 1 });
 iglooSchema.index({ isRented: 1 });
 iglooSchema.index({ rentDueDate: 1 });
@@ -130,8 +133,8 @@ iglooSchema.methods.canEnter = function(walletAddress, options = {}) {
         return { canEnter: true, isOwner: true };
     }
     
-    // Permanent owners can always enter their igloo
-    if (this.isPermanent && walletAddress === this.permanentOwnerWallet) {
+    // Reserved igloo owners can always enter (redundant with ownerWallet check above, but kept for clarity)
+    if (this.isReserved && walletAddress === this.ownerWallet) {
         return { canEnter: true, isOwner: true };
     }
     
@@ -173,12 +176,17 @@ iglooSchema.methods.canEnter = function(walletAddress, options = {}) {
             );
             
             if (!hasPaid) {
+                const tokenSymbol = this.entryFee.tokenSymbol || 'TOKEN';
                 return {
                     canEnter: false,
                     reason: 'ENTRY_FEE_REQUIRED',
                     requiresPayment: true,
                     paymentAmount: this.entryFee.amount,
-                    message: `Entry fee: ${this.entryFee.amount} CPw3`
+                    paymentToken: {
+                        tokenAddress: this.entryFee.tokenAddress,
+                        tokenSymbol: tokenSymbol
+                    },
+                    message: `Entry fee: ${this.entryFee.amount} ${tokenSymbol}`
                 };
             }
         }
@@ -227,8 +235,11 @@ iglooSchema.methods.recordVisit = function(walletAddress) {
 
 /**
  * Start rental period
+ * @param {string} walletAddress - New owner's wallet
+ * @param {string} username - New owner's username
+ * @param {number} rentAmount - Amount of rent paid (optional, for stats tracking)
  */
-iglooSchema.methods.startRental = function(walletAddress, username) {
+iglooSchema.methods.startRental = function(walletAddress, username, rentAmount = 0) {
     const now = new Date();
     
     this.isRented = true;
@@ -240,6 +251,11 @@ iglooSchema.methods.startRental = function(walletAddress, username) {
     this.rentStatus = 'current';
     this.accessType = 'private'; // Default to private on new rental
     this.stats.timesRented += 1;
+    
+    // Record the initial rent payment in stats
+    if (rentAmount > 0) {
+        this.stats.totalRentPaid += rentAmount;
+    }
     
     // Clear previous entry fees
     this.resetEntryFees();
@@ -286,17 +302,26 @@ iglooSchema.methods.getPublicInfo = function() {
         iglooId: this.iglooId,
         position: this.position,
         isRented: this.isRented,
-        isPermanent: this.isPermanent,
-        ownerUsername: this.ownerUsername || this.permanentOwnerName,
+        isReserved: this.isReserved, // Pre-set rental igloo (not available for public rent)
+        ownerWallet: this.ownerWallet, // Include for ownership verification
+        ownerUsername: this.ownerUsername || this.reservedOwnerName,
         accessType: this.accessType,
         banner: this.banner,
         hasTokenGate: this.tokenGate?.enabled || false,
         hasEntryFee: this.entryFee?.enabled || false,
         entryFeeAmount: this.entryFee?.amount || 0,
+        entryFeeToken: this.entryFee?.enabled ? {
+            tokenAddress: this.entryFee.tokenAddress,
+            tokenSymbol: this.entryFee.tokenSymbol || 'TOKEN'
+        } : null,
         tokenGateInfo: this.tokenGate?.enabled ? {
             symbol: this.tokenGate.tokenSymbol,
-            minimum: this.tokenGate.minimumBalance
+            minimum: this.tokenGate.minimumBalance,
+            tokenAddress: this.tokenGate.tokenAddress,
+            minimumBalance: this.tokenGate.minimumBalance
         } : null,
+        tokenGate: this.tokenGate, // Include full token gate for settings
+        entryFee: this.entryFee, // Include full entry fee for settings
         stats: {
             totalVisits: this.stats.totalVisits,
             uniqueVisitors: this.stats.uniqueVisitors
@@ -324,4 +349,5 @@ iglooSchema.methods.getOwnerInfo = function() {
 const Igloo = mongoose.model('Igloo', iglooSchema);
 
 export default Igloo;
+
 

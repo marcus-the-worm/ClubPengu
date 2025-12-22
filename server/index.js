@@ -22,6 +22,7 @@ import {
     IglooService
 } from './services/index.js';
 import { handleIglooMessage } from './handlers/iglooHandlers.js';
+import { handleTippingMessage } from './handlers/tippingHandlers.js';
 import rentScheduler from './schedulers/RentScheduler.js';
 
 const PORT = process.env.PORT || 3001;
@@ -115,6 +116,16 @@ const broadcastToRoomAll = (roomId, message) => {
     const data = JSON.stringify(message);
     for (const playerId of roomPlayers) {
         const player = players.get(playerId);
+        if (player?.ws?.readyState === 1) {
+            player.ws.send(data);
+        }
+    }
+};
+
+// Broadcast to ALL connected players (for global updates like igloo settings)
+const broadcastToAll = (message) => {
+    const data = JSON.stringify(message);
+    for (const [playerId, player] of players) {
         if (player?.ws?.readyState === 1) {
             player.ws.send(data);
         }
@@ -586,7 +597,27 @@ async function handleMessage(playerId, message) {
     
     // Handle igloo messages first (returns true if handled)
     if (message.type?.startsWith('igloo_')) {
-        const handled = await handleIglooMessage(playerId, player, message, sendToPlayer);
+        const handled = await handleIglooMessage(playerId, player, message, sendToPlayer, broadcastToAll);
+        if (handled) return;
+    }
+    
+    // Handle tipping messages (x402 USDC P2P transfers)
+    if (message.type?.startsWith('tip_')) {
+        // Helper to find player by ID
+        const getPlayerById = (id) => {
+            const p = players.get(id);
+            return p ? { id, ...p } : null;
+        };
+        // Helper to find player by wallet address
+        const getPlayerByWallet = (wallet) => {
+            for (const [id, p] of players) {
+                if (p.walletAddress === wallet) {
+                    return { id, ...p };
+                }
+            }
+            return null;
+        };
+        const handled = await handleTippingMessage(playerId, player, message, sendToPlayer, getPlayerById, getPlayerByWallet);
         if (handled) return;
     }
     

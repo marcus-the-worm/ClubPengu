@@ -1,6 +1,6 @@
 /**
  * ProfileMenu - Displays player profile when clicking on another player
- * Shows name, penguin preview, stats, and challenge button
+ * Shows name, penguin preview, stats, challenge button, and tip button
  * Responsive design for desktop, portrait mobile, and landscape mobile
  */
 
@@ -8,6 +8,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { useChallenge } from '../challenge';
 import { useMultiplayer } from '../multiplayer/MultiplayerContext';
 import { useDeviceDetection, useClickOutside, useEscapeKey } from '../hooks';
+import TippingPanel from './TippingPanel';
 
 const ProfileMenu = () => {
     const {
@@ -23,6 +24,7 @@ const ProfileMenu = () => {
     const { userData, isAuthenticated } = useMultiplayer();
     
     const [showGameDropdown, setShowGameDropdown] = useState(false);
+    const [showTipPanel, setShowTipPanel] = useState(false);
     const menuRef = useRef(null);
     
     // Use shared device detection hook
@@ -157,18 +159,29 @@ const ProfileMenu = () => {
                         {canChallenge && (
                             <div className="flex flex-col gap-1.5 min-w-[100px]">
                                 {!showGameDropdown ? (
-                                    <button
-                                        onClick={handleChallengeClick}
-                                        disabled={isInMatch}
-                                        className={`px-3 py-2 rounded-lg font-bold text-white text-xs flex items-center justify-center gap-1.5 transition-all ${
-                                            isInMatch 
-                                                ? 'bg-gray-600 cursor-not-allowed'
-                                                : 'bg-gradient-to-r from-red-500 to-orange-500 active:scale-95'
-                                        }`}
-                                    >
-                                        <span>⚔️</span>
-                                        <span>Challenge</span>
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={handleChallengeClick}
+                                            disabled={isInMatch}
+                                            className={`px-3 py-2 rounded-lg font-bold text-white text-xs flex items-center justify-center gap-1.5 transition-all ${
+                                                isInMatch 
+                                                    ? 'bg-gray-600 cursor-not-allowed'
+                                                    : 'bg-gradient-to-r from-red-500 to-orange-500 active:scale-95'
+                                            }`}
+                                        >
+                                            <span>⚔️</span>
+                                            <span>Challenge</span>
+                                        </button>
+                                        {isAuthenticated && selectedPlayer?.isAuthenticated && (
+                                            <button
+                                                onClick={() => setShowTipPanel(true)}
+                                                className="px-3 py-2 rounded-lg font-bold text-white text-xs flex items-center justify-center gap-1.5 transition-all bg-gradient-to-r from-emerald-500 to-teal-500 active:scale-95"
+                                            >
+                                                <span>💸</span>
+                                                <span>Tip USDC</span>
+                                            </button>
+                                        )}
+                                    </>
                                 ) : (
                                     <>
                                         {availableGames.map(game => (
@@ -197,6 +210,14 @@ const ProfileMenu = () => {
                     </div>
                 </div>{/* Close modal wrapper */}
                 </div>
+                
+                {/* Tipping Panel Overlay */}
+                {showTipPanel && (
+                    <TippingPanel
+                        targetPlayer={selectedPlayer}
+                        onClose={() => setShowTipPanel(false)}
+                    />
+                )}
             </div>
         );
     }
@@ -336,6 +357,17 @@ const ProfileMenu = () => {
                         </>
                     )}
                     
+                    {/* Tip Button - for authenticated users */}
+                    {isAuthenticated && selectedPlayer?.isAuthenticated && (
+                        <button
+                            onClick={() => setShowTipPanel(true)}
+                            className="w-full mt-2 py-2 sm:py-2.5 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:from-emerald-600 active:to-teal-600 active:scale-95"
+                        >
+                            <span>💸</span>
+                            <span>Send USDC Tip</span>
+                        </button>
+                    )}
+                    
                     {/* Your coins indicator */}
                     <div className="mt-2.5 pt-2 border-t border-white/10">
                         <div className="flex items-center justify-between text-[11px] sm:text-xs">
@@ -346,6 +378,14 @@ const ProfileMenu = () => {
                     </div>
                 </div>{/* Close modal wrapper */}
             </div>
+            
+            {/* Tipping Panel Overlay */}
+            {showTipPanel && (
+                <TippingPanel
+                    targetPlayer={selectedPlayer}
+                    onClose={() => setShowTipPanel(false)}
+                />
+            )}
         </div>
     );
 };

@@ -12,7 +12,7 @@ const createMockIglooDoc = (overrides = {}) => ({
     iglooId: 'igloo1',
     position: { x: -75, z: -70, row: 'north' },
     isRented: false,
-    isPermanent: false,
+    isReserved: false,
     ownerWallet: null,
     ownerUsername: null,
     rentStartDate: null,
@@ -377,4 +377,5 @@ describe('Igloo Model Methods', () => {
         });
     });
 });
+
 

@@ -50,11 +50,9 @@ export const IGLOO_CONFIG = {
     // Total igloos in the game
     TOTAL_IGLOOS: 10,
     
-    // Permanently owned igloos (not rentable)
-    RESERVED_IGLOOS: {
-        'igloo3': { owner: 'SKNY_GANG_WALLET', ownerName: 'SKNY GANG' },
-        'igloo8': { owner: 'REGEN_WALLET', ownerName: 'REGEN' }
-    },
+    // Reserved rental igloos (pre-set owners, not available for public rent)
+    // These are still rental igloos, just pre-configured with owners
+    RESERVED_IGLOO_IDS: ['igloo3', 'igloo8'],
     
     // Available for rent
     RENTABLE_IGLOOS: ['igloo1', 'igloo2', 'igloo4', 'igloo5', 'igloo6', 'igloo7', 'igloo9', 'igloo10'],

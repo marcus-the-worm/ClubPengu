@@ -3,8 +3,85 @@
  * Manage access control, entry fees, token gates, and banner customization
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { IGLOO_BANNER_STYLES } from '../config/roomConfig.js';
+import { useIgloo } from '../igloo/IglooContext.jsx';
+
+// Tokens for Token Gate (community/meme tokens that make sense for holder gating)
+const TOKEN_GATE_TOKENS = [
+    { 
+        symbol: '$CPw3', 
+        name: 'Club Penguin',
+        address: '63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump'
+    },
+    { 
+        symbol: 'BONK', 
+        name: 'Bonk',
+        address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263'
+    },
+    { 
+        symbol: '$MARCUS', 
+        name: 'Marcus',
+        address: 'qsh1EJb3naDChaCS49nSNyMiTpXcCus8KcKAE17pump'
+    }
+];
+
+// Tokens for Entry Fee (includes stables and SOL for payments)
+const ENTRY_FEE_TOKENS = [
+    { 
+        symbol: '$CPw3', 
+        name: 'Club Penguin',
+        address: '63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump'
+    },
+    { 
+        symbol: 'BONK', 
+        name: 'Bonk',
+        address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263'
+    },
+    { 
+        symbol: '$MARCUS', 
+        name: 'Marcus',
+        address: 'qsh1EJb3naDChaCS49nSNyMiTpXcCus8KcKAE17pump'
+    },
+    { 
+        symbol: 'SOL', 
+        name: 'Wrapped SOL',
+        address: 'So11111111111111111111111111111111111111112'
+    },
+    { 
+        symbol: 'USDC', 
+        name: 'USD Coin',
+        address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+    },
+    { 
+        symbol: 'USDT', 
+        name: 'Tether',
+        address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'
+    }
+];
+
+/**
+ * TokenQuickSelect - Renders quick-fill buttons for tokens
+ */
+const TokenQuickSelect = ({ tokens, onSelect, currentAddress }) => (
+    <div className="flex flex-wrap gap-1 mb-2">
+        {tokens.map((token) => (
+            <button
+                key={token.address}
+                type="button"
+                onClick={() => onSelect(token.address, token.symbol)}
+                className={`px-2 py-1 text-[10px] rounded transition-all ${
+                    currentAddress === token.address
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
+                }`}
+                title={`${token.name}\n${token.address}`}
+            >
+                {token.symbol}
+            </button>
+        ))}
+    </div>
+);
 
 const IglooSettingsPanel = ({ 
     isOpen, 
@@ -12,6 +89,8 @@ const IglooSettingsPanel = ({
     iglooData,
     onSave
 }) => {
+    const { updateSettings: sendSettings, isLoading: contextLoading } = useIgloo();
+    
     const [settings, setSettings] = useState({
         accessType: 'private',
         tokenGate: {
@@ -22,7 +101,9 @@ const IglooSettingsPanel = ({
         },
         entryFee: {
             enabled: false,
-            amount: 0
+            amount: 0,
+            tokenAddress: '',
+            tokenSymbol: ''
         },
         banner: {
             title: '',
@@ -37,53 +118,61 @@ const IglooSettingsPanel = ({
     const [success, setSuccess] = useState(false);
     const [activeTab, setActiveTab] = useState('access');
     
-    // Load existing settings
+    // Load existing settings - ensure all values are non-null for controlled inputs
     useEffect(() => {
         if (iglooData) {
             setSettings({
                 accessType: iglooData.accessType || 'private',
-                tokenGate: iglooData.tokenGate || settings.tokenGate,
-                entryFee: iglooData.entryFee || settings.entryFee,
-                banner: iglooData.banner || settings.banner
+                tokenGate: {
+                    enabled: iglooData.tokenGate?.enabled || false,
+                    tokenAddress: iglooData.tokenGate?.tokenAddress || '',
+                    tokenSymbol: iglooData.tokenGate?.tokenSymbol || '',
+                    minimumBalance: iglooData.tokenGate?.minimumBalance || 1
+                },
+                entryFee: {
+                    enabled: iglooData.entryFee?.enabled || false,
+                    amount: iglooData.entryFee?.amount || 0,
+                    tokenAddress: iglooData.entryFee?.tokenAddress || '',
+                    tokenSymbol: iglooData.entryFee?.tokenSymbol || ''
+                },
+                banner: {
+                    title: iglooData.banner?.title || '',
+                    ticker: iglooData.banner?.ticker || '',
+                    shill: iglooData.banner?.shill || '',
+                    styleIndex: iglooData.banner?.styleIndex || 0
+                }
             });
         }
     }, [iglooData]);
     
-    const handleSave = async () => {
+    // Watch for context loading to change (indicates save completed)
+    useEffect(() => {
+        if (!contextLoading && isSaving) {
+            setIsSaving(false);
+            setSuccess(true);
+            setTimeout(() => setSuccess(false), 2000);
+        }
+    }, [contextLoading, isSaving]);
+    
+    const handleSave = useCallback(() => {
+        if (!iglooData?.iglooId) {
+            setError('No igloo selected');
+            return;
+        }
+        
         setIsSaving(true);
         setError(null);
         setSuccess(false);
         
-        try {
-            const response = await fetch('/api/igloo/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    iglooId: iglooData.iglooId,
-                    settings
-                }),
-                credentials: 'include'
-            });
-            
-            const result = await response.json();
-            
-            if (!result.success) {
-                setError(result.message || 'Failed to save settings');
-                return;
-            }
-            
-            setSuccess(true);
-            if (onSave) onSave(result.igloo);
-            
-            // Clear success message after 2s
-            setTimeout(() => setSuccess(false), 2000);
-            
-        } catch (err) {
-            setError('An unexpected error occurred');
-        } finally {
-            setIsSaving(false);
+        // Use WebSocket via IglooContext
+        console.log('🏠 Saving igloo settings:', settings);
+        sendSettings(iglooData.iglooId, settings);
+        
+        // Callback for parent component
+        if (onSave) {
+            onSave({ ...iglooData, ...settings });
         }
-    };
+    }, [iglooData, settings, sendSettings, onSave]);
     
     if (!isOpen) return null;
     
@@ -164,11 +253,29 @@ const IglooSettingsPanel = ({
                                 <div className="bg-slate-700/50 rounded-lg p-4 space-y-3">
                                     <h4 className="text-sm font-semibold text-purple-400">Token Gate Settings</h4>
                                     
+                                    {/* Quick Token Select */}
+                                    <div>
+                                        <label className="block text-xs text-slate-400 mb-1">Quick Select</label>
+                                        <TokenQuickSelect 
+                                            tokens={TOKEN_GATE_TOKENS}
+                                            currentAddress={settings.tokenGate.tokenAddress}
+                                            onSelect={(address, symbol) => setSettings({
+                                                ...settings,
+                                                tokenGate: {
+                                                    ...settings.tokenGate,
+                                                    tokenAddress: address,
+                                                    tokenSymbol: symbol,
+                                                    enabled: true
+                                                }
+                                            })}
+                                        />
+                                    </div>
+                                    
                                     <div>
                                         <label className="block text-xs text-slate-400 mb-1">Token Address</label>
                                         <input
                                             type="text"
-                                            value={settings.tokenGate.tokenAddress}
+                                            value={settings.tokenGate.tokenAddress ?? ''}
                                             onChange={(e) => setSettings({
                                                 ...settings, 
                                                 tokenGate: {...settings.tokenGate, tokenAddress: e.target.value}
@@ -183,7 +290,7 @@ const IglooSettingsPanel = ({
                                             <label className="block text-xs text-slate-400 mb-1">Symbol</label>
                                             <input
                                                 type="text"
-                                                value={settings.tokenGate.tokenSymbol}
+                                                value={settings.tokenGate.tokenSymbol ?? ''}
                                                 onChange={(e) => setSettings({
                                                     ...settings, 
                                                     tokenGate: {...settings.tokenGate, tokenSymbol: e.target.value}
@@ -197,7 +304,7 @@ const IglooSettingsPanel = ({
                                             <label className="block text-xs text-slate-400 mb-1">Min Balance</label>
                                             <input
                                                 type="number"
-                                                value={settings.tokenGate.minimumBalance}
+                                                value={settings.tokenGate.minimumBalance ?? 1}
                                                 onChange={(e) => setSettings({
                                                     ...settings, 
                                                     tokenGate: {...settings.tokenGate, minimumBalance: parseInt(e.target.value) || 1}
@@ -215,22 +322,71 @@ const IglooSettingsPanel = ({
                                 <div className="bg-slate-700/50 rounded-lg p-4 space-y-3">
                                     <h4 className="text-sm font-semibold text-yellow-400">Entry Fee Settings</h4>
                                     
+                                    {/* Quick Token Select */}
                                     <div>
-                                        <label className="block text-xs text-slate-400 mb-1">Fee Amount (CPw3)</label>
+                                        <label className="block text-xs text-slate-400 mb-1">Quick Select</label>
+                                        <TokenQuickSelect 
+                                            tokens={ENTRY_FEE_TOKENS}
+                                            currentAddress={settings.entryFee.tokenAddress}
+                                            onSelect={(address, symbol) => setSettings({
+                                                ...settings,
+                                                entryFee: {
+                                                    ...settings.entryFee,
+                                                    tokenAddress: address,
+                                                    tokenSymbol: symbol,
+                                                    enabled: true
+                                                }
+                                            })}
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-xs text-slate-400 mb-1">Token Contract Address</label>
                                         <input
-                                            type="number"
-                                            value={settings.entryFee.amount}
+                                            type="text"
+                                            value={settings.entryFee.tokenAddress ?? ''}
                                             onChange={(e) => setSettings({
                                                 ...settings, 
-                                                entryFee: {...settings.entryFee, amount: parseInt(e.target.value) || 0, enabled: true}
+                                                entryFee: {...settings.entryFee, tokenAddress: e.target.value, enabled: true}
                                             })}
-                                            min={0}
+                                            placeholder="Token contract address..."
                                             className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
                                         />
-                                        <p className="text-xs text-slate-500 mt-1">
-                                            One-time payment per visitor (resets if you change settings)
-                                        </p>
                                     </div>
+                                    
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs text-slate-400 mb-1">Token Symbol</label>
+                                            <input
+                                                type="text"
+                                                value={settings.entryFee.tokenSymbol ?? ''}
+                                                onChange={(e) => setSettings({
+                                                    ...settings, 
+                                                    entryFee: {...settings.entryFee, tokenSymbol: e.target.value, enabled: true}
+                                                })}
+                                                placeholder="$TOKEN"
+                                                maxLength={10}
+                                                className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-slate-400 mb-1">Fee Amount</label>
+                                            <input
+                                                type="number"
+                                                value={settings.entryFee.amount ?? 0}
+                                                onChange={(e) => setSettings({
+                                                    ...settings, 
+                                                    entryFee: {...settings.entryFee, amount: parseInt(e.target.value) || 0, enabled: true}
+                                                })}
+                                                min={0}
+                                                className="w-full bg-slate-600 border border-slate-500 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <p className="text-xs text-slate-500">
+                                        One-time payment per visitor (resets if you change settings)
+                                    </p>
                                 </div>
                             )}
                             
@@ -252,7 +408,7 @@ const IglooSettingsPanel = ({
                                 </label>
                                 <input
                                     type="text"
-                                    value={settings.banner.title}
+                                    value={settings.banner.title ?? ''}
                                     onChange={(e) => setSettings({
                                         ...settings, 
                                         banner: {...settings.banner, title: e.target.value}
@@ -269,7 +425,7 @@ const IglooSettingsPanel = ({
                                 </label>
                                 <input
                                     type="text"
-                                    value={settings.banner.ticker}
+                                    value={settings.banner.ticker ?? ''}
                                     onChange={(e) => setSettings({
                                         ...settings, 
                                         banner: {...settings.banner, ticker: e.target.value}
@@ -286,7 +442,7 @@ const IglooSettingsPanel = ({
                                 </label>
                                 <input
                                     type="text"
-                                    value={settings.banner.shill}
+                                    value={settings.banner.shill ?? ''}
                                     onChange={(e) => setSettings({
                                         ...settings, 
                                         banner: {...settings.banner, shill: e.target.value}
@@ -328,19 +484,19 @@ const IglooSettingsPanel = ({
                                 <div 
                                     className="rounded-lg p-3 text-center"
                                     style={{
-                                        background: `linear-gradient(180deg, ${IGLOO_BANNER_STYLES[settings.banner.styleIndex]?.bgGradient[0] || '#333'}, ${IGLOO_BANNER_STYLES[settings.banner.styleIndex]?.bgGradient[2] || '#111'})`
+                                        background: `linear-gradient(180deg, ${IGLOO_BANNER_STYLES[settings.banner.styleIndex ?? 0]?.bgGradient[0] || '#333'}, ${IGLOO_BANNER_STYLES[settings.banner.styleIndex ?? 0]?.bgGradient[2] || '#111'})`
                                     }}
                                 >
-                                    <div className="text-lg font-bold" style={{ color: IGLOO_BANNER_STYLES[settings.banner.styleIndex]?.textColor || '#fff' }}>
+                                    <div className="text-lg font-bold" style={{ color: IGLOO_BANNER_STYLES[settings.banner.styleIndex ?? 0]?.textColor || '#fff' }}>
                                         {settings.banner.title || 'Your Igloo'}
                                     </div>
                                     {settings.banner.ticker && (
-                                        <div className="text-sm font-mono" style={{ color: IGLOO_BANNER_STYLES[settings.banner.styleIndex]?.accentColor || '#0ff' }}>
+                                        <div className="text-sm font-mono" style={{ color: IGLOO_BANNER_STYLES[settings.banner.styleIndex ?? 0]?.accentColor || '#0ff' }}>
                                             {settings.banner.ticker}
                                         </div>
                                     )}
                                     {settings.banner.shill && (
-                                        <div className="text-xs mt-1 opacity-80" style={{ color: IGLOO_BANNER_STYLES[settings.banner.styleIndex]?.textColor || '#fff' }}>
+                                        <div className="text-xs mt-1 opacity-80" style={{ color: IGLOO_BANNER_STYLES[settings.banner.styleIndex ?? 0]?.textColor || '#fff' }}>
                                             {settings.banner.shill}
                                         </div>
                                     )}
@@ -368,10 +524,12 @@ const IglooSettingsPanel = ({
                                 
                                 <div className="flex justify-between text-sm">
                                     <span className="text-slate-400">Next Payment Due:</span>
-                                    <span className="text-white">
-                                        {iglooData?.rentDueDate 
-                                            ? new Date(iglooData.rentDueDate).toLocaleString()
-                                            : 'N/A'}
+                                    <span className={`${iglooData?.isReserved ? 'text-purple-400' : 'text-white'}`}>
+                                        {iglooData?.isReserved 
+                                            ? '✨ Pre-Paid' 
+                                            : iglooData?.rentDueDate 
+                                                ? new Date(iglooData.rentDueDate).toLocaleString()
+                                                : 'N/A'}
                                     </span>
                                 </div>
                                 
@@ -392,7 +550,7 @@ const IglooSettingsPanel = ({
                                 <div className="flex justify-between text-sm">
                                     <span className="text-slate-400">Entry Fees Collected:</span>
                                     <span className="text-green-400 font-mono">
-                                        {iglooData?.stats?.totalEntryFeesCollected?.toLocaleString() || 0} CPw3
+                                        {iglooData?.stats?.totalEntryFeesCollected?.toLocaleString() || 0} {iglooData?.entryFee?.tokenSymbol || 'tokens'}
                                     </span>
                                 </div>
                             </div>
@@ -449,4 +607,5 @@ const IglooSettingsPanel = ({
 };
 
 export default IglooSettingsPanel;
+
 

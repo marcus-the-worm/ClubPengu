@@ -45,11 +45,74 @@ class X402Service {
                 confirmTransactionInitialTimeout: 60000
             });
             this.connectionInitialized = true;
-            console.log(`🔗 X402Service: Connected to Solana RPC (${SOLANA_RPC_URL.includes('mainnet') ? 'mainnet' : 'devnet'})`);
         } catch (error) {
             console.error('🔗 X402Service: Failed to initialize Solana connection:', error);
             this.connectionInitialized = false;
         }
+    }
+    
+    /**
+     * Get SPL token balance for a wallet
+     * @param {string} walletAddress - The wallet to check
+     * @param {string} tokenMintAddress - The token mint address to check balance for
+     * @returns {Promise<number>} Token balance (in smallest unit, needs to account for decimals)
+     */
+    async getTokenBalance(walletAddress, tokenMintAddress) {
+        if (!this.connectionInitialized || !this.connection) {
+            console.error('🔗 X402Service: Solana connection not initialized');
+            return 0;
+        }
+        
+        if (!walletAddress || !tokenMintAddress) {
+            console.error('🔗 X402Service: Missing wallet or token address');
+            return 0;
+        }
+        
+        try {
+            const walletPubkey = new PublicKey(walletAddress);
+            const tokenMintPubkey = new PublicKey(tokenMintAddress);
+            
+            // Get all token accounts for this wallet that hold this specific token
+            const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
+                walletPubkey,
+                { mint: tokenMintPubkey }
+            );
+            
+            if (tokenAccounts.value.length === 0) {
+                return 0;
+            }
+            
+            // Sum up balance from all accounts (usually just one)
+            let totalBalance = 0;
+            for (const account of tokenAccounts.value) {
+                const parsedInfo = account.account.data.parsed?.info;
+                if (parsedInfo) {
+                    // uiAmount is the human-readable amount (accounts for decimals)
+                    totalBalance += parsedInfo.tokenAmount?.uiAmount || 0;
+                }
+            }
+            
+            return totalBalance;
+            
+        } catch (error) {
+            console.error('🔗 X402Service: Error checking token balance:', error.message);
+            return 0;
+        }
+    }
+    
+    /**
+     * Check if wallet has minimum token balance
+     * @param {string} walletAddress - The wallet to check
+     * @param {string} tokenMintAddress - The token mint address
+     * @param {number} minimumBalance - Minimum required balance
+     * @returns {Promise<{hasBalance: boolean, balance: number}>}
+     */
+    async checkMinimumBalance(walletAddress, tokenMintAddress, minimumBalance) {
+        const balance = await this.getTokenBalance(walletAddress, tokenMintAddress);
+        return {
+            hasBalance: balance >= minimumBalance,
+            balance
+        };
     }
     
     /**
@@ -88,7 +151,7 @@ class X402Service {
         
         // Check network
         if (payload.network !== this.networkId) {
-            return { valid: false, error: 'WRONG_NETWORK', message: 'Payment is for wrong network' };
+            return { valid: false, error: 'WRONG_NETWORK', message: `Wrong network (got: ${payload.network}, expected: ${this.networkId})` };
         }
         
         // Verify signature
@@ -180,20 +243,43 @@ class X402Service {
      * This should only be called when the condition is met (e.g., rent due, game won)
      * 
      * @param {string} encodedPayload - Base64 encoded payload
+     * @param {Object} paymentRequirements - Expected payment details for x402 facilitator
      * @returns {Promise<Object>} { success: boolean, transactionHash?: string, error?: string }
      */
-    async settlePayment(encodedPayload) {
+    async settlePayment(encodedPayload, paymentRequirements = {}) {
         // First verify the payload is still valid
         const verification = await this.verifyPayloadLocal(encodedPayload);
         if (!verification.valid) {
             return { success: false, error: verification.error, message: verification.message };
         }
         
+        const payload = verification.payload;
+        
+        // Build payment requirements for x402 facilitator (v1 format)
+        const requirements = {
+            version: '1',  // x402 protocol version
+            scheme: 'exact',
+            network: this.networkId,
+            maxAmountRequired: payload.amount,
+            resource: paymentRequirements.resource || payload.memo || 'payment',
+            description: paymentRequirements.description || 'Payment',
+            mimeType: 'application/json',
+            payTo: payload.recipient,
+            maxTimeoutSeconds: 60,
+            asset: payload.token,
+            ...paymentRequirements
+        };
+        
         try {
+            const requestBody = { 
+                paymentPayload: encodedPayload,
+                paymentRequirements: requirements
+            };
+            
             const response = await fetch(`${this.facilitatorUrl}/settle`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paymentPayload: encodedPayload })
+                body: JSON.stringify(requestBody)
             });
             
             const result = await response.json();
@@ -202,12 +288,12 @@ class X402Service {
                 console.error('x402: Settlement failed:', result);
                 return { 
                     success: false, 
-                    error: result.error || 'SETTLEMENT_FAILED', 
+                    error: result.error || result.errorReason || 'SETTLEMENT_FAILED', 
                     message: result.message || 'Payment settlement failed' 
                 };
             }
             
-            console.log(`x402: Payment settled, tx: ${result.transaction}`);
+            // Payment settled successfully
             
             return {
                 success: true,
@@ -235,7 +321,6 @@ class X402Service {
     async checkTokenBalance(walletAddress, tokenAddress, minimumBalance) {
         // In development without proper config, allow for testing
         if (process.env.NODE_ENV !== 'production' && !CPW3_TOKEN_ADDRESS) {
-            console.log(`x402: DEV MODE - Skipping balance check for ${walletAddress.slice(0, 8)}...`);
             return { hasBalance: true, currentBalance: minimumBalance * 2, devMode: true };
         }
         
@@ -271,8 +356,6 @@ class X402Service {
             
             const hasBalance = BigInt(totalBalance) >= BigInt(minimumBalance);
             
-            console.log(`x402: Balance check for ${walletAddress.slice(0, 8)}... - ${totalBalance} / ${minimumBalance} required (${hasBalance ? '✓' : '✗'})`);
-            
             return { 
                 hasBalance, 
                 currentBalance: Number(totalBalance),
@@ -284,7 +367,6 @@ class X402Service {
             
             // In dev, allow through on RPC errors
             if (process.env.NODE_ENV !== 'production') {
-                console.log('x402: DEV MODE - Allowing balance check despite RPC error');
                 return { hasBalance: true, currentBalance: minimumBalance * 2, devMode: true, rpcError: error.message };
             }
             
