@@ -36,8 +36,11 @@ export { default as ChatBubbleManager, createChatSprite, getBubbleHeight, getNam
 // Multiplayer synchronization
 export { default as MultiplayerSync, hasAnimatedCosmetics, lerp, lerpRotation, calculateLerpFactor } from './MultiplayerSync';
 
-// Match banner system
+// Match banner system (P2P)
 export { updateMatchBanners, cleanupMatchBanners, renderBannerToCanvas } from './MatchBannerSystem';
+
+// PvE Activity banner system (fishing, blackjack, etc.)
+export { updatePveBanners, cleanupPveBanners, renderPveBannerToCanvas } from './MatchBannerSystem';
 
 // Igloo occupancy banners
 export { createIglooOccupancySprite, updateIglooOccupancySprite } from './IglooOccupancySystem';

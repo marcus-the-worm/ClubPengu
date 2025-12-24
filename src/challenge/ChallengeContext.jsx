@@ -41,9 +41,12 @@ export function ChallengeProvider({ children }) {
     const [isInMatch, setIsInMatch] = useState(false);
     const [shouldDance, setShouldDance] = useState(false); // Winner should dance after match
     
-    // Spectating state
+    // Spectating state (P2P matches)
     const [activeMatches, setActiveMatches] = useState([]); // Matches in current room
-    const [spectatingMatch, setSpectatingMatch] = useState(null);
+    const [spectatingMatch, setSpectatingMatch] = useState({}); // matchId -> match state
+    
+    // PvE Activity Spectating state (fishing, blackjack vs dealer, etc.)
+    const [activePveActivities, setActivePveActivities] = useState({}); // playerId -> activity state
     
     // UI state
     const [showInbox, setShowInbox] = useState(false);
@@ -236,7 +239,7 @@ export function ChallengeProvider({ children }) {
                     
                 case 'match_spectate':
                     setSpectatingMatch(prev => ({
-                        ...prev,
+                        ...(prev || {}),
                         [message.matchId]: {
                             players: message.players,
                             state: message.state,
@@ -250,13 +253,14 @@ export function ChallengeProvider({ children }) {
                     // Update the spectating match with final state and winner info
                     // Keep it visible for 5 seconds so spectators can see the result
                     setSpectatingMatch(prev => {
-                        const existing = prev[message.matchId] || {};
+                        const safePrev = prev || {};
+                        const existing = safePrev[message.matchId] || {};
                         return {
-                            ...prev,
+                            ...safePrev,
                             [message.matchId]: {
                                 ...existing,
                                 state: {
-                                    ...existing.state,
+                                    ...(existing.state || {}),
                                     ...(message.finalState || {}),
                                     // Use the winner from finalState (preserves 'X', 'O', 'R', 'Y', 'draw')
                                     // Only override if not present in finalState
@@ -277,7 +281,7 @@ export function ChallengeProvider({ children }) {
                     setTimeout(() => {
                         setActiveMatches(prev => prev.filter(m => m.matchId !== message.matchId));
                         setSpectatingMatch(prev => {
-                            const next = { ...prev };
+                            const next = { ...(prev || {}) };
                             delete next[message.matchId];
                             return next;
                         });
@@ -286,6 +290,70 @@ export function ChallengeProvider({ children }) {
                     
                 case 'active_matches':
                     setActiveMatches(message.matches || []);
+                    break;
+                
+                // ==================== PvE ACTIVITY SPECTATING ====================
+                case 'pve_activity_start':
+                    // A player started a PvE activity (fishing, blackjack, etc.)
+                    setActivePveActivities(prev => ({
+                        ...prev,
+                        [message.playerId]: {
+                            playerId: message.playerId,
+                            playerName: message.playerName,
+                            position: message.position,
+                            activity: message.activity, // 'fishing' | 'blackjack' | 'cardjitsu'
+                            state: message.state || {},
+                            startedAt: Date.now()
+                        }
+                    }));
+                    break;
+                    
+                case 'pve_activity_update':
+                    // Update PvE activity state (fish caught, cards dealt, etc.)
+                    setActivePveActivities(prev => {
+                        if (!prev[message.playerId]) return prev;
+                        return {
+                            ...prev,
+                            [message.playerId]: {
+                                ...prev[message.playerId],
+                                state: {
+                                    ...prev[message.playerId].state,
+                                    ...message.state
+                                }
+                            }
+                        };
+                    });
+                    break;
+                    
+                case 'pve_activity_end':
+                    // PvE activity ended - show result briefly then remove
+                    setActivePveActivities(prev => {
+                        if (!prev[message.playerId]) return prev;
+                        return {
+                            ...prev,
+                            [message.playerId]: {
+                                ...prev[message.playerId],
+                                state: {
+                                    ...prev[message.playerId].state,
+                                    ...message.finalState,
+                                    isComplete: true
+                                }
+                            }
+                        };
+                    });
+                    // Remove after 5 seconds
+                    setTimeout(() => {
+                        setActivePveActivities(prev => {
+                            const next = { ...prev };
+                            delete next[message.playerId];
+                            return next;
+                        });
+                    }, 5000);
+                    break;
+                    
+                case 'active_pve_activities':
+                    // Receive all active PvE activities when joining a room
+                    setActivePveActivities(message.activities || {});
                     break;
                     
                 case 'coins_update':
@@ -638,6 +706,7 @@ export function ChallengeProvider({ children }) {
         isInMatch,
         activeMatches,
         spectatingMatch,
+        activePveActivities, // PvE activity spectating (fishing, blackjack, etc.)
         showInbox,
         showWagerModal,
         wagerGameType,

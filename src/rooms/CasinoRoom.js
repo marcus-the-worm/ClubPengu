@@ -804,9 +804,21 @@ class CasinoRoom extends BaseRoom {
         
         // 2 blackjack tables in empty space near bar (z ~20-25)
         const bjPositions = [
-            { x: CX - 15, z: 22 },
-            { x: CX + 15, z: 22 },
+            { x: CX - 15, z: 22, tableId: 'bj_table_1' },
+            { x: CX + 15, z: 22, tableId: 'bj_table_2' },
         ];
+        
+        // Store dealer positions for VoxelWorld to spawn dealer penguins
+        // Dealer stands at the straight edge of the semicircular table (lower Z)
+        // and faces toward the curved player side (higher Z / toward 0 rotation)
+        this.blackjackDealerPositions = bjPositions.map(pos => ({
+            tableId: pos.tableId,
+            x: pos.x,
+            z: pos.z - 2.5, // Behind the table (dealer side, closer to table)
+            rotation: 0, // Face toward positive Z (toward the players/stools)
+            tableX: pos.x,
+            tableZ: pos.z
+        }));
         
         bjPositions.forEach((pos, tableIdx) => {
             // Create high quality blackjack table
@@ -1607,11 +1619,27 @@ class CasinoRoom extends BaseRoom {
                 { x: CX - 18, z: CZ + 15, radius: 6 },
                 { x: CX + 18, z: CZ + 15, radius: 6 },
             ],
-            // Blackjack table positions (2 near bar)
+            // Blackjack table positions (2 near bar) with dealer/interaction data
             blackjackTables: [
-                { x: CX - 15, z: 22, radius: 4 },
-                { x: CX + 15, z: 22, radius: 4 },
+                { 
+                    tableId: 'bj_table_1',
+                    x: CX - 15, 
+                    z: 22, 
+                    radius: 4,
+                    dealerPosition: { x: CX - 15, z: 22 - 2.5, rotation: 0 },
+                    interactionRadius: 7 // Large radius to include bar stools
+                },
+                { 
+                    tableId: 'bj_table_2',
+                    x: CX + 15, 
+                    z: 22, 
+                    radius: 4,
+                    dealerPosition: { x: CX + 15, z: 22 - 2.5, rotation: 0 },
+                    interactionRadius: 7 // Large radius to include bar stools
+                },
             ],
+            // Dealer positions for penguin NPCs (created in VoxelWorld)
+            blackjackDealers: this.blackjackDealerPositions || [],
             // Roulette table positions (centered)
             rouletteTables: [
                 { x: CX - 12, z: CZ, radius: 4 },

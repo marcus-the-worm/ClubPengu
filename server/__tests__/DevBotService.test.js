@@ -96,6 +96,9 @@ describe('DevBotService', () => {
             // Set bot as in a match
             devBotService.activeMatch = { id: 'existing_match' };
             
+            // Mock getMatch to return an active match (not complete)
+            mockMatchService.getMatch.mockReturnValue({ id: 'existing_match', status: 'active' });
+            
             const challenge = {
                 challengeId: 'test_challenge_3',
                 challengerName: 'TestPlayer',
@@ -246,7 +249,8 @@ describe('DevBotService', () => {
             // Wait for delayed move (1000-2000ms delay + buffer)
             await new Promise(resolve => setTimeout(resolve, 2500));
             
-            expect(mockMatchService.makeMove).toHaveBeenCalled();
+            // TicTacToe uses playCard, not makeMove
+            expect(mockMatchService.playCard).toHaveBeenCalled();
         });
         
         it('should not respond when it is opponent turn', async () => {

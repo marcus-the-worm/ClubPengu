@@ -297,7 +297,7 @@ function HeroSection() {
           transition={{ delay: 0.5 }}
           className="text-lg text-slate-500 mb-12 max-w-xl mx-auto"
         >
-          Reviving Club Penguin culture with Solana-native wagering, tradeable cosmetics, and virtual property rentals.
+          Reviving Club Pengu culture with Solana-native wagering, tradeable cosmetics, and virtual property rentals.
         </motion.p>
 
         {/* CTA Buttons */}
@@ -384,7 +384,7 @@ function AboutSection() {
           {[
             {
               icon: <Users className="w-8 h-8" />,
-              title: "Club Penguin Vibes",
+              title: "Club Pengu Vibes",
               description: "Classic 3D voxel world, penguin customization, puffles, emotes, and the social experience you remember—rebuilt for Web3.",
               color: "from-cyan-500 to-blue-500",
             },

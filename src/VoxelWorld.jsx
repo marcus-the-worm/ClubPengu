@@ -41,9 +41,10 @@ import {
     IGLOO_BANNER_STYLES,
     IGLOO_BANNER_CONTENT
 } from './config';
-import { createChatSprite, updateAIAgents, updateMatchBanners, createIglooOccupancySprite, updateIglooOccupancySprite, animateMesh, updateDayNightCycle, calculateNightFactor, SnowfallSystem, WizardTrailSystem, MountTrailSystem, LocalizedParticleSystem, CameraController, lerp, lerpRotation, calculateLerpFactor, SlotMachineSystem, JackpotCelebration, IceFishingSystem } from './systems';
+import { createChatSprite, updateAIAgents, updateMatchBanners, updatePveBanners, cleanupPveBanners, createIglooOccupancySprite, updateIglooOccupancySprite, animateMesh, updateDayNightCycle, calculateNightFactor, SnowfallSystem, WizardTrailSystem, MountTrailSystem, LocalizedParticleSystem, CameraController, lerp, lerpRotation, calculateLerpFactor, SlotMachineSystem, JackpotCelebration, IceFishingSystem } from './systems';
 import { createDojo, createGiftShop, createPizzaParlor, generateDojoInterior, generatePizzaInterior } from './buildings';
 import IceFishingGame from './games/IceFishingGame';
+import CasinoBlackjack from './components/CasinoBlackjack';
 
 const VoxelWorld = ({ 
     penguinData, 
@@ -58,6 +59,7 @@ const VoxelWorld = ({
     isInMatch = false, // True when player is in a P2P match (disable movement input)
     activeMatches = [], // Active matches in the room (for spectator banners)
     spectatingMatch = {}, // Real-time match state data for spectating
+    activePveActivities = {}, // PvE activity state for spectator banners (fishing, blackjack, etc.)
     onRequestAuth    // Callback to redirect to penguin maker for auth
 }) => {
     const mountRef = useRef(null);
@@ -82,6 +84,7 @@ const VoxelWorld = ({
     const wagerBotMeshRef = useRef(null); // WagerBot NPC mesh (dev mode only)
     const isInMatchRef = useRef(isInMatch); // Track match state for game loop
     const matchBannersRef = useRef(new Map()); // matchId -> { sprite, canvas, ctx }
+    const pveBannersRef = useRef(new Map()); // playerId -> { sprite, canvas, ctx } for PvE activities
     const wizardTrailSystemRef = useRef(null); // World-space wizard hat particle trail
     const mountTrailSystemRef = useRef(null); // Mount trail system (icy trails, etc.)
     const mountEnabledRef = useRef(true); // Track if mount is equipped/enabled
@@ -175,7 +178,9 @@ const VoxelWorld = ({
         cancelFishing,
         fishingActive,
         fishingResult,
-        userData
+        userData,
+        // Raw send for PvE activity messages
+        send: mpSend
     } = useMultiplayer();
     
     // Keep refs updated for use in event handlers (must be after useMultiplayer destructuring)
@@ -330,6 +335,12 @@ const VoxelWorld = ({
     
     // Slot Machine Interaction State
     const [slotInteraction, setSlotInteraction] = useState(null); // { machine, prompt, canSpin }
+    
+    // Blackjack Table Interaction State
+    const [blackjackInteraction, setBlackjackInteraction] = useState(null); // { tableId, prompt, canPlay }
+    const [blackjackGameActive, setBlackjackGameActive] = useState(false); // True when blackjack UI is open
+    const [blackjackTableId, setBlackjackTableId] = useState(null);
+    const blackjackDealersRef = useRef([]); // References to dealer penguin meshes
     
     // Ice Fishing Interaction State
     const [fishingInteraction, setFishingInteraction] = useState(null); // { spot, prompt, canFish }
@@ -845,7 +856,7 @@ const VoxelWorld = ({
             
             const loreLines = [
                 'In the Great Thaw of Year 42, when the',
-                'Shark Armies besieged Club Penguin,',
+                'Shark Armies besieged Pengu Island,',
                 'Lord Fishnu rose from the depths to',
                 'defend our beloved island.',
                 '',
@@ -1657,6 +1668,34 @@ const VoxelWorld = ({
             senseiMesh.position.set(0, 0.4, -12);
             senseiMesh.name = 'sensei_penguin';
             scene.add(senseiMesh);
+        }
+        
+        // --- BLACKJACK DEALER PENGUINS (Casino Game Room only) ---
+        if (room === 'casino_game_room' && roomData?.blackjackDealers) {
+            blackjackDealersRef.current = [];
+            
+            roomData.blackjackDealers.forEach((dealerPos, idx) => {
+                const dealerData = {
+                    skin: 'black',
+                    hat: 'tophat',
+                    eyes: 'cool',
+                    mouth: 'beak',
+                    bodyItem: 'bowtie'
+                };
+                const dealerMesh = buildPenguinMesh(dealerData);
+                // Slightly larger dealer penguins
+                dealerMesh.scale.set(1.1, 1.1, 1.1);
+                dealerMesh.position.set(dealerPos.x, 0.05, dealerPos.z);
+                dealerMesh.rotation.y = dealerPos.rotation;
+                dealerMesh.name = `blackjack_dealer_${dealerPos.tableId}`;
+                dealerMesh.userData.tableId = dealerPos.tableId;
+                dealerMesh.userData.tableX = dealerPos.tableX;
+                dealerMesh.userData.tableZ = dealerPos.tableZ;
+                scene.add(dealerMesh);
+                
+                blackjackDealersRef.current.push(dealerMesh);
+                console.log(`🎰 Blackjack dealer spawned at table ${dealerPos.tableId}`);
+            });
         }
 
         // --- WAGERBOT NPC (Town only, Development mode) ---
@@ -3892,6 +3931,28 @@ const VoxelWorld = ({
         
     }, [activeMatches, spectatingMatch]); // Re-run when matches or spectating data changes
     
+    // ==================== PvE ACTIVITY BANNERS ====================
+    // Update PvE activity banners (fishing, blackjack, etc.)
+    useEffect(() => {
+        if (!sceneRef.current || !window.THREE) return;
+        
+        const THREE = window.THREE;
+        const scene = sceneRef.current;
+        const pveBanners = pveBannersRef.current;
+        const playersData = playersDataRef.current;
+        
+        // Update PvE banners using the extracted system
+        updatePveBanners({
+            THREE,
+            scene,
+            pveBannersRef: pveBanners,
+            playersData,
+            activePveActivities,
+            localPlayerId: playerId
+        });
+        
+    }, [activePveActivities, playerId]); // Re-run when PvE activities change
+    
     const triggerEmote = (type) => {
         emoteRef.current = { type, startTime: Date.now() };
         // Send emote to other players (emote wheel = ground emotes, not furniture)
@@ -4466,6 +4527,64 @@ const VoxelWorld = ({
         }
     };
     
+    // Check for nearby blackjack tables (casino only)
+    // Only shows the play prompt when player is SEATED at a blackjack stool
+    const checkBlackjackTables = () => {
+        if (room !== 'casino_game_room' || blackjackGameActive) {
+            if (blackjackInteraction && !blackjackGameActive) setBlackjackInteraction(null);
+            return;
+        }
+        
+        // Only show blackjack UI when player is seated on a blackjack stool
+        // This prevents overlap with the "sit" prompt
+        if (!seatedRef.current) {
+            if (blackjackInteraction) setBlackjackInteraction(null);
+            return;
+        }
+        
+        const roomData = roomDataRef.current;
+        if (!roomData?.blackjackTables) return;
+        
+        const playerPos = posRef.current;
+        const playerY = playerPos.y || 0;
+        
+        // Only check when player is on ground level
+        if (playerY > 1.5) return;
+        
+        let nearestTable = null;
+        let nearestDist = Infinity;
+        
+        for (const table of roomData.blackjackTables) {
+            const dx = playerPos.x - table.x;
+            const dz = playerPos.z - table.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            
+            // Large interaction radius (7) to include seated players at stools
+            if (dist < (table.interactionRadius || 7) && dist < nearestDist) {
+                nearestDist = dist;
+                nearestTable = table;
+            }
+        }
+        
+        if (nearestTable) {
+            const playerCoins = userData?.coins || GameManager.getInstance().getCoins();
+            const canPlay = playerCoins >= 10; // Minimum bet
+            
+            const newInteraction = {
+                tableId: nearestTable.tableId,
+                table: nearestTable,
+                canPlay,
+                balance: playerCoins
+            };
+            
+            if (!blackjackInteraction || blackjackInteraction.tableId !== nearestTable.tableId) {
+                setBlackjackInteraction(newInteraction);
+            }
+        } else if (blackjackInteraction) {
+            setBlackjackInteraction(null);
+        }
+    };
+    
     // Check for nearby ice fishing spots (town only)
     const checkFishingSpots = () => {
         if (room !== 'town') {
@@ -4532,11 +4651,12 @@ const VoxelWorld = ({
             checkPortals();
             checkIglooProximity();
             checkSlotMachines();
+            checkBlackjackTables();
             checkFishingSpots();
             checkLordFishnu();
         }, 200);
         return () => clearInterval(interval);
-    }, [nearbyPortal, room, slotInteraction, fishingInteraction, lordFishnuInteraction, userData?.coins, isAuthenticated]);
+    }, [nearbyPortal, room, slotInteraction, blackjackInteraction, blackjackGameActive, fishingInteraction, lordFishnuInteraction, userData?.coins, isAuthenticated]);
     
     // Handle portal entry
     const handlePortalEnter = () => {
@@ -4689,6 +4809,12 @@ const VoxelWorld = ({
         slotInteractionRef.current = slotInteraction;
     }, [slotInteraction]);
     
+    // Blackjack interaction ref for E key handler
+    const blackjackInteractionRef = useRef(null);
+    useEffect(() => {
+        blackjackInteractionRef.current = blackjackInteraction;
+    }, [blackjackInteraction]);
+    
     // Fishing interaction ref for E key handler
     const fishingInteractionRef = useRef(null);
     useEffect(() => {
@@ -4768,6 +4894,35 @@ const VoxelWorld = ({
         return () => window.removeEventListener('keydown', handleSlotKeyPress);
     }, [nearbyPortal, emoteWheelOpen, slotSpinning, handleSlotSpin]);
     
+    // Blackjack lock ref to prevent E spam
+    const blackjackLockRef = useRef(false);
+    
+    // Handle blackjack start action - opens the blackjack UI overlay
+    const handleBlackjackStart = useCallback(() => {
+        if (blackjackLockRef.current || blackjackGameActive) return;
+        
+        const currentBJInteraction = blackjackInteractionRef.current;
+        if (!currentBJInteraction?.canPlay || !currentBJInteraction?.tableId) return;
+        
+        blackjackLockRef.current = true;
+        
+        // Open the blackjack game overlay
+        setBlackjackTableId(currentBJInteraction.tableId);
+        setBlackjackGameActive(true);
+        
+        // Send sit message to server (done in CasinoBlackjack component)
+        
+        setTimeout(() => { blackjackLockRef.current = false; }, 300);
+    }, [blackjackGameActive]);
+    
+    // Blackjack is click-only (no E key) to avoid conflict with sit interaction
+    
+    // Handle blackjack game leave
+    const handleBlackjackLeave = useCallback(() => {
+        setBlackjackGameActive(false);
+        setBlackjackTableId(null);
+    }, []);
+    
     // Handle fishing action - opens the fishing minigame overlay
     const handleFishingAction = useCallback(async () => {
         if (fishingLockRef.current || fishingGameActive) return;
@@ -4834,7 +4989,10 @@ const VoxelWorld = ({
         if (iceFishingSystemRef.current) {
             iceFishingSystemRef.current.stopLocalFishing();
         }
-    }, []);
+        
+        // Notify server that fishing ended (for PvE spectator banners)
+        mpSend?.({ type: 'fishing_end' });
+    }, [mpSend]);
     
     // E key handler for fishing
     useEffect(() => {
@@ -5971,6 +6129,15 @@ const VoxelWorld = ({
                 />
              )}
              
+             {/* Casino Blackjack PvE Game Overlay */}
+             {blackjackGameActive && blackjackTableId && room === 'casino_game_room' && (
+                <CasinoBlackjack
+                    tableId={blackjackTableId}
+                    seatIndex={0}
+                    onLeave={handleBlackjackLeave}
+                />
+             )}
+             
              {/* Casino TV is now rendered in 3D space with real data from DexScreener API */}
              
              {/* Mobile PUBG-style Joystick - LEFT side (or right if left-handed) */}
@@ -6128,6 +6295,55 @@ const VoxelWorld = ({
                 </div>
              )}
              
+             {/* Blackjack Table Interaction Prompt - Positioned ABOVE sit prompts */}
+             {blackjackInteraction && !slotInteraction && !nearbyPortal && room === 'casino_game_room' && !blackjackGameActive && (
+                <div 
+                    className={`absolute bg-gradient-to-b from-green-900/95 to-emerald-950/95 backdrop-blur-sm rounded-xl border border-emerald-500/50 text-center z-30 shadow-lg shadow-emerald-500/20 ${
+                        isMobile 
+                            ? isLandscape 
+                                ? 'bottom-[280px] right-28 p-3' 
+                                : 'bottom-[280px] left-1/2 -translate-x-1/2 p-3 max-w-[90vw]'
+                            : 'bottom-44 left-1/2 -translate-x-1/2 p-4'
+                    }`}
+                >
+                    {/* Blackjack icon */}
+                    <div className={`mb-1 ${isMobile && !isLandscape ? 'text-2xl' : 'text-3xl'}`}>🂡</div>
+                    
+                    {/* Balance display */}
+                    <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-full px-3 py-0.5 mb-2 inline-block">
+                        <span className={`text-yellow-400 font-bold ${isMobile && !isLandscape ? 'text-[10px]' : 'text-xs'}`}>
+                            💰 {blackjackInteraction.balance?.toLocaleString() || 0}
+                        </span>
+                    </div>
+                    
+                    {/* Simple prompt - NO Press E */}
+                    <p className={`retro-text mb-2 ${isMobile && !isLandscape ? 'text-xs' : 'text-sm'} ${
+                        blackjackInteraction.canPlay ? 'text-emerald-400' : 'text-gray-400'
+                    }`}>
+                        {blackjackInteraction.canPlay ? 'Min $10 • Max $5000' : 'Need 10+ coins to play'}
+                    </p>
+                    
+                    {/* Play Button - Click to play, no E key */}
+                    {blackjackInteraction.canPlay && (
+                        <button
+                            className={`w-full font-bold rounded-lg retro-text transition-all active:scale-95 shadow-lg bg-gradient-to-b from-emerald-400 to-emerald-600 hover:from-emerald-300 hover:to-emerald-500 text-black ${
+                                isMobile && !isLandscape ? 'px-4 py-2 text-xs' : 'px-6 py-2 text-sm'
+                            }`}
+                            onClick={handleBlackjackStart}
+                        >
+                            🂡 PLAY BLACKJACK
+                        </button>
+                    )}
+                    
+                    {/* Can't play hint */}
+                    {!blackjackInteraction.canPlay && (
+                        <p className={`text-yellow-400/80 mt-2 ${isMobile && !isLandscape ? 'text-[10px]' : 'text-xs'}`}>
+                            Earn coins at slot machines!
+                        </p>
+                    )}
+                </div>
+             )}
+             
              {/* Ice Fishing Interaction UI */}
              {fishingInteraction && room === 'town' && (
                 <div 
@@ -6238,7 +6454,8 @@ const VoxelWorld = ({
              )}
              
              {/* Town Interaction Prompt - Clickable like dojo enter */}
-             {nearbyInteraction && !nearbyPortal && !slotInteraction && (
+             {/* Hide when blackjack interaction is showing to prevent overlap */}
+             {nearbyInteraction && !nearbyPortal && !slotInteraction && !blackjackInteraction && (
                 <div 
                     className={`absolute bg-black/80 backdrop-blur-sm rounded-xl border border-white/20 text-center z-20 ${
                         isMobile 

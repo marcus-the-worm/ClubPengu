@@ -5,7 +5,7 @@ import { useClickOutside, useEscapeKey } from '../hooks';
 import { useMultiplayer } from '../multiplayer';
 
 /**
- * PufflePanel - Club Penguin style puffle management
+ * PufflePanel - Puffle management
  * Supports multiple puffle ownership and equip/unequip
  * Server-authoritative: adoption goes through server for authenticated users
  */

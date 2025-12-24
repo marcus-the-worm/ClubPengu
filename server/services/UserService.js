@@ -231,6 +231,25 @@ class UserService {
         return user && user.coins >= amount;
     }
 
+    /**
+     * Simple coin update for PvE blackjack
+     * @param {string} walletAddress - User's wallet
+     * @param {number} amount - Positive for win, negative for bet
+     */
+    async updateCoins(walletAddress, amount) {
+        const type = amount >= 0 ? 'blackjack_win' : 'blackjack_bet';
+        const reason = amount >= 0 ? 'Blackjack win' : 'Blackjack bet';
+        return this.addCoins(walletAddress, amount, type, {}, reason);
+    }
+
+    /**
+     * Get user's current coin balance
+     */
+    async getUserCoins(walletAddress) {
+        const user = await this.getUser(walletAddress);
+        return user?.coins ?? 0;
+    }
+
     // ==================== PUFFLE OPERATIONS ====================
 
     /**

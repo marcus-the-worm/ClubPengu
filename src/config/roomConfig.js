@@ -74,7 +74,7 @@ export const AI_EMOTES = ['Wave', 'Dance', 'Laugh', 'Sit', 'Breakdance'];
 // AI Conversation dialogues
 export const AI_CONVERSATIONS = [
     ["Did you see SOL today?", "SOLANA is skyrocketing! 🚀", "To the moon we go!", "HODL your flippers!"],
-    ["Club Penguin is back!", "I missed this place.", "Let's go dance!", "Wait for me!"],
+    ["Club Pengu is back!", "I missed this place.", "Let's go dance!", "Wait for me!"],
     ["Nice outfit.", "Thanks, it's custom.", "Very stylish.", "You look cool too."],
     ["Is it cold?", "Ideally freezing.", "Perfect weather.", "Let's slide on the ice."],
     ["Waddle on!", "Waddle on!", "See you around.", "Bye for now!"],

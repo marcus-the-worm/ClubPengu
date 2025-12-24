@@ -3,7 +3,7 @@
 export const VOXEL_SIZE = 0.5;
 
 export const PALETTE = {
-    // Penguin Skins (Club Penguin authentic colors)
+    // Penguin Skins (Club Pengu authentic colors)
     blue: '#0066CC', darkBlue: '#003366', white: '#F5F5F5', orange: '#FF6600',
     black: '#1A1A1A', pink: '#FF69B4', gold: '#DAA520', red: '#CC2222',
     green: '#228B22', grey: '#666666', brown: '#5D4037', purple: '#6B2D8B',
@@ -22,7 +22,7 @@ export const PALETTE = {
     shirtWhite: '#F0F0F0', shirtBlack: '#1A1A1A',
     camoGreen: '#2D5016', jeans: '#1A4A7A',
 
-    // World Colors (Club Penguin snowy island theme)
+    // World Colors (Club Pengu snowy island theme)
     asphalt: '#3A3A3A', roadLine: '#CCAA00', sidewalk: '#8A9A9A',
     // Natural grass - darker, more realistic green with slight blue tint (cold climate)
     grass: '#3D7A4A', grassDark: '#2D5A3A', grassLight: '#4D8A5A',

@@ -16,7 +16,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Club Pengu | Web3 Social Gaming on Solana",
-  description: "The first trencher social platform. Reviving Club Penguin culture with Solana-native wagering, tradeable cosmetics, and property rentals.",
+  description: "The first trencher social platform. Reviving Club Pengu culture with Solana-native wagering, tradeable cosmetics, and property rentals.",
   keywords: ["Club Pengu", "Solana", "Web3", "Gaming", "NFT", "Crypto", "Social"],
   icons: {
     icon: "/icon.jpg",
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Club Pengu | Web3 Social Gaming on Solana",
-    description: "The first trencher social platform. Reviving Club Penguin culture with Solana-native wagering.",
+    description: "The first trencher social platform. Reviving Club Pengu culture with Solana-native wagering.",
     type: "website",
     images: ["/icon.jpg"],
   },

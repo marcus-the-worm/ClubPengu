@@ -41,7 +41,7 @@ const BANNER_FONTS = [
 const TOKEN_GATE_TOKENS = [
     { 
         symbol: '$CPw3', 
-        name: 'Club Penguin',
+        name: 'Club Pengu',
         address: '63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump'
     },
     { 
@@ -60,7 +60,7 @@ const TOKEN_GATE_TOKENS = [
 const ENTRY_FEE_TOKENS = [
     { 
         symbol: '$CPw3', 
-        name: 'Club Penguin',
+        name: 'Club Pengu',
         address: '63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump'
     },
     { 

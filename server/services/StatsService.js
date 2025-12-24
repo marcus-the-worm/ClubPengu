@@ -12,7 +12,10 @@ const normalizeGameType = (gameType) => {
         'card_jitsu': 'cardJitsu',
         'tic_tac_toe': 'ticTacToe',
         'connect4': 'connect4',
-        'pong': 'pong'
+        'pong': 'pong',
+        'blackjack': 'blackjack',
+        'uno': 'uno',
+        'monopoly': 'monopoly'
     };
     return mapping[gameType] || gameType;
 };
@@ -95,6 +98,12 @@ class StatsService {
                     ticTacToeLosses: 0,
                     connect4Wins: 0,
                     connect4Losses: 0,
+                    blackjackWins: 0,
+                    blackjackLosses: 0,
+                    unoWins: 0,
+                    unoLosses: 0,
+                    monopolyWins: 0,
+                    monopolyLosses: 0,
                     totalWins: 0,
                     totalLosses: 0,
                     isGuest: true
@@ -117,6 +126,19 @@ class StatsService {
                 connect4Wins: user.gameStats.connect4.wins,
                 connect4Losses: user.gameStats.connect4.losses,
                 connect4Draws: user.gameStats.connect4.draws,
+                // Blackjack
+                blackjackWins: user.gameStats.blackjack?.wins || 0,
+                blackjackLosses: user.gameStats.blackjack?.losses || 0,
+                blackjackPushes: user.gameStats.blackjack?.pushes || 0,
+                blackjackBlackjacks: user.gameStats.blackjack?.blackjacks || 0,
+                blackjackPveWins: user.gameStats.blackjack?.pveWins || 0,
+                blackjackPvpWins: user.gameStats.blackjack?.pvpWins || 0,
+                // UNO
+                unoWins: user.gameStats.uno?.wins || 0,
+                unoLosses: user.gameStats.uno?.losses || 0,
+                // Monopoly
+                monopolyWins: user.gameStats.monopoly?.wins || 0,
+                monopolyLosses: user.gameStats.monopoly?.losses || 0,
                 // Totals
                 totalWins: user.gameStats.overall.totalGamesWon,
                 totalLosses: user.gameStats.overall.totalGamesLost,

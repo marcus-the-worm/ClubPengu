@@ -46,7 +46,7 @@ const TokenomicsModal = ({ isOpen, onClose }) => {
                             <h2 className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400">
                                 $CPw3 TOKENOMICS
                             </h2>
-                            <p className="text-white/50 text-xs sm:text-sm">The Future of Club Penguin on Solana</p>
+                            <p className="text-white/50 text-xs sm:text-sm">The Future of Club Pengu on Solana</p>
                         </div>
                     </div>
                     <button 
@@ -64,7 +64,7 @@ const TokenomicsModal = ({ isOpen, onClose }) => {
                     <div className="relative bg-gradient-to-r from-cyan-600/30 via-blue-600/30 to-purple-600/30 rounded-xl p-4 sm:p-6 border border-white/10">
                         <h3 className="text-lg sm:text-xl font-bold text-white mb-2">🚀 Web3 Meets Nostalgia</h3>
                         <p className="text-white/70 text-sm sm:text-base leading-relaxed">
-                            Remember the OG Club Penguin? We're bringing it back, but this time <span className="text-cyan-400 font-bold">YOU</span> own everything. 
+                            Remember the OG Club Pengu? We're bringing it back, but this time <span className="text-cyan-400 font-bold">YOU</span> own everything. 
                             Powered by <span className="text-purple-400 font-bold">Solana</span>, secured by <span className="text-green-400 font-bold">x402</span>.
                         </p>
                         <div className="mt-4 flex flex-wrap gap-2">

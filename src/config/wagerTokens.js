@@ -10,7 +10,7 @@
 export const WAGER_TOKENS = [
     { 
         symbol: '$CPw3', 
-        name: 'Club Penguin',
+        name: 'Club Pengu',
         address: '63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump',
         decimals: 6,
         logoURI: '/tokens/cpw3.png',

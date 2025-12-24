@@ -1,4 +1,4 @@
-# Club Penguin Multiplayer Server
+# Club Pengu Multiplayer Server
 
 Simple WebSocket server for real-time player synchronization.
 

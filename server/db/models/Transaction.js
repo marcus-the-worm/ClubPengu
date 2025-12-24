@@ -33,7 +33,9 @@ const transactionSchema = new mongoose.Schema({
             'slot_spin',         // Slot machine spin cost
             'slot_payout',       // Slot machine winnings
             'fishing_bait',      // Bait cost for fishing
-            'fishing_catch'      // Coins earned from fishing
+            'fishing_catch',     // Coins earned from fishing
+            'blackjack_bet',     // PvE blackjack bet
+            'blackjack_win'      // PvE blackjack payout
         ],
         index: true
     },

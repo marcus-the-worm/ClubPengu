@@ -608,6 +608,442 @@ export function renderUnoBanner(ctx, canvas, players, state, wager) {
 }
 
 /**
+ * Render Blackjack match banner
+ */
+export function renderBlackjackBanner(ctx, canvas, players, state, wager) {
+    const isComplete = state.phase === 'complete' || state.winner || state.isComplete;
+    // P2P blackjack only - no PvE spectator banners, so always show card counts (not hands)
+    
+    // Header - Casino themed
+    ctx.fillStyle = isComplete ? '#FBBF24' : '#10B981'; // Gold when complete, green when playing
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🎰 BLACKJACK • 💰 ${wager}`, canvas.width / 2, 35);
+    
+    // Player names
+    const p1Name = (players[0]?.name || 'Player').substring(0, 10);
+    const p2Name = (players[1]?.name || 'Dealer').substring(0, 10);
+    
+    ctx.font = 'bold 22px Arial';
+    ctx.fillStyle = '#22D3EE'; // Cyan for player
+    ctx.textAlign = 'left';
+    ctx.fillText(p1Name, 30, 70);
+    
+    ctx.fillStyle = '#F472B6'; // Pink for dealer/player 2
+    ctx.textAlign = 'right';
+    ctx.fillText(p2Name, canvas.width - 30, 70);
+    
+    // P2P Blackjack - show card counts only (anti-cheat)
+    const p1Cards = state.player1CardCount ?? '?';
+    const p2Cards = state.player2CardCount ?? '?';
+    
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'left';
+    ctx.fillText(`🃏 ${p1Cards} cards`, 30, 100);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${p2Cards} cards 🃏`, canvas.width - 30, 100);
+    
+    // Draw card icons in center
+    const centerX = canvas.width / 2;
+    const centerY = 100;
+    
+    // Card stack icon
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(centerX - 25, centerY - 25, 40, 55);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(centerX - 20, centerY - 20, 40, 55);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(centerX - 20, centerY - 20, 40, 55);
+    
+    // Status text
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'center';
+    
+    let statusText = '';
+    if (isComplete) {
+        const result = state.result || '';
+        if (state.winner === 'player1' || result === 'WIN' || result === 'BLACKJACK') {
+            statusText = `🏆 ${p1Name} wins!`;
+            if (result === 'BLACKJACK') statusText = `🎰 ${p1Name} BLACKJACK!`;
+        } else if (state.winner === 'player2' || result === 'LOSE' || result === 'BUST') {
+            statusText = `🏆 ${p2Name} wins!`;
+            if (result === 'BUST') statusText = `💥 ${p1Name} BUST!`;
+        } else if (state.winner === 'draw' || result === 'PUSH') {
+            statusText = '🤝 PUSH - Tie game!';
+        } else {
+            statusText = '🎰 Game Over';
+        }
+    } else {
+        const phase = state.phase || state.currentTurn || 'playing';
+        if (phase === 'player1Turn') statusText = `${p1Name}'s turn`;
+        else if (phase === 'player2Turn') statusText = `${p2Name}'s turn`;
+        else if (phase === 'dealerTurn') statusText = 'Dealer playing...';
+        else statusText = '🎰 In Progress...';
+    }
+    
+    ctx.fillText(statusText.substring(0, 30), canvas.width / 2, 175);
+    
+    // Status indicators for each player
+    ctx.font = '14px Arial';
+    const p1Status = state.player1Status || state.playerStatus || '';
+    const p2Status = state.player2Status || state.dealerStatus || '';
+    
+    if (p1Status) {
+        ctx.fillStyle = p1Status === 'bust' ? '#ff4757' : (p1Status === 'blackjack' ? '#ffd700' : '#7bed9f');
+        ctx.textAlign = 'left';
+        ctx.fillText(p1Status.toUpperCase(), 30, 135);
+    }
+    if (p2Status) {
+        ctx.fillStyle = p2Status === 'bust' ? '#ff4757' : (p2Status === 'blackjack' ? '#ffd700' : '#7bed9f');
+        ctx.textAlign = 'right';
+        ctx.fillText(p2Status.toUpperCase(), canvas.width - 30, 135);
+    }
+}
+
+// ==================== PvE ACTIVITY BANNERS ====================
+
+/**
+ * Render PvE Fishing banner
+ */
+export function renderFishingBanner(ctx, canvas, playerName, state) {
+    // Green/blue fishing themed background
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, 'rgba(6, 95, 70, 0.95)');
+    gradient.addColorStop(1, 'rgba(14, 116, 144, 0.95)');
+    
+    // Rounded rect background with speech bubble pointer
+    const radius = 20;
+    ctx.beginPath();
+    ctx.moveTo(radius, 0);
+    ctx.lineTo(canvas.width - radius, 0);
+    ctx.quadraticCurveTo(canvas.width, 0, canvas.width, radius);
+    ctx.lineTo(canvas.width, canvas.height - radius - 20);
+    ctx.quadraticCurveTo(canvas.width, canvas.height - 20, canvas.width - radius, canvas.height - 20);
+    ctx.lineTo(canvas.width / 2 + 15, canvas.height - 20);
+    ctx.lineTo(canvas.width / 2, canvas.height);
+    ctx.lineTo(canvas.width / 2 - 15, canvas.height - 20);
+    ctx.lineTo(radius, canvas.height - 20);
+    ctx.quadraticCurveTo(0, canvas.height - 20, 0, canvas.height - radius - 20);
+    ctx.lineTo(0, radius);
+    ctx.quadraticCurveTo(0, 0, radius, 0);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    
+    // Border
+    ctx.strokeStyle = 'rgba(34, 197, 94, 0.8)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    
+    // Header
+    ctx.fillStyle = '#22D3EE';
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('🎣 FISHING', canvas.width / 2, 35);
+    
+    // Player name
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 22px Arial';
+    ctx.fillText(playerName.substring(0, 15), canvas.width / 2, 65);
+    
+    // Stats
+    const fishCaught = state.fishCaught || 0;
+    const totalValue = state.totalValue || 0;
+    
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#4ADE80';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🐟 ${fishCaught} fish caught • 💰 ${totalValue}g earned`, canvas.width / 2, 100);
+    
+    // Last fish caught
+    if (state.lastFish) {
+        ctx.font = 'bold 20px Arial';
+        const rarityColors = {
+            common: '#FFFFFF',
+            uncommon: '#22D3EE',
+            rare: '#A855F7',
+            epic: '#F97316',
+            legendary: '#FBBF24'
+        };
+        ctx.fillStyle = rarityColors[state.lastFish.rarity] || '#FFFFFF';
+        const emoji = state.lastFish.emoji || '🐟';
+        ctx.fillText(`${emoji} ${state.lastFish.name}`, canvas.width / 2, 135);
+        
+        ctx.font = '14px Arial';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fillText(`+${state.lastFish.value}g • ${state.lastFish.rarity}`, canvas.width / 2, 155);
+    } else {
+        ctx.font = '16px Arial';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.fillText('Waiting for a bite...', canvas.width / 2, 140);
+    }
+    
+    // Show end result if complete
+    if (state.isComplete) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = '#FBBF24';
+        ctx.font = 'bold 26px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🎣 FISHING COMPLETE!', canvas.width / 2, 80);
+        
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 20px Arial';
+        ctx.fillText(`${fishCaught} fish • ${totalValue}g total`, canvas.width / 2, 120);
+    }
+}
+
+/**
+ * Render PvE Blackjack banner (shows actual hands for PvE)
+ */
+export function renderPveBlackjackBanner(ctx, canvas, playerName, state) {
+    const isComplete = state.isComplete || state.result;
+    
+    // Casino themed gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, 'rgba(21, 128, 61, 0.95)');
+    gradient.addColorStop(1, 'rgba(22, 101, 52, 0.95)');
+    
+    // Rounded rect background with speech bubble pointer
+    const radius = 20;
+    ctx.beginPath();
+    ctx.moveTo(radius, 0);
+    ctx.lineTo(canvas.width - radius, 0);
+    ctx.quadraticCurveTo(canvas.width, 0, canvas.width, radius);
+    ctx.lineTo(canvas.width, canvas.height - radius - 20);
+    ctx.quadraticCurveTo(canvas.width, canvas.height - 20, canvas.width - radius, canvas.height - 20);
+    ctx.lineTo(canvas.width / 2 + 15, canvas.height - 20);
+    ctx.lineTo(canvas.width / 2, canvas.height);
+    ctx.lineTo(canvas.width / 2 - 15, canvas.height - 20);
+    ctx.lineTo(radius, canvas.height - 20);
+    ctx.quadraticCurveTo(0, canvas.height - 20, 0, canvas.height - radius - 20);
+    ctx.lineTo(0, radius);
+    ctx.quadraticCurveTo(0, 0, radius, 0);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    
+    // Gold border
+    ctx.strokeStyle = 'rgba(250, 204, 21, 0.8)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    
+    // Header
+    ctx.fillStyle = isComplete ? '#FBBF24' : '#10B981';
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🎰 BLACKJACK • 💰 ${state.bet || 0}`, canvas.width / 2, 35);
+    
+    // Player vs Dealer
+    ctx.font = 'bold 20px Arial';
+    ctx.fillStyle = '#22D3EE';
+    ctx.textAlign = 'left';
+    ctx.fillText(playerName.substring(0, 10), 30, 65);
+    ctx.fillStyle = '#F472B6';
+    ctx.textAlign = 'right';
+    ctx.fillText('Dealer', canvas.width - 30, 65);
+    
+    // Draw hands as card symbols
+    const suitEmoji = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
+    const suitColors = { hearts: '#e74c3c', diamonds: '#e74c3c', clubs: '#2c3e50', spades: '#2c3e50' };
+    
+    const renderHand = (hand, x, align, hideSecond = false) => {
+        if (!hand || hand.length === 0) return;
+        
+        let handStr = '';
+        hand.forEach((card, i) => {
+            if (hideSecond && i === 0 && !isComplete) {
+                handStr += '🂠 ';
+            } else {
+                const suit = suitEmoji[card.suit] || '?';
+                const val = card.value || '?';
+                handStr += `${val}${suit} `;
+            }
+        });
+        
+        ctx.font = '16px Arial';
+        ctx.textAlign = align;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText(handStr.trim(), x, 90);
+    };
+    
+    // Player hand (full visibility)
+    renderHand(state.playerHand, 30, 'left');
+    
+    // Dealer hand (hide first card until complete)
+    renderHand(state.dealerHand, canvas.width - 30, 'right', true);
+    
+    // Scores
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#4ADE80';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Score: ${state.playerScore || 0}`, 30, 115);
+    ctx.textAlign = 'right';
+    if (isComplete) {
+        ctx.fillText(`Score: ${state.dealerScore || 0}`, canvas.width - 30, 115);
+    } else {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.fillText('Score: ?', canvas.width - 30, 115);
+    }
+    
+    // Result/Status
+    ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'center';
+    
+    if (isComplete) {
+        const result = state.result || '';
+        let resultText = '';
+        let resultColor = '#FFFFFF';
+        
+        if (result === 'WIN' || state.won) {
+            resultText = `🏆 ${playerName} WINS! +${state.payout || 0}`;
+            resultColor = '#4ADE80';
+        } else if (result === 'BLACKJACK') {
+            resultText = `🎰 BLACKJACK! +${state.payout || 0}`;
+            resultColor = '#FBBF24';
+        } else if (result === 'PUSH') {
+            resultText = '🤝 PUSH - Tie!';
+            resultColor = '#F59E0B';
+        } else if (result === 'LOSE' || result === 'BUST') {
+            resultText = result === 'BUST' ? `💥 BUST! -${state.bet || 0}` : `❌ Dealer wins! -${state.bet || 0}`;
+            resultColor = '#EF4444';
+        } else {
+            resultText = '🎰 Game Over';
+        }
+        
+        ctx.fillStyle = resultColor;
+        ctx.fillText(resultText, canvas.width / 2, 155);
+    } else {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.fillText(`${state.phase === 'playing' ? 'Your turn...' : 'Waiting...'}`, canvas.width / 2, 155);
+    }
+}
+
+/**
+ * Create a canvas for PvE activity banners
+ */
+export function createPveBannerCanvas() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 200;
+    return canvas;
+}
+
+/**
+ * Render PvE activity banner based on activity type
+ */
+export function renderPveBannerToCanvas(ctx, activityData) {
+    const canvas = ctx.canvas;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    const { activity, playerName, state } = activityData;
+    
+    switch (activity) {
+        case 'fishing':
+            renderFishingBanner(ctx, canvas, playerName, state);
+            break;
+        case 'blackjack':
+            renderPveBlackjackBanner(ctx, canvas, playerName, state);
+            break;
+        default:
+            // Generic PvE activity banner
+            drawBubbleBackground(ctx, canvas);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`🎮 ${activity.toUpperCase()}`, canvas.width / 2, 60);
+            ctx.font = '20px Arial';
+            ctx.fillText(playerName, canvas.width / 2, 100);
+            break;
+    }
+}
+
+/**
+ * Update PvE activity banners in the scene
+ */
+export function updatePveBanners(params) {
+    const { THREE, scene, pveBannersRef, playersData, activePveActivities, localPlayerId } = params;
+    
+    if (!scene || !THREE || !activePveActivities) return;
+    
+    const banners = pveBannersRef;
+    
+    // Get current activity player IDs (exclude local player - they see their own UI)
+    const currentActivityIds = new Set(
+        Object.keys(activePveActivities).filter(id => id !== localPlayerId)
+    );
+    
+    // Remove banners for ended activities
+    for (const [playerId, bannerData] of banners) {
+        if (!currentActivityIds.has(playerId)) {
+            scene.remove(bannerData.sprite);
+            bannerData.sprite.material.map?.dispose();
+            bannerData.sprite.material.dispose();
+            banners.delete(playerId);
+        }
+    }
+    
+    // Create or update banners for active PvE activities
+    for (const [playerId, activityData] of Object.entries(activePveActivities)) {
+        if (playerId === localPlayerId) continue; // Skip local player
+        
+        // Get player position
+        const playerData = playersData.get(playerId);
+        if (!playerData?.position) continue;
+        
+        let bannerData = banners.get(playerId);
+        
+        if (!bannerData) {
+            // Create new banner
+            const canvas = createPveBannerCanvas();
+            const ctx = canvas.getContext('2d');
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            
+            const material = new THREE.SpriteMaterial({ 
+                map: texture, 
+                transparent: true,
+                depthTest: false
+            });
+            const sprite = new THREE.Sprite(material);
+            sprite.scale.set(8, 3.2, 1);
+            sprite.renderOrder = 998; // Just below P2P banners
+            
+            scene.add(sprite);
+            bannerData = { sprite, canvas, ctx, texture };
+            banners.set(playerId, bannerData);
+        }
+        
+        // Update banner content
+        renderPveBannerToCanvas(bannerData.ctx, activityData);
+        bannerData.texture.needsUpdate = true;
+        
+        // Position above player (7 units above ground, slightly lower than P2P)
+        bannerData.sprite.position.set(
+            playerData.position.x,
+            7,
+            playerData.position.z
+        );
+    }
+}
+
+/**
+ * Cleanup all PvE banners
+ */
+export function cleanupPveBanners(pveBannersRef, scene) {
+    for (const [, bannerData] of pveBannersRef) {
+        scene?.remove(bannerData.sprite);
+        bannerData.sprite?.material?.map?.dispose();
+        bannerData.sprite?.material?.dispose();
+    }
+    pveBannersRef.clear();
+}
+
+/**
  * Render banner content to canvas based on game type
  */
 export function renderBannerToCanvas(ctx, matchData) {
@@ -625,6 +1061,9 @@ export function renderBannerToCanvas(ctx, matchData) {
         case 'tic_tac_toe':
         case 'ticTacToe':
             renderTicTacToeBanner(ctx, canvas, players, state, wager);
+            break;
+        case 'blackjack':
+            renderBlackjackBanner(ctx, canvas, players, state, wager);
             break;
         case 'connect4':
             renderConnect4Banner(ctx, canvas, players, state, wager);
@@ -743,7 +1182,15 @@ export default {
     renderConnect4Banner,
     renderMonopolyBanner,
     renderUnoBanner,
+    renderBlackjackBanner,
     renderBannerToCanvas,
     updateMatchBanners,
-    cleanupMatchBanners
+    cleanupMatchBanners,
+    // PvE Activity Banners
+    createPveBannerCanvas,
+    renderFishingBanner,
+    renderPveBlackjackBanner,
+    renderPveBannerToCanvas,
+    updatePveBanners,
+    cleanupPveBanners
 };

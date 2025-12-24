@@ -1,5 +1,5 @@
 /**
- * Club Penguin Multiplayer WebSocket Server
+ * Club Pengu Multiplayer WebSocket Server
  * Handles real-time player sync, P2P challenges, and match coordination
  * With MongoDB persistence and Phantom wallet authentication
  */
@@ -19,7 +19,8 @@ import {
     PromoCodeService,
     SlotService,
     FishingService,
-    IglooService
+    IglooService,
+    BlackjackService
 } from './services/index.js';
 import { handleIglooMessage } from './handlers/iglooHandlers.js';
 import { handleTippingMessage } from './handlers/tippingHandlers.js';
@@ -40,6 +41,10 @@ const ts = () => new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
 const players = new Map(); // playerId -> { id, name, room, position, rotation, appearance, puffle, ip, walletAddress, isAuthenticated, ... }
 const rooms = new Map(); // roomId -> Set of playerIds
 const ipConnections = new Map(); // ip -> Set of playerIds
+
+// PvE Activity tracking (for spectator banners)
+// playerId -> { activity: 'fishing'|'blackjack', room, state, position, playerName }
+const activePveActivities = new Map();
 
 // Beach ball state per igloo room
 const beachBalls = new Map();
@@ -219,11 +224,97 @@ sendToPlayer = (playerId, message) => {
     }
 };
 
+// ==================== PvE ACTIVITY SPECTATING ====================
+// Start a PvE activity (fishing, blackjack, etc.) - broadcasts to room
+const startPveActivity = (playerId, activity, room, initialState = {}) => {
+    const player = players.get(playerId);
+    if (!player) return;
+    
+    activePveActivities.set(playerId, {
+        activity,
+        room,
+        state: initialState,
+        position: player.position,
+        playerName: player.name,
+        startedAt: Date.now()
+    });
+    
+    // Broadcast to room (exclude the player themselves)
+    broadcastToRoom(room, {
+        type: 'pve_activity_start',
+        playerId,
+        playerName: player.name,
+        position: player.position,
+        activity,
+        state: initialState
+    }, playerId);
+    
+    console.log(`🎮 PvE Activity started: ${player.name} - ${activity}`);
+};
+
+// Update PvE activity state
+const updatePveActivity = (playerId, stateUpdate) => {
+    const activity = activePveActivities.get(playerId);
+    if (!activity) return;
+    
+    activity.state = { ...activity.state, ...stateUpdate };
+    
+    // Broadcast update to room
+    broadcastToRoom(activity.room, {
+        type: 'pve_activity_update',
+        playerId,
+        state: stateUpdate
+    }, playerId);
+};
+
+// End a PvE activity
+const endPveActivity = (playerId, finalState = {}) => {
+    const activity = activePveActivities.get(playerId);
+    if (!activity) return;
+    
+    const player = players.get(playerId);
+    
+    // Broadcast end with final state
+    broadcastToRoom(activity.room, {
+        type: 'pve_activity_end',
+        playerId,
+        playerName: player?.name || 'Unknown',
+        activity: activity.activity,
+        finalState: {
+            ...activity.state,
+            ...finalState,
+            duration: Date.now() - activity.startedAt
+        }
+    }, playerId);
+    
+    activePveActivities.delete(playerId);
+    console.log(`🎮 PvE Activity ended: ${player?.name || playerId} - ${activity.activity}`);
+};
+
+// Get active PvE activities in a room (for new players joining)
+const getPveActivitiesInRoom = (roomId) => {
+    const activities = {};
+    for (const [playerId, activity] of activePveActivities) {
+        if (activity.room === roomId) {
+            activities[playerId] = {
+                playerId,
+                playerName: activity.playerName,
+                position: activity.position,
+                activity: activity.activity,
+                state: activity.state,
+                startedAt: activity.startedAt
+            };
+        }
+    }
+    return activities;
+};
+
 // Initialize services that need broadcast functions
 const challengeService = new ChallengeService(inboxService, statsService);
 const matchService = new MatchService(statsService, userService, broadcastToRoom, sendToPlayer);
 const slotService = new SlotService(userService, broadcastToRoom, sendToPlayer);
 const fishingService = new FishingService(userService, broadcastToRoom, sendToPlayer);
+const blackjackService = new BlackjackService(userService, broadcastToRoom, sendToPlayer);
 
 // Initialize DevBot for development testing
 if (IS_DEV) {
@@ -290,12 +381,24 @@ if (IS_DEV) {
             // Bot gets the message via handleMatchStart
             devBotService.handleMatchStart(match);
             
-            // Notify room
+            // Notify room about match starting
             broadcastToRoom(match.room, {
                 type: 'match_started',
                 player1: match.player1.name,
                 player2: match.player2.name,
                 gameType: match.gameType
+            }, challenge.challengerId, botId);
+            
+            // Notify spectators (same as regular challenge_respond handler)
+            broadcastToRoom(match.room, {
+                type: 'match_spectate_start',
+                matchId: match.id,
+                players: [
+                    { id: match.player1.id, name: match.player1.name, position: match.player1.position },
+                    { id: match.player2.id, name: match.player2.name, position: match.player2.position }
+                ],
+                gameType: match.gameType,
+                wagerAmount: match.wagerAmount
             }, challenge.challengerId, botId);
             
             console.log(`🎮 Match started: ${match.player1.name} vs ${match.player2.name} (${match.gameType})`);
@@ -320,7 +423,7 @@ if (IS_DEV) {
         sendToPlayer(match.player1.id, { type: 'match_state', matchId: match.id, state: state1 });
         sendToPlayer(match.player2.id, { type: 'match_state', matchId: match.id, state: state2 });
         
-        // Broadcast to spectators
+        // Broadcast to spectators (same format as match_play_card handler)
         if (match.room) {
             let spectateState;
             if (match.gameType === 'tic_tac_toe') {
@@ -332,12 +435,50 @@ if (IS_DEV) {
                     winningLine: match.state.winningLine,
                     status: match.status
                 };
+            } else if (match.gameType === 'connect4') {
+                spectateState = {
+                    board: [...match.state.board],
+                    currentTurn: match.state.currentTurn,
+                    phase: match.state.phase,
+                    winner: match.state.winner,
+                    winningCells: match.state.winningCells,
+                    lastMove: match.state.lastMove,
+                    status: match.status
+                };
+            } else if (match.gameType === 'blackjack') {
+                const isComplete = match.state.phase === 'complete';
+                spectateState = {
+                    player1CardCount: match.state.player1Hand?.length || 0,
+                    player1Status: match.state.player1Status,
+                    player1Result: match.state.player1Result,
+                    player1Score: isComplete ? match.state.player1Score : null,
+                    player2CardCount: match.state.player2Hand?.length || 0,
+                    player2Status: match.state.player2Status,
+                    player2Result: match.state.player2Result,
+                    player2Score: isComplete ? match.state.player2Score : null,
+                    dealerCardCount: match.state.dealerHand?.length || 0,
+                    dealerStatus: match.state.dealerStatus,
+                    dealerScore: isComplete ? match.state.dealerScore : null,
+                    currentTurn: match.state.currentTurn,
+                    phase: match.state.phase,
+                    lastAction: match.state.lastAction ? { type: match.state.lastAction.type, player: match.state.lastAction.player } : null,
+                    winner: match.state.winner,
+                    status: match.status,
+                    winnerId: match.winnerId
+                };
             }
+            
             if (spectateState) {
                 broadcastToRoom(match.room, {
-                    type: 'match_spectate_update',
+                    type: 'match_spectate',
                     matchId: match.id,
-                    state: spectateState
+                    gameType: match.gameType,
+                    players: [
+                        { id: match.player1.id, name: match.player1.name },
+                        { id: match.player2.id, name: match.player2.name }
+                    ],
+                    state: spectateState,
+                    wagerAmount: match.wagerAmount
                 }, match.player1.id, match.player2.id);
             }
         }
@@ -423,6 +564,38 @@ if (IS_DEV) {
                         wagerToken: match.wagerToken
                     }
                 });
+            }
+            
+            // Notify spectators that match has ended (so banners are cleaned up)
+            if (match.room) {
+                let finalState;
+                if (match.gameType === 'tic_tac_toe') {
+                    finalState = { board: [...match.state.board], winner: match.state.winner, winningLine: match.state.winningLine };
+                } else if (match.gameType === 'connect4') {
+                    finalState = { board: [...match.state.board], winner: match.state.winner, winningCells: match.state.winningCells };
+                } else if (match.gameType === 'blackjack') {
+                    finalState = { 
+                        winner: match.state.winner,
+                        player1Score: match.state.player1Score,
+                        player2Score: match.state.player2Score,
+                        dealerScore: match.state.dealerScore,
+                        player1Result: match.state.player1Result,
+                        player2Result: match.state.player2Result
+                    };
+                } else {
+                    finalState = { winner: match.state.winner };
+                }
+                
+                broadcastToRoom(match.room, {
+                    type: 'match_spectate_end',
+                    matchId: match.id,
+                    winnerId,
+                    winnerName: winnerId ? (winnerId === match.player1.id ? match.player1.name : match.player2.name) : null,
+                    isDraw,
+                    finalState,
+                    gameType: match.gameType,
+                    reason: isDraw ? 'draw' : 'win'
+                }, match.player1.id, match.player2.id);
             }
             
             devBotService.handleMatchEnd(match.id);
@@ -588,6 +761,11 @@ function cleanupStaleWalletConnection(walletAddress, excludePlayerId = null) {
             slotService.handleDisconnect(existingPlayerId);
             fishingService.handleDisconnect(existingPlayerId);
             
+            // End any PvE activities
+            if (activePveActivities.has(existingPlayerId)) {
+                endPveActivity(existingPlayerId, { result: 'disconnected' });
+            }
+            
             // Remove from players map
             players.delete(existingPlayerId);
         }
@@ -752,25 +930,62 @@ async function handleMatchPayout(match, winnerId, isDraw = false) {
             console.log(`💰 Token wager settlement:`, settlementResult.success ? `Success - ${settlementResult.txSignature}` : settlementResult.error);
         }
         
-        // Record stats
-        const gameType = match.gameType === 'tic_tac_toe' ? 'ticTacToe' : 
-                         match.gameType === 'connect4' ? 'connect4' : 'cardJitsu';
+        // Record stats - map game types properly
+        const gameTypeMap = {
+            'tic_tac_toe': 'ticTacToe',
+            'connect4': 'connect4',
+            'card_jitsu': 'cardJitsu',
+            'blackjack': 'blackjack',
+            'uno': 'uno',
+            'monopoly': 'monopoly'
+        };
+        const gameType = gameTypeMap[match.gameType] || match.gameType;
         
-        if (match.player1.wallet) {
-            await statsService.recordResult(
-                match.player1.wallet, 
-                gameType, 
-                winnerId === match.player1.id, 
-                match.wagerAmount
-            );
-        }
-        if (match.player2.wallet) {
-            await statsService.recordResult(
-                match.player2.wallet, 
-                gameType, 
-                winnerId === match.player2.id, 
-                match.wagerAmount
-            );
+        // For blackjack P2P, use specialized recording
+        if (match.gameType === 'blackjack') {
+            // Record blackjack-specific stats for both players
+            for (const playerKey of ['player1', 'player2']) {
+                const playerData = match[playerKey];
+                if (!playerData.wallet) continue;
+                
+                try {
+                    const user = await userService.getUser(playerData.wallet);
+                    if (user && user.recordBlackjackResult) {
+                        const isWinner = winnerId === playerData.id;
+                        const playerResult = match.state?.[`${playerKey}Result`];
+                        user.recordBlackjackResult({
+                            result: isWinner ? (playerResult === 'blackjack' ? 'BLACKJACK' : 'WIN') : (isDraw ? 'PUSH' : 'LOSS'),
+                            isPvE: false,
+                            coinsDelta: match.wagerAmount,
+                            gotBlackjack: playerResult === 'blackjack',
+                            busted: match.state?.[`${playerKey}Status`] === 'bust'
+                        });
+                        await user.save();
+                    }
+                } catch (e) {
+                    console.error(`Failed to record blackjack P2P stats for ${playerData.name}:`, e);
+                }
+            }
+        } else {
+            // Standard stats recording for other games
+            if (match.player1.wallet) {
+                await statsService.recordResult(
+                    match.player1.wallet, 
+                    gameType, 
+                    winnerId === match.player1.id, 
+                    match.wagerAmount,
+                    isDraw
+                );
+            }
+            if (match.player2.wallet) {
+                await statsService.recordResult(
+                    match.player2.wallet, 
+                    gameType, 
+                    winnerId === match.player2.id, 
+                    match.wagerAmount,
+                    isDraw
+                );
+            }
         }
         
         return { 
@@ -874,6 +1089,11 @@ wss.on('connection', (ws, req) => {
             // Handle slot disconnect (cancel any active spin)
             slotService.handleDisconnect(playerId);
             fishingService.handleDisconnect(playerId);
+            
+            // End any PvE activities
+            if (activePveActivities.has(playerId)) {
+                endPveActivity(playerId, { result: 'disconnected' });
+            }
             
             // Handle match disconnect
             const voidResult = await matchService.handleDisconnect(playerId);
@@ -1420,10 +1640,16 @@ async function handleMessage(playerId, message) {
                 }
             }, playerId);
             
-            // Send active matches in room
+            // Send active matches in room (P2P + PvE all via MatchService)
             const activeMatches = matchService.getMatchesInRoom(roomId);
             if (activeMatches.length > 0) {
                 sendToPlayer(playerId, { type: 'active_matches', matches: activeMatches });
+            }
+            
+            // Send active PvE activities in room (fishing, blackjack, etc.)
+            const pveActivities = getPveActivitiesInRoom(roomId);
+            if (Object.keys(pveActivities).length > 0) {
+                sendToPlayer(playerId, { type: 'active_pve_activities', activities: pveActivities });
             }
             
             // Send active slot spins in room (for spectator bubbles)
@@ -1730,12 +1956,17 @@ async function handleMessage(playerId, message) {
                     }
                 }, playerId);
                 
+                // Send active matches in new room (P2P + PvE all via MatchService)
                 const matchesInNewRoom = matchService.getMatchesInRoom(newRoom);
                 if (matchesInNewRoom.length > 0) {
                     sendToPlayer(playerId, { type: 'active_matches', matches: matchesInNewRoom });
                 } else {
                     sendToPlayer(playerId, { type: 'active_matches', matches: [] });
                 }
+                
+                // Send active PvE activities in new room
+                const pveActivitiesInNewRoom = getPveActivitiesInRoom(newRoom);
+                sendToPlayer(playerId, { type: 'active_pve_activities', activities: pveActivitiesInNewRoom });
             }
             break;
         }
@@ -2562,6 +2793,28 @@ async function handleMessage(playerId, message) {
                         winner: match.state.winner,
                         status: match.status
                     };
+                } else if (match.gameType === 'blackjack') {
+                    // P2P Blackjack - hide hands from spectators (anti-cheat)
+                    const isComplete = match.state.phase === 'complete';
+                    spectateState = {
+                        player1CardCount: match.state.player1Hand?.length || 0,
+                        player1Status: match.state.player1Status,
+                        player1Result: match.state.player1Result,
+                        player1Score: isComplete ? match.state.player1Score : null,
+                        player2CardCount: match.state.player2Hand?.length || 0,
+                        player2Status: match.state.player2Status,
+                        player2Result: match.state.player2Result,
+                        player2Score: isComplete ? match.state.player2Score : null,
+                        dealerCardCount: match.state.dealerHand?.length || 0,
+                        dealerStatus: match.state.dealerStatus,
+                        dealerScore: isComplete ? match.state.dealerScore : null,
+                        currentTurn: match.state.currentTurn,
+                        phase: match.state.phase,
+                        lastAction: match.state.lastAction ? { type: match.state.lastAction.type, player: match.state.lastAction.player } : null,
+                        winner: match.state.winner,
+                        status: match.status,
+                        winnerId: match.winnerId
+                    };
                 } else {
                     spectateState = {
                         round: match.state.round,
@@ -3179,6 +3432,14 @@ async function handleMessage(playerId, message) {
                         isDemo: fishResult.isDemo
                     });
                     
+                    // Start PvE activity for spectator banner
+                    startPveActivity(playerId, 'fishing', player.room, {
+                        spotId: fishResult.spotId,
+                        fishCaught: 0,
+                        totalValue: 0,
+                        lastFish: null
+                    });
+                    
                     // Send updated coins
                     if (fishResult.newBalance !== undefined) {
                         sendToPlayer(playerId, {
@@ -3226,13 +3487,32 @@ async function handleMessage(playerId, message) {
                             error: result.error,
                             message: result.message
                         });
-                    } else if (result.newBalance !== undefined) {
+                    } else {
+                        // Update PvE activity with caught fish
+                        const activity = activePveActivities.get(playerId);
+                        if (activity) {
+                            const newFishCount = (activity.state.fishCaught || 0) + 1;
+                            const newTotalValue = (activity.state.totalValue || 0) + (fish.value || 0);
+                            updatePveActivity(playerId, {
+                                fishCaught: newFishCount,
+                                totalValue: newTotalValue,
+                                lastFish: {
+                                    name: fish.name,
+                                    rarity: fish.rarity,
+                                    value: fish.value,
+                                    emoji: fish.emoji || '🐟'
+                                }
+                            });
+                        }
+                        
                         // Update coin balance
-                        sendToPlayer(playerId, {
-                            type: 'coins_update',
-                            coins: result.newBalance,
-                            isAuthenticated: player.isAuthenticated
-                        });
+                        if (result.newBalance !== undefined) {
+                            sendToPlayer(playerId, {
+                                type: 'coins_update',
+                                coins: result.newBalance,
+                                isAuthenticated: player.isAuthenticated
+                            });
+                        }
                     }
                 }
                 // Misses are silently ignored - no broadcast needed
@@ -3257,6 +3537,335 @@ async function handleMessage(playerId, message) {
             } catch (error) {
                 console.error('🎣 Error in fishing_info:', error);
             }
+            break;
+        }
+        
+        case 'fishing_end': {
+            // Player stopped fishing - end PvE activity
+            const activity = activePveActivities.get(playerId);
+            if (activity && activity.activity === 'fishing') {
+                endPveActivity(playerId, {
+                    result: 'ended',
+                    fishCaught: activity.state.fishCaught || 0,
+                    totalValue: activity.state.totalValue || 0
+                });
+            }
+            break;
+        }
+        
+        // ==================== BLACKJACK (PvE Casino Tables) ====================
+        case 'blackjack_get_state': {
+            // Get current table state
+            const { tableId } = message;
+            if (!tableId) break;
+            
+            const tableState = blackjackService.getTableState(tableId, playerId);
+            if (tableState) {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_state',
+                    table: tableState
+                });
+            }
+            break;
+        }
+        
+        case 'blackjack_sit': {
+            // Player sits at a blackjack table
+            const { tableId, seatIndex } = message;
+            console.log(`🎰 Blackjack sit request: player=${playerId}, table=${tableId}, seat=${seatIndex}`);
+            
+            if (!tableId || seatIndex === undefined) {
+                console.log(`🎰 Invalid sit request - missing params`);
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: 'Invalid request - missing tableId or seatIndex'
+                });
+                break;
+            }
+            
+            const sitResult = await blackjackService.sitAtTable(
+                playerId,
+                player.name,
+                player.walletAddress,
+                tableId,
+                seatIndex
+            );
+            console.log(`🎰 Sit result:`, sitResult.error || 'success');
+            
+            if (sitResult.error) {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: sitResult.error
+                });
+            } else {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_seated',
+                    table: sitResult.table,
+                    seatIndex: sitResult.seatIndex
+                });
+                
+                // Broadcast to room that player sat down
+                broadcastToRoom(player.room, {
+                    type: 'blackjack_player_joined',
+                    tableId,
+                    playerName: player.name,
+                    seatIndex: sitResult.seatIndex
+                }, playerId);
+            }
+            break;
+        }
+        
+        case 'blackjack_leave': {
+            // Player leaves the table
+            const leaveResult = await blackjackService.leaveTable(playerId);
+            
+            if (leaveResult.error) {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: leaveResult.error
+                });
+            } else {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_left'
+                });
+            }
+            break;
+        }
+        
+        case 'blackjack_bet': {
+            // Player places a bet
+            const { tableId, amount } = message;
+            console.log(`🎰 Blackjack bet request: player=${playerId}, table=${tableId}, amount=${amount}`);
+            
+            if (!amount || amount < 10 || amount > 5000) {
+                console.log(`🎰 Invalid bet amount: ${amount}`);
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: 'Invalid bet amount (min 10, max 5000)'
+                });
+                break;
+            }
+            
+            try {
+                const betResult = await blackjackService.placeBet(playerId, amount);
+                console.log(`🎰 Bet result:`, betResult.error || 'success', betResult.table?.phase);
+            
+            if (betResult.error) {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: betResult.error,
+                    ...(betResult.balance !== undefined && { balance: betResult.balance })
+                });
+            } else {
+                // Send updated coins
+                const newBalance = await userService.getUserCoins(player.walletAddress || playerId);
+                sendToPlayer(playerId, {
+                    type: 'coins_update',
+                    coins: newBalance,
+                    isAuthenticated: player.isAuthenticated
+                });
+                
+                // Send updated game state
+                if (betResult.table) {
+                    sendToPlayer(playerId, {
+                        type: 'blackjack_state',
+                        table: betResult.table
+                    });
+                }
+            }
+            } catch (err) {
+                console.error('🎰 Blackjack bet error:', err);
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: 'Server error placing bet'
+                });
+            }
+            break;
+        }
+        
+        case 'blackjack_action': {
+            // Player performs game action (hit, stand, double, etc.)
+            const { tableId, action } = message;
+            if (!action || !action.type) {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: 'Invalid action'
+                });
+                break;
+            }
+            
+            const actionResult = await blackjackService.playerAction(playerId, action);
+            
+            if (actionResult.error) {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: actionResult.error
+                });
+            } else {
+                // If double down or surrender, send updated coins
+                if (action.type === 'double' || action.type === 'surrender') {
+                    const newBalance = await userService.getUserCoins(player.walletAddress || playerId);
+                    sendToPlayer(playerId, {
+                        type: 'coins_update',
+                        coins: newBalance,
+                        isAuthenticated: player.isAuthenticated
+                    });
+                }
+                
+                // Always send updated game state after action
+                if (actionResult.table) {
+                    sendToPlayer(playerId, {
+                        type: 'blackjack_state',
+                        table: actionResult.table
+                    });
+                }
+            }
+            break;
+        }
+        
+        case 'blackjack_deduct_bet': {
+            // Simple PvE blackjack - just deduct coins (activity starts on first update with cards)
+            const { amount } = message;
+            
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, { type: 'blackjack_error', error: 'Must be authenticated' });
+                break;
+            }
+            
+            const betAmount = Math.min(Math.max(10, amount || 0), 5000);
+            const currentBalance = await userService.getUserCoins(player.walletAddress);
+            
+            if (currentBalance < betAmount) {
+                sendToPlayer(playerId, { type: 'blackjack_error', error: 'Insufficient funds' });
+                break;
+            }
+            
+            try {
+                await userService.updateCoins(player.walletAddress, -betAmount);
+                const newBalance = await userService.getUserCoins(player.walletAddress);
+                console.log(`🎰 Blackjack bet deducted: ${player.name} bet $${betAmount}, new balance: $${newBalance}`);
+                sendToPlayer(playerId, { type: 'coins_update', coins: newBalance, isAuthenticated: true });
+                
+                // Track bet for payout validation and spectator display
+                player.blackjackBet = betAmount;
+                
+            } catch (err) {
+                console.error('🎰 Blackjack bet deduction error:', err);
+                sendToPlayer(playerId, { type: 'blackjack_error', error: 'Failed to deduct bet' });
+            }
+            break;
+        }
+
+        case 'blackjack_update': {
+            // Update or start PvE blackjack game state for spectators
+            const { playerHand, dealerHand, playerScore, dealerScore, phase } = message;
+            const activity = activePveActivities.get(playerId);
+            
+            if (activity && activity.activity === 'blackjack') {
+                // Update existing activity
+                updatePveActivity(playerId, {
+                    playerHand: playerHand || activity.state.playerHand,
+                    dealerHand: dealerHand || activity.state.dealerHand,
+                    playerScore: playerScore ?? activity.state.playerScore,
+                    dealerScore: dealerScore ?? activity.state.dealerScore,
+                    phase: phase || activity.state.phase
+                });
+            } else if (playerHand && playerHand.length > 0) {
+                // Start PvE activity when we have actual cards (first update after dealing)
+                startPveActivity(playerId, 'blackjack', player.room, {
+                    bet: player.blackjackBet || 0,
+                    playerHand: playerHand,
+                    dealerHand: dealerHand || [],
+                    playerScore: playerScore || 0,
+                    dealerScore: dealerScore || 0,
+                    phase: phase || 'playing'
+                });
+            }
+            break;
+        }
+        
+        case 'blackjack_payout': {
+            // Simple PvE blackjack payout - add coins and end PvE activity
+            const { amount, result, playerScore, dealerScore, playerHand, dealerHand } = message;
+            
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'blackjack_error',
+                    error: 'Must be authenticated for payouts'
+                });
+                break;
+            }
+            
+            // Validate payout amount (max win is 2.5x bet of 5000 = 12500)
+            const validatedAmount = Math.min(Math.max(0, amount || 0), 12500);
+            
+            const playerWon = result === 'WIN' || result === 'BLACKJACK';
+            
+            if (validatedAmount > 0) {
+                try {
+                    await userService.updateCoins(player.walletAddress, validatedAmount);
+                    const newBalance = await userService.getUserCoins(player.walletAddress);
+                    
+                    console.log(`🎰 Blackjack payout to ${player.name}: ${validatedAmount} coins (${result})`);
+                    
+                    sendToPlayer(playerId, {
+                        type: 'coins_update',
+                        coins: newBalance,
+                        isAuthenticated: true
+                    });
+                    
+                } catch (e) {
+                    console.error('Blackjack payout error:', e);
+                    sendToPlayer(playerId, {
+                        type: 'blackjack_error',
+                        error: 'Payout failed'
+                    });
+                }
+            } else {
+                // No payout but still update balance for push/loss
+                const newBalance = await userService.getUserCoins(player.walletAddress);
+                sendToPlayer(playerId, {
+                    type: 'coins_update',
+                    coins: newBalance,
+                    isAuthenticated: true
+                });
+            }
+            
+            // End PvE activity with final state
+            const activity = activePveActivities.get(playerId);
+            if (activity && activity.activity === 'blackjack') {
+                endPveActivity(playerId, {
+                    result: result,
+                    playerScore: playerScore || 0,
+                    dealerScore: dealerScore || 0,
+                    playerHand: playerHand || activity.state.playerHand,
+                    dealerHand: dealerHand || activity.state.dealerHand,
+                    payout: validatedAmount,
+                    bet: player.blackjackBet || 0,
+                    won: playerWon
+                });
+            }
+            
+            // Record blackjack stats
+            try {
+                const user = await userService.getUser(player.walletAddress);
+                if (user && user.recordBlackjackResult) {
+                    user.recordBlackjackResult({
+                        result: result,
+                        isPvE: true,
+                        coinsDelta: playerWon ? validatedAmount : (player.blackjackBet || 0),
+                        gotBlackjack: result === 'BLACKJACK',
+                        busted: playerScore > 21
+                    });
+                    await user.save();
+                    console.log(`🎰 Recorded blackjack stats for ${player.name}: ${result}`);
+                }
+            } catch (statErr) {
+                console.error('Failed to record blackjack stats:', statErr);
+            }
+            
+            delete player.blackjackBet;
+            
             break;
         }
         
@@ -3315,6 +3924,11 @@ setInterval(async () => {
             // Handle slot disconnect
             slotService.handleDisconnect(playerId);
             fishingService.handleDisconnect(playerId);
+            
+            // End any PvE activities
+            if (activePveActivities.has(playerId)) {
+                endPveActivity(playerId, { result: 'disconnected' });
+            }
             
             const voidResult = await matchService.handleDisconnect(playerId);
             if (voidResult) {
@@ -3414,7 +4028,7 @@ setInterval(() => {
 
 // ==================== STARTUP ====================
 async function start() {
-    console.log(`🐧 Club Penguin Server starting...`);
+    console.log(`🐧 Club Pengu Server starting...`);
     
     // Connect to MongoDB
     const dbConnected = await connectDB();

@@ -19,7 +19,7 @@ import MarcusGenerators, { MARCUS_PALETTE } from './MarcusCharacter';
 // Register all characters (unlocks determined by server)
 characterRegistry.registerCharacter('penguin', {
     name: 'Penguin',
-    description: 'The classic Club Penguin character',
+    description: 'The classic Club Pengu character',
     generators: null, // Uses default penguin generators
     isSecret: false,
 });

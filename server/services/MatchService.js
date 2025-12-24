@@ -160,6 +160,47 @@ function shuffleArray(arr) {
     return arr;
 }
 
+// Blackjack constants
+const BLACKJACK_SUITS = ['♥', '♦', '♣', '♠'];
+const BLACKJACK_VALUES = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+
+// Create and shuffle a blackjack deck (standard 52 cards)
+function createBlackjackDeck() {
+    const deck = [];
+    let uid = 0;
+    for (const suit of BLACKJACK_SUITS) {
+        for (const value of BLACKJACK_VALUES) {
+            deck.push({ suit, value, uid: uid++, hidden: false });
+        }
+    }
+    return shuffleArray(deck);
+}
+
+// Calculate blackjack hand score
+function calculateBlackjackScore(hand) {
+    let score = 0;
+    let aces = 0;
+    
+    for (const card of hand) {
+        if (['J','Q','K'].includes(card.value)) {
+            score += 10;
+        } else if (card.value === 'A') {
+            score += 11;
+            aces++;
+        } else {
+            score += parseInt(card.value);
+        }
+    }
+    
+    // Convert aces from 11 to 1 as needed
+    while (score > 21 && aces > 0) {
+        score -= 10;
+        aces--;
+    }
+    
+    return score;
+}
+
 // Normalize game type
 const normalizeGameType = (gameType) => {
     const mapping = {
@@ -168,7 +209,8 @@ const normalizeGameType = (gameType) => {
         'connect4': 'connect4',
         'monopoly': 'monopoly',
         'pong': 'pong',
-        'uno': 'uno'
+        'uno': 'uno',
+        'blackjack': 'blackjack'
     };
     return mapping[gameType] || gameType;
 };
@@ -180,7 +222,8 @@ const denormalizeGameType = (gameType) => {
         'ticTacToe': 'tic_tac_toe',
         'connect4': 'connect4',
         'monopoly': 'monopoly',
-        'uno': 'uno'
+        'uno': 'uno',
+        'blackjack': 'blackjack'
     };
     return mapping[gameType] || gameType;
 };
@@ -363,6 +406,9 @@ class MatchService {
             
             case 'uno':
                 return this._createUnoInitialState();
+            
+            case 'blackjack':
+                return this._createBlackjackState();
             
             case 'card_jitsu':
             default:
@@ -658,6 +704,345 @@ class MatchService {
         }
     }
 
+    // ========== BLACKJACK METHODS ==========
+    
+    _createBlackjackState() {
+        const deck = createBlackjackDeck();
+        
+        // Deal initial cards: Player1, Dealer(hidden), Player2, Dealer(visible)
+        // P2P mode: Both players play against a shared dealer
+        const player1Hand = [deck.pop(), deck.pop()];
+        const player2Hand = [deck.pop(), deck.pop()];
+        const dealerHand = [
+            { ...deck.pop(), hidden: true },  // Hole card (face down)
+            deck.pop()                         // Up card (face up)
+        ];
+        
+        return {
+            deck,
+            dealerHand,
+            player1Hand,
+            player2Hand,
+            player1Score: calculateBlackjackScore(player1Hand),
+            player2Score: calculateBlackjackScore(player2Hand),
+            dealerScore: calculateBlackjackScore([dealerHand[1]]), // Only visible card
+            
+            // Game phases: 'player1Turn' | 'player2Turn' | 'dealerTurn' | 'complete'
+            phase: 'player1Turn',
+            currentTurn: 'player1',
+            
+            // Player statuses: 'playing' | 'stand' | 'bust' | 'blackjack'
+            player1Status: calculateBlackjackScore(player1Hand) === 21 ? 'blackjack' : 'playing',
+            player2Status: calculateBlackjackScore(player2Hand) === 21 ? 'blackjack' : 'playing',
+            dealerStatus: 'waiting',
+            
+            // Results
+            player1Result: null,  // 'win' | 'lose' | 'push' | 'blackjack'
+            player2Result: null,
+            winner: null,  // 'player1' | 'player2' | 'draw' | null
+            
+            turnStartedAt: Date.now(),
+            lastAction: null
+        };
+    }
+    
+    _playBlackjack(match, playerId, action) {
+        const state = match.state;
+        if (state.phase === 'complete') return { error: 'GAME_OVER' };
+        
+        const isPlayer1 = playerId === match.player1.id;
+        const isPlayer2 = playerId === match.player2.id;
+        if (!isPlayer1 && !isPlayer2) return { error: 'NOT_IN_MATCH' };
+        
+        const playerKey = isPlayer1 ? 'player1' : 'player2';
+        const actionType = typeof action === 'object' ? action.action : action;
+        
+        // Check if it's this player's turn
+        if (state.phase === 'player1Turn' && !isPlayer1) return { error: 'NOT_YOUR_TURN' };
+        if (state.phase === 'player2Turn' && !isPlayer2) return { error: 'NOT_YOUR_TURN' };
+        if (state.phase === 'dealerTurn') return { error: 'DEALER_PLAYING' };
+        
+        const hand = isPlayer1 ? state.player1Hand : state.player2Hand;
+        const statusKey = isPlayer1 ? 'player1Status' : 'player2Status';
+        const scoreKey = isPlayer1 ? 'player1Score' : 'player2Score';
+        
+        // Already done (blackjack or bust)
+        if (state[statusKey] !== 'playing') {
+            return this._blackjackAdvanceTurn(match, state);
+        }
+        
+        switch (actionType) {
+            case 'hit':
+                // Draw a card
+                const newCard = state.deck.pop();
+                hand.push(newCard);
+                state[scoreKey] = calculateBlackjackScore(hand);
+                state.lastAction = { type: 'hit', player: playerKey, card: newCard };
+                
+                // Check for bust
+                if (state[scoreKey] > 21) {
+                    state[statusKey] = 'bust';
+                    return this._blackjackAdvanceTurn(match, state);
+                }
+                
+                // Check for 21 (auto-stand)
+                if (state[scoreKey] === 21) {
+                    state[statusKey] = 'stand';
+                    return this._blackjackAdvanceTurn(match, state);
+                }
+                
+                state.turnStartedAt = Date.now();
+                return { success: true };
+                
+            case 'stand':
+                state[statusKey] = 'stand';
+                state.lastAction = { type: 'stand', player: playerKey };
+                return this._blackjackAdvanceTurn(match, state);
+                
+            case 'double':
+                // Double down: one more card, then stand (P2P doesn't track bets per-action, so just hit + stand)
+                const doubleCard = state.deck.pop();
+                hand.push(doubleCard);
+                state[scoreKey] = calculateBlackjackScore(hand);
+                state.lastAction = { type: 'double', player: playerKey, card: doubleCard };
+                
+                if (state[scoreKey] > 21) {
+                    state[statusKey] = 'bust';
+                } else {
+                    state[statusKey] = 'stand';
+                }
+                
+                return this._blackjackAdvanceTurn(match, state);
+                
+            default:
+                return { error: 'INVALID_ACTION' };
+        }
+    }
+    
+    _blackjackAdvanceTurn(match, state) {
+        // If player1 just finished, move to player2
+        if (state.phase === 'player1Turn') {
+            // Check if player2 has blackjack (auto-complete)
+            if (state.player2Status === 'blackjack') {
+                state.phase = 'dealerTurn';
+                return this._blackjackDealerPlay(match, state);
+            }
+            state.phase = 'player2Turn';
+            state.currentTurn = 'player2';
+            state.turnStartedAt = Date.now();
+            return { success: true, nextTurn: 'player2' };
+        }
+        
+        // If player2 just finished, dealer plays
+        if (state.phase === 'player2Turn') {
+            state.phase = 'dealerTurn';
+            return this._blackjackDealerPlay(match, state);
+        }
+        
+        return { success: true };
+    }
+    
+    _blackjackDealerPlay(match, state) {
+        // Reveal hole card
+        state.dealerHand[0].hidden = false;
+        state.dealerScore = calculateBlackjackScore(state.dealerHand);
+        
+        // Check if both players busted - dealer wins automatically
+        if (state.player1Status === 'bust' && state.player2Status === 'bust') {
+            return this._blackjackResolve(match, state);
+        }
+        
+        // Dealer draws to 17+ (standard casino rules)
+        while (state.dealerScore < 17) {
+            const card = state.deck.pop();
+            state.dealerHand.push(card);
+            state.dealerScore = calculateBlackjackScore(state.dealerHand);
+        }
+        
+        state.dealerStatus = state.dealerScore > 21 ? 'bust' : 'stand';
+        
+        return this._blackjackResolve(match, state);
+    }
+    
+    _blackjackResolve(match, state) {
+        state.phase = 'complete';
+        
+        const dealerScore = state.dealerScore;
+        const dealerBust = dealerScore > 21;
+        const dealerBlackjack = state.dealerHand.length === 2 && dealerScore === 21;
+        
+        // Resolve player 1
+        if (state.player1Status === 'bust') {
+            state.player1Result = 'lose';
+        } else if (state.player1Status === 'blackjack') {
+            state.player1Result = dealerBlackjack ? 'push' : 'blackjack';
+        } else if (dealerBust) {
+            state.player1Result = 'win';
+        } else if (state.player1Score > dealerScore) {
+            state.player1Result = 'win';
+        } else if (state.player1Score < dealerScore) {
+            state.player1Result = 'lose';
+        } else {
+            state.player1Result = 'push';
+        }
+        
+        // Resolve player 2
+        if (state.player2Status === 'bust') {
+            state.player2Result = 'lose';
+        } else if (state.player2Status === 'blackjack') {
+            state.player2Result = dealerBlackjack ? 'push' : 'blackjack';
+        } else if (dealerBust) {
+            state.player2Result = 'win';
+        } else if (state.player2Score > dealerScore) {
+            state.player2Result = 'win';
+        } else if (state.player2Score < dealerScore) {
+            state.player2Result = 'lose';
+        } else {
+            state.player2Result = 'push';
+        }
+        
+        // Determine P2P winner:
+        // - Better result wins (blackjack > win > push > lose)
+        // - If same result, higher score wins
+        // - Bust is worst
+        const resultRank = { 'blackjack': 4, 'win': 3, 'push': 2, 'lose': 1 };
+        const p1Rank = state.player1Status === 'bust' ? 0 : resultRank[state.player1Result] || 0;
+        const p2Rank = state.player2Status === 'bust' ? 0 : resultRank[state.player2Result] || 0;
+        
+        if (p1Rank > p2Rank) {
+            state.winner = 'player1';
+        } else if (p2Rank > p1Rank) {
+            state.winner = 'player2';
+        } else {
+            // Same result rank - compare scores (non-bust only)
+            const p1Score = state.player1Status === 'bust' ? 0 : state.player1Score;
+            const p2Score = state.player2Status === 'bust' ? 0 : state.player2Score;
+            
+            if (p1Score > p2Score) {
+                state.winner = 'player1';
+            } else if (p2Score > p1Score) {
+                state.winner = 'player2';
+            } else {
+                state.winner = 'draw';
+            }
+        }
+        
+        // Set match-level winner
+        if (state.winner === 'player1') {
+            match.status = 'complete';
+            match.winnerId = match.player1.id;
+            match.winnerWallet = match.player1.wallet;
+        } else if (state.winner === 'player2') {
+            match.status = 'complete';
+            match.winnerId = match.player2.id;
+            match.winnerWallet = match.player2.wallet;
+        } else {
+            // Draw
+            match.status = 'complete';
+            match.winnerId = null;
+            match.winnerWallet = null;
+        }
+        match.endedAt = Date.now();
+        
+        return { success: true, gameComplete: true, isDraw: state.winner === 'draw' };
+    }
+    
+    _handleBlackjackTimeout(match) {
+        const state = match.state;
+        if (state.phase === 'complete') return;
+        
+        // Auto-stand for the current player
+        const currentPlayerId = state.phase === 'player1Turn' ? match.player1.id : match.player2.id;
+        const playerKey = state.phase === 'player1Turn' ? 'player1' : 'player2';
+        const statusKey = `${playerKey}Status`;
+        
+        console.log(`⏰ Blackjack auto-stand for ${playerKey}`);
+        
+        if (state[statusKey] === 'playing') {
+            state[statusKey] = 'stand';
+            state.lastAction = { type: 'stand', player: playerKey, timeout: true };
+        }
+        
+        this._blackjackAdvanceTurn(match, state);
+    }
+    
+    _getBlackjackState(match, playerId, isPlayer1, timeRemaining) {
+        const state = match.state;
+        const playerKey = isPlayer1 ? 'player1' : 'player2';
+        const opponentKey = isPlayer1 ? 'player2' : 'player1';
+        
+        const isMyTurn = (state.phase === 'player1Turn' && isPlayer1) || 
+                         (state.phase === 'player2Turn' && !isPlayer1);
+        
+        const myHand = isPlayer1 ? state.player1Hand : state.player2Hand;
+        const opponentHand = isPlayer1 ? state.player2Hand : state.player1Hand;
+        const myScore = isPlayer1 ? state.player1Score : state.player2Score;
+        const opponentScore = isPlayer1 ? state.player2Score : state.player1Score;
+        const myStatus = isPlayer1 ? state.player1Status : state.player2Status;
+        const opponentStatus = isPlayer1 ? state.player2Status : state.player1Status;
+        const myResult = isPlayer1 ? state.player1Result : state.player2Result;
+        const opponentResult = isPlayer1 ? state.player2Result : state.player1Result;
+        
+        // HIDE opponent's hand until game is complete (prevent cheating)
+        // Only show card count during gameplay
+        const isComplete = state.phase === 'complete';
+        const visibleOpponentHand = isComplete ? [...opponentHand] : null;
+        const visibleOpponentScore = isComplete ? opponentScore : null;
+        
+        // Dealer hand - hide hole card until dealer's turn
+        const visibleDealerHand = state.phase === 'dealerTurn' || state.phase === 'complete'
+            ? state.dealerHand
+            : state.dealerHand.map((card, i) => i === 0 ? { ...card, hidden: true } : card);
+        const visibleDealerScore = state.phase === 'dealerTurn' || state.phase === 'complete'
+            ? state.dealerScore
+            : calculateBlackjackScore([state.dealerHand[1]]); // Only visible card
+        
+        return {
+            // My hand (always visible to me)
+            myHand: [...myHand],
+            myScore,
+            myStatus,
+            myResult,
+            
+            // Opponent hand - HIDDEN until game complete (anti-cheat)
+            opponentHand: visibleOpponentHand,
+            opponentCardCount: opponentHand.length,  // Show card count only
+            opponentScore: visibleOpponentScore,
+            opponentStatus,
+            opponentResult,
+            
+            // Dealer
+            dealerHand: visibleDealerHand,
+            dealerScore: visibleDealerScore,
+            dealerStatus: state.dealerStatus,
+            
+            // Turn state
+            phase: state.phase,
+            currentTurn: state.currentTurn,
+            isMyTurn,
+            
+            // Can perform actions
+            canHit: isMyTurn && myStatus === 'playing',
+            canStand: isMyTurn && myStatus === 'playing',
+            canDouble: isMyTurn && myStatus === 'playing' && myHand.length === 2,
+            
+            // Last action for animations
+            lastAction: state.lastAction,
+            
+            // Result
+            winner: state.winner,
+            gameComplete: state.phase === 'complete',
+            
+            // Timer
+            timeRemaining,
+            
+            // Metadata
+            isPlayer1,
+            status: match.status,
+            matchId: match.id
+        };
+    }
+
     getMatch(matchId) {
         return this.matches.get(matchId);
     }
@@ -696,6 +1081,9 @@ class MatchService {
         }
         if (match.gameType === 'uno') {
             return this._playUno(match, playerId, cardIndex);
+        }
+        if (match.gameType === 'blackjack') {
+            return this._playBlackjack(match, playerId, cardIndex);
         }
         return this._playCardJitsu(match, playerId, cardIndex);
     }
@@ -1320,6 +1708,8 @@ class MatchService {
                 this._handleMonopolyTimeout(match);
             } else if (match.gameType === 'uno') {
                 this._handleUnoTimeout(match);
+            } else if (match.gameType === 'blackjack') {
+                this._handleBlackjackTimeout(match);
             } else {
                 this._handleCardJitsuTimeout(match);
             }
@@ -1466,6 +1856,29 @@ class MatchService {
                 winnerId: match.winnerId,
                 calledUno: match.state.calledUno
             };
+        } else if (match.gameType === 'blackjack') {
+            // P2P Blackjack: Hide hands from spectators to prevent cheating
+            // Only show card counts, status, and results (not actual cards)
+            const isComplete = match.state.phase === 'complete';
+            spectatorState = {
+                player1CardCount: match.state.player1Hand?.length || 0,
+                player1Status: match.state.player1Status,
+                player1Result: match.state.player1Result,
+                player1Score: isComplete ? match.state.player1Score : null,
+                player2CardCount: match.state.player2Hand?.length || 0,
+                player2Status: match.state.player2Status,
+                player2Result: match.state.player2Result,
+                player2Score: isComplete ? match.state.player2Score : null,
+                dealerCardCount: match.state.dealerHand?.length || 0,
+                dealerStatus: match.state.dealerStatus,
+                dealerScore: isComplete ? match.state.dealerScore : null,
+                currentTurn: match.state.currentTurn,
+                phase: match.state.phase,
+                lastAction: match.state.lastAction ? { type: match.state.lastAction.type, player: match.state.lastAction.player } : null,
+                winner: match.state.winner,
+                status: match.status,
+                winnerId: match.winnerId
+            };
         } else {
             spectatorState = {
                 round: match.state.round,
@@ -1515,6 +1928,9 @@ class MatchService {
         }
         if (match.gameType === 'uno') {
             return this._getUnoState(match, playerId, isPlayer1, timeRemaining);
+        }
+        if (match.gameType === 'blackjack') {
+            return this._getBlackjackState(match, playerId, isPlayer1, timeRemaining);
         }
         return this._getCardJitsuState(match, playerId, isPlayer1, timeRemaining);
     }
@@ -1849,6 +2265,24 @@ class MatchService {
                         winner: match.state.winner,
                         status: match.status,
                         calledUno: match.state.calledUno
+                    };
+                } else if (match.gameType === 'blackjack') {
+                    // P2P blackjack - hide hands during gameplay
+                    const visibleDealerHand = match.state.phase === 'dealerTurn' || match.state.phase === 'complete'
+                        ? match.state.dealerHand
+                        : match.state.dealerHand?.map((card, i) => i === 0 ? { hidden: true } : card) || [];
+                    spectatorState = {
+                        player1CardCount: match.state.player1Hand?.length || 0,
+                        player1Status: match.state.player1Status,
+                        player2CardCount: match.state.player2Hand?.length || 0,
+                        player2Status: match.state.player2Status,
+                        dealerCardCount: visibleDealerHand?.length || 0,
+                        dealerStatus: match.state.dealerStatus,
+                        dealerScore: match.state.phase === 'complete' ? match.state.dealerScore : null,
+                        currentTurn: match.state.currentTurn,
+                        phase: match.state.phase,
+                        winner: match.state.winner,
+                        status: match.status
                     };
                 } else {
                     spectatorState = {

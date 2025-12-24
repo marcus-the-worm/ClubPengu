@@ -1,7 +1,7 @@
 import React from 'react';
 
 /**
- * Portal - Interactive building door prompt (Club Penguin / MapleStory style)
+ * Portal - Interactive building door prompt (Club Pengu / MapleStory style)
  */
 const Portal = ({ 
     name, 

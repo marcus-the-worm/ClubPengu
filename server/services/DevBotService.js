@@ -111,11 +111,19 @@ class DevBotService {
         
         console.log(`🤖 DevBot received challenge: ${challenge.gameType} from ${challenge.challengerName}`);
         
-        // If already in a match, decline
+        // If already in a match, verify it still exists before declining
         if (this.activeMatch) {
-            console.log('🤖 DevBot is busy, declining challenge');
-            await this.challengeService.denyChallenge(challenge.challengeId, BOT_CONFIG.id);
-            return true;
+            // Verify the match actually exists in matchService
+            const existingMatch = this.matchService?.getMatch(this.activeMatch.id);
+            if (!existingMatch || existingMatch.status === 'complete') {
+                // Stale activeMatch reference - clear it
+                console.log('🤖 DevBot: Clearing stale activeMatch reference');
+                this.activeMatch = null;
+            } else {
+                console.log('🤖 DevBot is busy, declining challenge');
+                await this.challengeService.denyChallenge(challenge.challengeId, BOT_CONFIG.id);
+                return true;
+            }
         }
         
         // Auto-accept after a short delay (simulate thinking)
@@ -172,6 +180,15 @@ class DevBotService {
             setTimeout(() => this.makeTicTacToeMove(match.id, match.state), 1500);
         }
         
+        // For blackjack, check if bot needs to act
+        if (match.gameType === 'blackjack') {
+            const botPlayer = isBotPlayer1 ? 'player1' : 'player2';
+            const expectedPhase = isBotPlayer1 ? 'player1Turn' : 'player2Turn';
+            if (match.state?.currentTurn === botPlayer && match.state?.phase === expectedPhase) {
+                setTimeout(() => this.makeBlackjackMove(match.id, match.state), 1500);
+            }
+        }
+        
         return true;
     }
     
@@ -200,6 +217,19 @@ class DevBotService {
                 // It's bot's turn, make a move after delay
                 console.log(`🤖 DevBot: It's my turn (${botPlayerTurn}), scheduling move...`);
                 setTimeout(() => this.makeTicTacToeMove(matchId, state), 1000 + Math.random() * 1000);
+            }
+        }
+        
+        // For Blackjack, check if it's bot's turn
+        if (this.activeMatch.gameType === 'blackjack') {
+            const botPlayerTurn = this.activeMatch.isBotPlayer1 ? 'player1' : 'player2';
+            const expectedPhase = this.activeMatch.isBotPlayer1 ? 'player1Turn' : 'player2Turn';
+            
+            // Check if it's bot's turn (phase is player1Turn or player2Turn)
+            if (state.currentTurn === botPlayerTurn && state.phase === expectedPhase) {
+                // It's bot's turn, make a move after delay
+                console.log(`🤖 DevBot: Blackjack - my turn (${botPlayerTurn}), phase: ${state.phase}, scheduling move...`);
+                setTimeout(() => this.makeBlackjackMove(matchId, state), 1000 + Math.random() * 1500);
             }
         }
         
@@ -250,6 +280,61 @@ class DevBotService {
         
         if (result.gameComplete) {
             console.log(`🤖 DevBot move resulted in game complete`);
+            this.activeMatch = null;
+        }
+    }
+    
+    /**
+     * Make a Blackjack move (Basic Strategy AI)
+     * Uses simplified basic blackjack strategy
+     * @param {string} matchId - Match ID
+     * @param {object} state - Current game state
+     */
+    makeBlackjackMove(matchId, state) {
+        if (!this.isActive || !this.matchService) return;
+        if (!this.activeMatch || this.activeMatch.id !== matchId) return;
+        
+        const isPlayer1 = this.activeMatch.isBotPlayer1;
+        const myScore = isPlayer1 ? state.player1Score : state.player2Score;
+        const myStatus = isPlayer1 ? state.player1Status : state.player2Status;
+        
+        // Already done (blackjack, stand, or bust)
+        if (myStatus !== 'playing') {
+            console.log(`🤖 DevBot: Already done with status: ${myStatus}`);
+            return;
+        }
+        
+        // Basic strategy: Hit on 16 or less, stand on 17+
+        let action;
+        if (myScore < 17) {
+            action = 'hit';
+        } else {
+            action = 'stand';
+        }
+        
+        console.log(`🤖 DevBot making Blackjack move: ${action} (score: ${myScore})`);
+        
+        // Use the blackjack action method
+        const result = this.matchService._playBlackjack(
+            this.matchService.matches.get(matchId),
+            BOT_CONFIG.id,
+            action
+        );
+        
+        if (result.error) {
+            console.error(`🤖 DevBot blackjack move failed:`, result.error);
+            return;
+        }
+        
+        // Notify server to broadcast the new state
+        if (this.onBotMakeMove) {
+            this.onBotMakeMove(matchId, result);
+        }
+        
+        // Check if game complete or if we need to make another move
+        const match = this.matchService.matches.get(matchId);
+        if (match?.state?.phase === 'complete') {
+            console.log(`🤖 DevBot blackjack game complete`);
             this.activeMatch = null;
         }
     }

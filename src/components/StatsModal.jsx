@@ -45,6 +45,7 @@ const gameEmojis = {
     cardJitsu: '⚔️',
     ticTacToe: '⭕',
     connect4: '🔴',
+    blackjack: '🎰',
     monopoly: '🎩',
     uno: '🃏',
     pong: '🏓'
@@ -55,6 +56,7 @@ const gameNames = {
     cardJitsu: 'Card Jitsu',
     ticTacToe: 'Tic Tac Toe',
     connect4: 'Connect 4',
+    blackjack: 'Blackjack',
     monopoly: 'Monopoly',
     uno: 'UNO',
     pong: 'Pong'
@@ -68,6 +70,8 @@ const txTypeDisplay = {
     wager_refund: { label: 'Wager Refund', color: 'text-yellow-400', icon: '↩️' },
     slot_spin: { label: 'Slot Spin', color: 'text-purple-400', icon: '🎰' },
     slot_payout: { label: 'Slot Win', color: 'text-green-400', icon: '💰' },
+    blackjack_bet: { label: 'Blackjack Bet', color: 'text-orange-400', icon: '🃏' },
+    blackjack_win: { label: 'Blackjack Win', color: 'text-green-400', icon: '🎰' },
     fishing_bait: { label: 'Fishing Bait', color: 'text-blue-400', icon: '🪱' },
     fishing_catch: { label: 'Fish Sold', color: 'text-green-400', icon: '🐟' },
     chat_bonus: { label: 'Chat Bonus', color: 'text-cyan-400', icon: '💬' },
@@ -297,8 +301,11 @@ const StatsModal = ({ isOpen, onClose }) => {
                                             {[
                                                 { game: 'cardJitsu', w: stats.cardJitsuWins, l: stats.cardJitsuLosses, d: stats.cardJitsuDraws },
                                                 { game: 'ticTacToe', w: stats.ticTacToeWins, l: stats.ticTacToeLosses, d: stats.ticTacToeDraws },
-                                                { game: 'connect4', w: stats.connect4Wins, l: stats.connect4Losses, d: stats.connect4Draws }
-                                            ].map(({ game, w, l, d }) => (
+                                                { game: 'connect4', w: stats.connect4Wins, l: stats.connect4Losses, d: stats.connect4Draws },
+                                                { game: 'blackjack', w: stats.blackjackWins, l: stats.blackjackLosses, d: stats.blackjackPushes, extra: stats.blackjackBlackjacks ? `${stats.blackjackBlackjacks} 🂡` : null },
+                                                { game: 'uno', w: stats.unoWins, l: stats.unoLosses },
+                                                { game: 'monopoly', w: stats.monopolyWins, l: stats.monopolyLosses }
+                                            ].map(({ game, w, l, d, extra }) => (
                                                 <div key={game} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
                                                     <span className="text-white/80 flex items-center gap-2">
                                                         <span>{gameEmojis[game]}</span>
@@ -307,7 +314,8 @@ const StatsModal = ({ isOpen, onClose }) => {
                                                     <div className="flex items-center gap-3 text-sm">
                                                         <span className="text-green-400">{w || 0}W</span>
                                                         <span className="text-red-400">{l || 0}L</span>
-                                                        <span className="text-gray-400">{d || 0}D</span>
+                                                        {d !== undefined && <span className="text-gray-400">{d || 0}D</span>}
+                                                        {extra && <span className="text-yellow-400" title="Natural Blackjacks">{extra}</span>}
                                                     </div>
                                                 </div>
                                             ))}

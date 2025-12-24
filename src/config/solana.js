@@ -10,7 +10,7 @@
  */
 
 // ==================== TOKEN ADDRESSES ====================
-// CPw3 Token - Club Penguin Web3 native currency
+// CPw3 Token - Native game currency
 export const CPW3_TOKEN_ADDRESS = import.meta.env.VITE_CPW3_TOKEN_ADDRESS || 'CPw3XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 
 // USDC on Solana (for x402 payments)

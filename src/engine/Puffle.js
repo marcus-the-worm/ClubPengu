@@ -390,7 +390,7 @@ class Puffle {
         }
         group.add(hairGroup);
         
-        // Big expressive eyes (Club Penguin style - large white with black pupil)
+        // Big expressive eyes (Club Pengu style - large white with black pupil)
         const eyeWhiteGeo = new THREE.SphereGeometry(0.18, 16, 16);
         const eyeWhiteMat = new THREE.MeshStandardMaterial({ 
             color: 0xffffff,

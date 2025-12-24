@@ -7,6 +7,7 @@ import P2PTicTacToe from './minigames/P2PTicTacToe';
 import P2PConnect4 from './minigames/P2PConnect4';
 import P2PMonopoly from './minigames/P2PMonopoly';
 import P2PUno from './minigames/P2PUno';
+import P2PBlackjack from './minigames/P2PBlackjack';
 import GameManager from './engine/GameManager';
 import { MultiplayerProvider, useMultiplayer } from './multiplayer';
 import { ChallengeProvider, useChallenge } from './challenge';
@@ -190,12 +191,12 @@ const AppContent = () => {
     }, []);
     
     // Challenge context for P2P matches
-    const { isInMatch, activeMatch, matchState, selectPlayer, activeMatches, spectatingMatch } = useChallenge();
+    const { isInMatch, activeMatch, matchState, selectPlayer, activeMatches, spectatingMatch, activePveActivities } = useChallenge();
     
     // Initialize GameManager on mount
     useEffect(() => {
         const gm = GameManager.getInstance();
-        console.log('🐧 Club Penguin Clone Loaded!');
+        console.log('🐧 Club Pengu Loaded!');
         console.log('💰 Coins:', gm.getCoins());
     }, []);
     
@@ -282,6 +283,7 @@ const AppContent = () => {
                         isInMatch={isInMatch}
                         activeMatches={activeMatches}
                         spectatingMatch={spectatingMatch}
+                        activePveActivities={activePveActivities}
                         onRequestAuth={handleRequestAuth}
                     />
                 </div>
@@ -328,6 +330,13 @@ const AppContent = () => {
             {isInMatch && activeMatch && activeMatch.gameType === 'uno' && (
                 <div className="absolute inset-0 z-40">
                     <P2PUno onMatchEnd={handleP2PMatchEnd} />
+                </div>
+            )}
+            
+            {/* P2P Blackjack - overlay on top of game world */}
+            {isInMatch && activeMatch && activeMatch.gameType === 'blackjack' && (
+                <div className="absolute inset-0 z-40">
+                    <P2PBlackjack onMatchEnd={handleP2PMatchEnd} />
                 </div>
             )}
             

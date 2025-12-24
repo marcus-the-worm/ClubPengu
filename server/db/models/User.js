@@ -190,6 +190,47 @@ const userSchema = new mongoose.Schema({
             winsAsX: { type: Number, default: 0 },
             winsAsO: { type: Number, default: 0 }
         },
+        blackjack: {
+            played: { type: Number, default: 0 },
+            wins: { type: Number, default: 0 },
+            losses: { type: Number, default: 0 },
+            pushes: { type: Number, default: 0 },  // Ties in blackjack
+            blackjacks: { type: Number, default: 0 },  // Natural 21s
+            busts: { type: Number, default: 0 },  // Going over 21
+            coinsWon: { type: Number, default: 0 },
+            coinsLost: { type: Number, default: 0 },
+            winStreak: { type: Number, default: 0 },
+            bestWinStreak: { type: Number, default: 0 },
+            lossStreak: { type: Number, default: 0 },
+            worstLossStreak: { type: Number, default: 0 },
+            totalHandsPlayed: { type: Number, default: 0 },
+            totalHits: { type: Number, default: 0 },
+            totalStands: { type: Number, default: 0 },
+            totalDoubles: { type: Number, default: 0 },
+            // PvE vs PvP tracking
+            pveGames: { type: Number, default: 0 },
+            pveWins: { type: Number, default: 0 },
+            pvpGames: { type: Number, default: 0 },
+            pvpWins: { type: Number, default: 0 }
+        },
+        uno: {
+            played: { type: Number, default: 0 },
+            wins: { type: Number, default: 0 },
+            losses: { type: Number, default: 0 },
+            coinsWon: { type: Number, default: 0 },
+            coinsLost: { type: Number, default: 0 },
+            winStreak: { type: Number, default: 0 },
+            bestWinStreak: { type: Number, default: 0 }
+        },
+        monopoly: {
+            played: { type: Number, default: 0 },
+            wins: { type: Number, default: 0 },
+            losses: { type: Number, default: 0 },
+            coinsWon: { type: Number, default: 0 },
+            coinsLost: { type: Number, default: 0 },
+            winStreak: { type: Number, default: 0 },
+            bestWinStreak: { type: Number, default: 0 }
+        },
         overall: {
             totalGamesPlayed: { type: Number, default: 0 },
             totalGamesWon: { type: Number, default: 0 },
@@ -391,6 +432,61 @@ userSchema.methods.recordGameResult = function(gameType, won, coinsDelta, isDraw
 };
 
 /**
+ * Record blackjack-specific stats (extends recordGameResult)
+ * @param {object} details - { result: 'WIN'|'LOSS'|'PUSH'|'BLACKJACK', isPvE, coinsDelta, gotBlackjack, busted }
+ */
+userSchema.methods.recordBlackjackResult = function(details) {
+    const { result, isPvE, coinsDelta, gotBlackjack, busted } = details;
+    const bj = this.gameStats.blackjack;
+    if (!bj) return;
+
+    bj.played++;
+    bj.totalHandsPlayed++;
+    this.gameStats.overall.totalGamesPlayed++;
+
+    // Track PvE vs PvP
+    if (isPvE) {
+        bj.pveGames++;
+    } else {
+        bj.pvpGames++;
+    }
+
+    // Track special outcomes
+    if (gotBlackjack) bj.blackjacks++;
+    if (busted) bj.busts++;
+
+    // Win/Loss/Push tracking
+    if (result === 'PUSH') {
+        bj.pushes++;
+        bj.winStreak = 0;
+        bj.lossStreak = 0;
+        this.gameStats.overall.totalGamesDrew++;
+    } else if (result === 'WIN' || result === 'BLACKJACK') {
+        bj.wins++;
+        bj.coinsWon += coinsDelta || 0;
+        bj.winStreak++;
+        bj.lossStreak = 0;
+        if (bj.winStreak > bj.bestWinStreak) {
+            bj.bestWinStreak = bj.winStreak;
+        }
+        if (isPvE) bj.pveWins++;
+        else bj.pvpWins++;
+        this.gameStats.overall.totalGamesWon++;
+        this.stats.economy.totalCoinsWonFromWagers += coinsDelta || 0;
+    } else {
+        bj.losses++;
+        bj.coinsLost += coinsDelta || 0;
+        bj.lossStreak++;
+        bj.winStreak = 0;
+        if (bj.lossStreak > bj.worstLossStreak) {
+            bj.worstLossStreak = bj.lossStreak;
+        }
+        this.gameStats.overall.totalGamesLost++;
+        this.stats.economy.totalCoinsLostToWagers += coinsDelta || 0;
+    }
+};
+
+/**
  * Get public profile (safe to send to other players)
  */
 userSchema.methods.getPublicProfile = function() {
@@ -403,6 +499,9 @@ userSchema.methods.getPublicProfile = function() {
             cardJitsu: { wins: this.gameStats.cardJitsu.wins, losses: this.gameStats.cardJitsu.losses },
             connect4: { wins: this.gameStats.connect4.wins, losses: this.gameStats.connect4.losses },
             ticTacToe: { wins: this.gameStats.ticTacToe.wins, losses: this.gameStats.ticTacToe.losses },
+            blackjack: { wins: this.gameStats.blackjack?.wins || 0, losses: this.gameStats.blackjack?.losses || 0, blackjacks: this.gameStats.blackjack?.blackjacks || 0 },
+            uno: { wins: this.gameStats.uno?.wins || 0, losses: this.gameStats.uno?.losses || 0 },
+            monopoly: { wins: this.gameStats.monopoly?.wins || 0, losses: this.gameStats.monopoly?.losses || 0 },
             overall: this.gameStats.overall
         },
         createdAt: this.createdAt

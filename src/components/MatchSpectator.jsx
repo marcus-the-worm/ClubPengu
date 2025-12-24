@@ -478,6 +478,126 @@ const UnoSpectator = ({ players, state, totalPot }) => {
 };
 
 /**
+ * Blackjack spectator display - Shows hands, scores, and dealer cards
+ */
+const BlackjackSpectator = ({ players, state, totalPot }) => {
+    const currentTurn = state?.currentTurn || 'player1';
+    const winner = state?.winner;
+    const isComplete = state?.status === 'complete' || state?.phase === 'complete';
+    const phase = state?.phase;
+    
+    const p1Score = state?.player1Score ?? 0;
+    const p2Score = state?.player2Score ?? 0;
+    const dealerScore = state?.dealerScore ?? 0;
+    const p1Status = state?.player1Status || 'playing';
+    const p2Status = state?.player2Status || 'playing';
+    const dealerStatus = state?.dealerStatus || 'waiting';
+    
+    // Get card display for a hand
+    const renderHand = (hand, maxShow = 4) => {
+        if (!hand || hand.length === 0) return '—';
+        return hand.slice(0, maxShow).map((card, i) => {
+            if (card.hidden) return '🂠';
+            const isRed = card.suit === '♥' || card.suit === '♦';
+            return (
+                <span key={i} className={isRed ? 'text-red-400' : 'text-white'}>
+                    {card.value}{card.suit}
+                </span>
+            );
+        }).reduce((prev, curr, i) => [prev, <span key={`sep-${i}`} className="mx-0.5"></span>, curr]);
+    };
+    
+    const statusEmoji = (status) => {
+        if (status === 'bust') return '💥';
+        if (status === 'blackjack') return '🂡';
+        if (status === 'stand') return '🛑';
+        if (status === 'playing') return '🎯';
+        return '⏳';
+    };
+    
+    return (
+        <div className="bg-gradient-to-br from-green-900/95 to-emerald-900/95 backdrop-blur-xl rounded-2xl border-2 border-green-400/50 shadow-2xl px-4 py-3 min-w-[280px] animate-fade-in">
+            {/* Header */}
+            <div className="flex items-center justify-center gap-2 mb-2">
+                <span className="text-yellow-400 text-xs font-bold">🂡 BLACKJACK</span>
+                <span className="text-green-300 text-xs">•</span>
+                <span className="text-yellow-400 text-xs font-bold">💰 {totalPot}</span>
+                {phase && phase !== 'complete' && (
+                    <>
+                        <span className="text-green-300 text-xs">•</span>
+                        <span className="text-green-300 text-[10px] animate-pulse">
+                            {phase === 'player1Turn' ? '1️⃣' : phase === 'player2Turn' ? '2️⃣' : '🎰'}
+                        </span>
+                    </>
+                )}
+            </div>
+            
+            {/* Dealer */}
+            <div className="text-center mb-2 pb-2 border-b border-white/10">
+                <p className="text-yellow-400 text-xs font-bold">DEALER</p>
+                <div className="flex items-center justify-center gap-2 mt-1">
+                    <span className="text-white text-sm font-mono">
+                        {renderHand(state?.dealerHand)}
+                    </span>
+                    <span className={`text-sm font-bold ${dealerStatus === 'bust' ? 'text-red-400' : 'text-white'}`}>
+                        ({phase === 'complete' || phase === 'dealerTurn' ? dealerScore : '?'})
+                    </span>
+                </div>
+            </div>
+            
+            {/* Players */}
+            <div className="flex items-center justify-between gap-2">
+                <div className="text-center flex-1">
+                    <p className={`font-bold text-xs truncate max-w-[85px] ${currentTurn === 'player1' && !isComplete ? 'text-cyan-400' : 'text-white'}`}>
+                        {players[0]?.name || 'Player 1'}
+                    </p>
+                    <p className="text-lg font-bold text-white mt-1">
+                        {p1Score} {statusEmoji(p1Status)}
+                    </p>
+                    <p className="text-[10px] text-white/50">{p1Status}</p>
+                </div>
+                
+                <div className="text-white/40 text-xs font-bold">VS</div>
+                
+                <div className="text-center flex-1">
+                    <p className={`font-bold text-xs truncate max-w-[85px] ${currentTurn === 'player2' && !isComplete ? 'text-pink-400' : 'text-white'}`}>
+                        {players[1]?.name || 'Player 2'}
+                    </p>
+                    <p className="text-lg font-bold text-white mt-1">
+                        {p2Score} {statusEmoji(p2Status)}
+                    </p>
+                    <p className="text-[10px] text-white/50">{p2Status}</p>
+                </div>
+            </div>
+            
+            {/* Status */}
+            <div className="text-center mt-2 pt-2 border-t border-white/10">
+                {!isComplete && phase !== 'dealerTurn' && (
+                    <span className="text-white/50 text-[10px]">
+                        {currentTurn === 'player1' ? players[0]?.name : players[1]?.name}'s turn
+                    </span>
+                )}
+                {!isComplete && phase === 'dealerTurn' && (
+                    <span className="text-yellow-400 text-[10px] animate-pulse">
+                        🎰 Dealer playing...
+                    </span>
+                )}
+                {isComplete && winner && winner !== 'draw' && (
+                    <span className="text-green-400 text-[10px] font-bold">
+                        🏆 {winner === 'player1' ? players[0]?.name : players[1]?.name} wins!
+                    </span>
+                )}
+                {isComplete && winner === 'draw' && (
+                    <span className="text-gray-400 text-[10px] font-bold">
+                        🤝 Draw! Both push
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+};
+
+/**
  * Single match spectator display - routes to appropriate game view
  */
 const MatchSpectatorBubble = ({ matchData }) => {
@@ -504,6 +624,10 @@ const MatchSpectatorBubble = ({ matchData }) => {
     
     if (gameType === 'uno') {
         return <UnoSpectator players={players} state={state} totalPot={totalPot} />;
+    }
+    
+    if (gameType === 'blackjack') {
+        return <BlackjackSpectator players={players} state={state} totalPot={totalPot} />;
     }
     
     // Default: Card Jitsu

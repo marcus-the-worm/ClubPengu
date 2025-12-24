@@ -6,7 +6,7 @@
 
 **The First Trencher Social Platform on Solana**
 
-*Reviving Club Penguin culture with Web3-native wagering, tradeable cosmetics, and virtual property rentals.*
+*Reviving Club Pengu culture with Web3-native wagering, tradeable cosmetics, and virtual property rentals.*
 
 [![Solana](https://img.shields.io/badge/Built%20on-Solana-9945FF?style=for-the-badge&logo=solana)](https://solana.com)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
@@ -22,7 +22,7 @@
 
 Club Pengu is a **Web3 social gaming platform** that combines the nostalgic charm of classic penguin social games with modern blockchain technology. Built on Solana, it offers:
 
-- **🐧 Club Penguin Vibes** - 3D voxel world, penguin customization, puffles, emotes, and the social experience you remember
+- **🐧 Club Pengu Vibes** - 3D voxel world, penguin customization, puffles, emotes, and the social experience you remember
 - **🏢 GTA V-Style Properties** - Rent igloos, apartments, and lounges. Paywall your space with any token
 - **🔄 RuneScape Trading** - Open gacha for rare cosmetics. Trade items with other players
 

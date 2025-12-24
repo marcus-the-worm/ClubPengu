@@ -113,7 +113,7 @@ class X402Service {
             // Create a human-readable message for signing
             // This is what the user sees in their wallet
             const humanReadableMessage = [
-                '🎮 Club Penguin Web3 - Wager Authorization',
+                '🎮 Web3 Wager Authorization',
                 '─'.repeat(40),
                 '',
                 `Action: ${wagerType === 'wager' ? 'Game Wager' : 'Payment'}`,

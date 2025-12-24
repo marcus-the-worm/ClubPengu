@@ -15,3 +15,4 @@ export { default as X402Service } from './X402Service.js';
 export { default as IglooService } from './IglooService.js';
 export { default as WagerSettlementService } from './WagerSettlementService.js';
 export { default as CustodialWalletService } from './CustodialWalletService.js';
+export { default as BlackjackService } from './BlackjackService.js';
