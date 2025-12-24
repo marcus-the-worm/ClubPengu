@@ -3436,6 +3436,10 @@ async function start() {
         console.log('💰 Wager settlement service ready');
         console.log(`   Custodial wallet: ${wagerSettlementService.getCustodialWalletAddress()?.slice(0, 4)}...`);
         
+        // Inject custodial wallet service into challenge service for expired challenge refunds
+        challengeService.setCustodialWalletService(wagerSettlementService.getCustodialWalletService());
+        console.log('   Challenge refunds enabled');
+        
         // Recover orphaned matches from previous server crash (if any)
         if (isDBConnected()) {
             const recoveryResult = await wagerSettlementService.recoverOrphanedMatches();

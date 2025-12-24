@@ -297,6 +297,50 @@ class CustodialWalletService {
     }
 
     /**
+     * Refund a single player's deposit for an expired/cancelled challenge
+     * (When only the challenger deposited, not both players)
+     */
+    async processChallengeRefund(params) {
+        const { challengeId, walletAddress, tokenAddress, amountRaw, reason } = params;
+
+        if (!this.isReady()) {
+            console.log(`⚠️ [Challenge Refund] Service not ready for challenge ${challengeId}`);
+            return { success: false, error: 'SERVICE_NOT_READY' };
+        }
+
+        try {
+            const amount = BigInt(amountRaw);
+            console.log(`💸 [Challenge Refund] Processing refund for challenge ${challengeId}`);
+            console.log(`   Wallet: ${walletAddress?.slice(0, 8)}...`);
+            console.log(`   Amount: ${amountRaw} raw tokens`);
+            console.log(`   Reason: ${reason || 'expired'}`);
+            
+            // Send refund to challenger
+            const refund = await this._sendPayoutTransaction(
+                walletAddress, 
+                tokenAddress, 
+                amount, 
+                `challenge_refund_${challengeId}`
+            );
+
+            if (refund.success) {
+                this._audit('CHALLENGE_REFUND_SUCCESS', { challengeId, txId: refund.txId, reason });
+                console.log(`✅ [Challenge Refund] Success! Tx: ${refund.txId}`);
+                return { success: true, txId: refund.txId };
+            } else {
+                this._audit('CHALLENGE_REFUND_FAILED', { challengeId, error: refund.error, reason });
+                console.log(`❌ [Challenge Refund] Failed: ${refund.error}`);
+                return { success: false, error: refund.error };
+            }
+
+        } catch (error) {
+            console.error(`🚨 [Challenge Refund] Exception for challenge ${challengeId}:`, error.message);
+            this._audit('CHALLENGE_REFUND_EXCEPTION', { challengeId, error: error.message });
+            return { success: false, error: 'REFUND_FAILED' };
+        }
+    }
+
+    /**
      * Refund deposits back to both players (in case of match cancellation)
      */
     async processRefund(params) {
@@ -644,7 +688,7 @@ class CustodialWalletService {
                 { matchId },
                 { 
                     settlementStatus: 'completed',
-                    settlementTxId: txId,
+                    settlementTx: txId,
                     payoutProcessed: true,
                     payoutTimestamp: new Date()
                 }
@@ -662,7 +706,7 @@ class CustodialWalletService {
                 { matchId },
                 { 
                     settlementStatus: 'refunded',
-                    settlementTxId: `${txId1},${txId2}`,
+                    settlementTx: `${txId1},${txId2}`,
                     payoutTimestamp: new Date()
                 }
             );

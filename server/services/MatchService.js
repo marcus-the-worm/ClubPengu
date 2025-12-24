@@ -1747,6 +1747,15 @@ class MatchService {
         this.playerMatches.delete(match.player2.id);
         if (match.player1.wallet) this.walletMatches.delete(match.player1.wallet);
         if (match.player2.wallet) this.walletMatches.delete(match.player2.wallet);
+        
+        // Determine winner/loser info for DB persistence
+        const isPlayer1Winner = match.winnerId === match.player1.id;
+        const winnerId = match.winnerId;
+        const winnerName = isPlayer1Winner ? match.player1.name : match.player2.name;
+        const winnerWallet = isPlayer1Winner ? match.player1.wallet : match.player2.wallet;
+        const loserId = isPlayer1Winner ? match.player2.id : match.player1.id;
+        const loserName = isPlayer1Winner ? match.player2.name : match.player1.name;
+        const loserWallet = isPlayer1Winner ? match.player2.wallet : match.player1.wallet;
 
         // Update in database
         if (isDBConnected()) {
@@ -1756,8 +1765,10 @@ class MatchService {
                     { 
                         status: match.status,
                         endedAt: match.endedAt,
-                        winnerWallet: match.winnerWallet,
+                        winnerId: winnerId,
+                        winnerWallet: winnerWallet,
                         winnerName: winnerName,
+                        loserId: loserId,
                         loserWallet: loserWallet,
                         loserName: loserName,
                         payoutProcessed: true,
@@ -1766,6 +1777,7 @@ class MatchService {
                         duration: Math.floor((match.endedAt - match.createdAt) / 1000)
                     }
                 );
+                console.log(`📊 Match ${matchId} saved to DB: ${winnerName} beat ${loserName} (payout: ${match.wagerAmount * 2} coins)`);
             } catch (error) {
                 console.error('Error ending match in DB:', error);
             }

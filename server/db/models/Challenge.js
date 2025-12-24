@@ -81,7 +81,11 @@ const challengeSchema = new mongoose.Schema({
     respondedAt: Date,
     
     // ========== RESULT ==========
-    matchId: String  // If accepted, reference to resulting match
+    matchId: String,  // If accepted, reference to resulting match
+    
+    // ========== REFUND TRACKING (for expired token wager challenges) ==========
+    refundProcessed: { type: Boolean, default: false },
+    refundTx: { type: String, default: null }  // Transaction signature if refunded
 
 }, {
     timestamps: true

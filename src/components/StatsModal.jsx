@@ -128,6 +128,9 @@ const StatsModal = ({ isOpen, onClose }) => {
     
     useEffect(() => {
         if (isOpen && isAuthenticated) {
+            // Clear stale data and fetch fresh
+            setData(null);
+            setError(null);
             fetchStats();
         }
     }, [isOpen, isAuthenticated, fetchStats]);
@@ -171,12 +174,22 @@ const StatsModal = ({ isOpen, onClose }) => {
                         <span className="text-2xl">📊</span>
                         <h2 className="text-white font-bold text-lg">My Statistics</h2>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
-                    >
-                        ✕
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={fetchStats}
+                            disabled={loading}
+                            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors disabled:opacity-50"
+                            title="Refresh stats"
+                        >
+                            <span className={loading ? 'animate-spin' : ''}>🔄</span>
+                        </button>
+                        <button
+                            onClick={onClose}
+                            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+                        >
+                            ✕
+                        </button>
+                    </div>
                 </div>
                 
                 {/* Tab Navigation */}

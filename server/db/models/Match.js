@@ -80,10 +80,14 @@ const matchSchema = new mongoose.Schema({
     },
     
     // ========== RESULT ==========
-    winnerWallet: String,
-    winnerName: String,
-    loserWallet: String,
-    loserName: String,
+    winnerId: String,        // Player session ID of winner
+    winnerWallet: String,    // Wallet address of winner (for payouts)
+    winnerName: String,      // Display name of winner
+    loserId: String,         // Player session ID of loser
+    loserWallet: String,     // Wallet address of loser
+    loserName: String,       // Display name of loser
+    payoutProcessed: { type: Boolean, default: false },   // Was payout executed?
+    payoutAmount: { type: Number, default: 0 },           // Total pot paid out
     
     // ========== GAME STATE (for reconnection) ==========
     // Stored during active match, cleared on completion

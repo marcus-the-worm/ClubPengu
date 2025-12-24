@@ -26,12 +26,20 @@ class ChallengeService {
     constructor(inboxService, statsService) {
         this.inboxService = inboxService;
         this.statsService = statsService;
+        this.custodialWalletService = null; // Injected later to avoid circular deps
         
         // In-memory challenges for fast lookup (synced with DB)
         this.challenges = new Map(); // challengeId -> challenge
         
         // Clean up expired challenges periodically
         setInterval(() => this.cleanupExpired(), 60000);
+    }
+    
+    /**
+     * Inject custodial wallet service (called after initialization to avoid circular deps)
+     */
+    setCustodialWalletService(service) {
+        this.custodialWalletService = service;
     }
 
     /**
@@ -320,11 +328,12 @@ class ChallengeService {
     }
 
     /**
-     * Clean up expired challenges
+     * Clean up expired challenges and refund token deposits
      */
     async cleanupExpired() {
         const now = new Date();
         let cleaned = 0;
+        let refunded = 0;
 
         for (const [id, challenge] of this.challenges) {
             if (challenge.expiresAt < now && challenge.status === 'pending') {
@@ -334,13 +343,67 @@ class ChallengeService {
                 // Remove from inbox
                 this.inboxService.deleteByChallengeId(challenge.targetId, id);
                 
+                // CRITICAL: Refund token wager if challenger deposited
+                if (challenge.wagerToken?.tokenAddress && 
+                    challenge.challengerWallet && 
+                    this.custodialWalletService) {
+                    
+                    const refundResult = await this.custodialWalletService.processChallengeRefund({
+                        challengeId: id,
+                        walletAddress: challenge.challengerWallet,
+                        tokenAddress: challenge.wagerToken.tokenAddress,
+                        amountRaw: challenge.wagerToken.amountRaw,
+                        reason: 'expired'
+                    });
+                    
+                    if (refundResult.success) {
+                        refunded++;
+                        console.log(`💸 Refunded expired challenge ${id}: ${challenge.wagerToken.tokenAmount} ${challenge.wagerToken.tokenSymbol} to ${challenge.challengerWallet.slice(0, 8)}...`);
+                    } else {
+                        console.error(`❌ Failed to refund expired challenge ${id}: ${refundResult.error}`);
+                    }
+                }
+                
                 cleaned++;
             }
         }
 
-        // Also clean in database
+        // Also clean in database and get any with token wagers that need refunding
         if (isDBConnected()) {
             try {
+                // Find expired challenges with token wagers that haven't been refunded yet
+                const expiredWithTokens = await Challenge.find({
+                    status: 'pending',
+                    expiresAt: { $lt: now },
+                    'wagerToken.tokenAddress': { $exists: true, $ne: null },
+                    refundProcessed: { $ne: true }
+                });
+                
+                // Process refunds for DB-only expired challenges
+                for (const challenge of expiredWithTokens) {
+                    if (challenge.challengerWallet && this.custodialWalletService) {
+                        const refundResult = await this.custodialWalletService.processChallengeRefund({
+                            challengeId: challenge.challengeId,
+                            walletAddress: challenge.challengerWallet,
+                            tokenAddress: challenge.wagerToken.tokenAddress,
+                            amountRaw: challenge.wagerToken.amountRaw,
+                            reason: 'expired_db'
+                        });
+                        
+                        if (refundResult.success) {
+                            refunded++;
+                            await Challenge.updateOne(
+                                { challengeId: challenge.challengeId },
+                                { status: 'expired', refundProcessed: true, refundTx: refundResult.txId }
+                            );
+                            console.log(`💸 Refunded DB expired challenge ${challenge.challengeId}: ${challenge.wagerToken.tokenAmount} ${challenge.wagerToken.tokenSymbol}`);
+                        } else {
+                            console.error(`❌ Failed to refund DB expired challenge ${challenge.challengeId}: ${refundResult.error}`);
+                        }
+                    }
+                }
+                
+                // Mark remaining as expired
                 await Challenge.updateMany(
                     { status: 'pending', expiresAt: { $lt: now } },
                     { status: 'expired' }
@@ -350,8 +413,8 @@ class ChallengeService {
             }
         }
 
-        if (cleaned > 0) {
-            console.log(`🧹 Cleaned ${cleaned} expired challenges`);
+        if (cleaned > 0 || refunded > 0) {
+            console.log(`🧹 Cleaned ${cleaned} expired challenges${refunded > 0 ? ` (${refunded} token refunds)` : ''}`);
         }
     }
 }

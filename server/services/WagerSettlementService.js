@@ -175,6 +175,13 @@ class WagerSettlementService {
     }
     
     /**
+     * Get the custodial wallet service instance (for challenge refunds)
+     */
+    getCustodialWalletService() {
+        return custodialWalletService;
+    }
+    
+    /**
      * Check if a match has a token wager that needs settlement
      * @param {object} match - Match object
      * @returns {boolean}
