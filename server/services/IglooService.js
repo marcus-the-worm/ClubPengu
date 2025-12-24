@@ -406,6 +406,9 @@ class IglooService {
      * Update igloo settings (owner only)
      */
     async updateSettings(walletAddress, iglooId, settings) {
+        console.log('🏠 [IglooService] Updating settings for:', iglooId);
+        console.log('🏠 [IglooService] Received settings.banner:', JSON.stringify(settings.banner, null, 2));
+        
         const igloo = await Igloo.findOne({ iglooId });
         
         if (!igloo) {
@@ -415,6 +418,8 @@ class IglooService {
         if (igloo.ownerWallet !== walletAddress) {
             return { success: false, error: 'NOT_OWNER', message: 'You do not own this igloo' };
         }
+        
+        console.log('🏠 [IglooService] Current banner in DB:', JSON.stringify(igloo.banner, null, 2));
         
         // Track if entry fee settings changed (requires reset)
         const entryFeeChanged = settings.entryFee && (
@@ -444,9 +449,32 @@ class IglooService {
             igloo.entryFee = { ...igloo.entryFee, ...settings.entryFee };
         }
         
-        // Update banner
+        // Update banner - explicitly set each field for Mongoose to detect changes
         if (settings.banner) {
-            igloo.banner = { ...igloo.banner, ...settings.banner };
+            // Convert Mongoose document to plain object for existing values
+            const existingBanner = igloo.banner?.toObject ? igloo.banner.toObject() : (igloo.banner || {});
+            
+            // Merge with new settings
+            const newBanner = { ...existingBanner, ...settings.banner };
+            
+            // Explicitly set all banner fields
+            igloo.banner = {
+                title: newBanner.title ?? null,
+                ticker: newBanner.ticker ?? null,
+                shill: newBanner.shill ?? null,
+                styleIndex: newBanner.styleIndex ?? 0,
+                useCustomColors: newBanner.useCustomColors ?? false,
+                customGradient: newBanner.customGradient ?? ['#845EF7', '#BE4BDB', '#F06595'],
+                textColor: newBanner.textColor ?? '#FFFFFF',
+                accentColor: newBanner.accentColor ?? '#00FFFF',
+                font: newBanner.font ?? 'Inter, system-ui, sans-serif',
+                textAlign: newBanner.textAlign ?? 'center'
+            };
+            
+            // Mark banner as modified to ensure Mongoose saves it
+            igloo.markModified('banner');
+            
+            console.log('🏠 [IglooService] Banner after update:', JSON.stringify(igloo.banner, null, 2));
         }
         
         // Reset entry fees if requirements changed
@@ -456,9 +484,15 @@ class IglooService {
         
         await igloo.save();
         
+        // Re-fetch the igloo to ensure we have the latest data from MongoDB
+        const updatedIgloo = await Igloo.findOne({ iglooId });
+        const ownerInfo = updatedIgloo.getOwnerInfo();
+        
+        console.log('🏠 [IglooService] Banner saved and returned:', JSON.stringify(ownerInfo.banner, null, 2));
+        
         return { 
             success: true, 
-            igloo: igloo.getOwnerInfo(),
+            igloo: ownerInfo,
             entryFeesReset: entryFeeChanged || tokenGateChanged
         };
     }

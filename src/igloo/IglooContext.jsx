@@ -9,10 +9,46 @@ import { IGLOO_CONFIG } from '../config/solana.js';
 
 const IglooContext = createContext(null);
 
+// Default context value for HMR resilience - prevents crash during hot reload
+const defaultContextValue = {
+    igloos: [],
+    myRentals: [],
+    selectedIgloo: null,
+    entryCheckResult: null,
+    walletAddress: null,
+    currentIglooRoom: null,
+    showRentalModal: false,
+    showSettingsPanel: false,
+    showEntryModal: false,
+    showDetailsPanel: false,
+    showRequirementsPanel: false,
+    isLoading: false,
+    setShowRentalModal: () => {},
+    setShowSettingsPanel: () => {},
+    setShowEntryModal: () => {},
+    setShowDetailsPanel: () => {},
+    setShowRequirementsPanel: () => {},
+    getIgloo: () => null,
+    isOwner: () => false,
+    checkIglooEntry: () => {},
+    openRentalModal: () => {},
+    openDetailsPanel: () => {},
+    openRequirementsPanel: () => {},
+    openSettingsPanel: () => {},
+    updateSettings: () => {},
+    payRent: () => {},
+    enterIglooDemo: () => {},
+    enterIglooRoom: () => {},
+    leaveIglooRoom: () => {},
+    userClearance: {}
+};
+
 export const useIgloo = () => {
     const context = useContext(IglooContext);
     if (!context) {
-        throw new Error('useIgloo must be used within an IglooProvider');
+        // During HMR, context may temporarily be null - return safe defaults
+        console.warn('useIgloo: Context not available (HMR?), using defaults');
+        return defaultContextValue;
     }
     return context;
 };
@@ -186,7 +222,8 @@ export const IglooProvider = ({ children }) => {
                     break;
                     
                 case 'igloo_owner_info':
-                    console.log('🏠 Owner info:', msg);
+                    console.log('🏠 Owner info received:', msg);
+                    console.log('🏠 Banner data:', msg.igloo?.banner);
                     if (msg.igloo) {
                         setSelectedIgloo(msg.igloo);
                     }

@@ -83,11 +83,19 @@ const iglooSchema = new mongoose.Schema({
     
     // ========== CUSTOMIZATION ==========
     // Banner displayed above igloo in town
+    // Max lengths are optimized to fit the banner bubble display nicely
     banner: {
-        title: { type: String, default: null, maxlength: 30 },
-        ticker: { type: String, default: null, maxlength: 10 },  // e.g., "$COIN"
-        shill: { type: String, default: null, maxlength: 50 },   // Description line
-        styleIndex: { type: Number, default: 0 }  // Index into IGLOO_BANNER_STYLES
+        title: { type: String, default: null, maxlength: 20 },    // Fits at readable font size
+        ticker: { type: String, default: null, maxlength: 10 },   // e.g., "$COIN"
+        shill: { type: String, default: null, maxlength: 60 },    // Short tagline (2 lines max)
+        styleIndex: { type: Number, default: 0 },  // Index into IGLOO_BANNER_STYLES
+        // Custom color options
+        useCustomColors: { type: Boolean, default: false },
+        customGradient: { type: [String], default: ['#845EF7', '#BE4BDB', '#F06595'] }, // Array of 3 gradient colors
+        textColor: { type: String, default: '#FFFFFF' },
+        accentColor: { type: String, default: '#00FFFF' },
+        font: { type: String, default: 'Inter, system-ui, sans-serif' },
+        textAlign: { type: String, enum: ['left', 'center', 'right'], default: 'center' }
     },
     
     // Interior customization (furniture, etc.)
@@ -287,7 +295,18 @@ iglooSchema.methods.evict = function() {
     this.accessType = 'private';
     
     // Reset customization
-    this.banner = { title: null, ticker: null, shill: null, styleIndex: 0 };
+    this.banner = { 
+        title: null, 
+        ticker: null, 
+        shill: null, 
+        styleIndex: 0,
+        useCustomColors: false,
+        customGradient: ['#845EF7', '#BE4BDB', '#F06595'],
+        textColor: '#FFFFFF',
+        accentColor: '#00FFFF',
+        font: 'Inter, system-ui, sans-serif',
+        textAlign: 'center'
+    };
     this.paidEntryFees = [];
     this.entryFeeVersion += 1;
     this.tokenGate = { enabled: false, tokenAddress: null, tokenSymbol: null, minimumBalance: 1 };

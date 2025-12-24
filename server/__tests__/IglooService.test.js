@@ -59,7 +59,19 @@ const createMockIgloo = (overrides = {}) => ({
     entryFee: { enabled: false, amount: 0 },
     paidEntryFees: [],
     stats: { totalVisits: 0, uniqueVisitors: 0, totalRentPaid: 0, timesRented: 0 },
-    banner: { title: null, ticker: null, shill: null, styleIndex: 0 },
+    banner: { 
+        title: null, 
+        ticker: null, 
+        shill: null, 
+        styleIndex: 0,
+        // New customization fields
+        useCustomColors: false,
+        customGradient: ['#845EF7', '#BE4BDB', '#F06595'],
+        textColor: '#FFFFFF',
+        accentColor: '#00FFFF',
+        font: 'Inter, system-ui, sans-serif',
+        textAlign: 'center'
+    },
     
     // Methods
     canEnter: vi.fn(),
@@ -71,6 +83,7 @@ const createMockIgloo = (overrides = {}) => ({
     recordEntryFeePayment: vi.fn(),
     getPublicInfo: vi.fn(() => ({ iglooId: mockIglooId, isRented: false })),
     getOwnerInfo: vi.fn(() => ({ iglooId: mockIglooId, ownerWallet: mockWallet })),
+    markModified: vi.fn(), // For Mongoose change detection
     save: vi.fn().mockResolvedValue(true),
     ...overrides
 });
@@ -289,6 +302,79 @@ describe('IglooService', () => {
             
             expect(result.success).toBe(true);
             expect(result.entryFeesReset).toBe(true);
+        });
+        
+        it('should allow updating custom banner colors and fonts', async () => {
+            const mockIgloo = createMockIgloo({
+                isRented: true,
+                ownerWallet: mockWallet
+            });
+            Igloo.findOne.mockResolvedValue(mockIgloo);
+            
+            const { default: iglooService } = await import('../services/IglooService.js');
+            
+            const result = await iglooService.updateSettings(mockWallet, mockIglooId, {
+                banner: { 
+                    title: 'Crypto Penguins HQ',
+                    ticker: '$PENGU',
+                    shill: 'Join the best crypto community!\nWe have cookies.',
+                    useCustomColors: true,
+                    customGradient: ['#9945FF', '#14F195', '#00C2FF'],
+                    textColor: '#FFFFFF',
+                    accentColor: '#14F195',
+                    font: "'Orbitron', 'Courier New', monospace",
+                    textAlign: 'center'
+                }
+            });
+            
+            expect(result.success).toBe(true);
+            expect(mockIgloo.markModified).toHaveBeenCalledWith('banner');
+            expect(mockIgloo.save).toHaveBeenCalled();
+        });
+        
+        it('should preserve existing banner fields when partially updating', async () => {
+            const mockIgloo = createMockIgloo({
+                isRented: true,
+                ownerWallet: mockWallet,
+                banner: {
+                    title: 'Original Title',
+                    ticker: '$OLD',
+                    shill: 'Original shill',
+                    styleIndex: 2,
+                    useCustomColors: true,
+                    customGradient: ['#FF0000', '#00FF00', '#0000FF'],
+                    textColor: '#FFFFFF',
+                    accentColor: '#FFFF00',
+                    font: 'Inter, system-ui, sans-serif',
+                    textAlign: 'left',
+                    toObject: () => ({
+                        title: 'Original Title',
+                        ticker: '$OLD',
+                        shill: 'Original shill',
+                        styleIndex: 2,
+                        useCustomColors: true,
+                        customGradient: ['#FF0000', '#00FF00', '#0000FF'],
+                        textColor: '#FFFFFF',
+                        accentColor: '#FFFF00',
+                        font: 'Inter, system-ui, sans-serif',
+                        textAlign: 'left'
+                    })
+                }
+            });
+            Igloo.findOne.mockResolvedValue(mockIgloo);
+            
+            const { default: iglooService } = await import('../services/IglooService.js');
+            
+            // Only update title, should preserve other fields
+            const result = await iglooService.updateSettings(mockWallet, mockIglooId, {
+                banner: { 
+                    title: 'New Title'
+                }
+            });
+            
+            expect(result.success).toBe(true);
+            expect(mockIgloo.banner.title).toBe('New Title');
+            // Other fields should be preserved (the service merges them)
         });
     });
     

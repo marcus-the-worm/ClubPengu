@@ -27,7 +27,7 @@ import rentScheduler from './schedulers/RentScheduler.js';
 
 const PORT = process.env.PORT || 3001;
 const MAX_CONNECTIONS_PER_IP = 2;
-const HEARTBEAT_INTERVAL = 30000;
+const HEARTBEAT_INTERVAL = 45000;  // 45s - slightly longer to accommodate wallet popups
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
 // Timestamp helper for debugging
@@ -2649,10 +2649,11 @@ setInterval(async () => {
     inboxService.cleanupExpired();
 }, 30000);
 
-// WebSocket heartbeat - detect dead connections faster
+// WebSocket heartbeat - detect dead connections
 // Mobile browsers may not respond to WebSocket-level pings during heavy rendering
-// so we also check if client has sent any message recently (fallback for mobile)
-const MOBILE_HEARTBEAT_TOLERANCE = 45000; // 45s - allows for 3 missed client pings (15s each)
+// or when Phantom wallet popup is open. Be generous to avoid false disconnects.
+// We also check if client has sent any message recently (fallback for mobile/wallet interactions)
+const MOBILE_HEARTBEAT_TOLERANCE = 120000; // 120s (2 min) - allows for wallet popups and heavy rendering
 
 setInterval(() => {
     const now = Date.now();

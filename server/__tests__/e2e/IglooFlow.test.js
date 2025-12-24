@@ -60,7 +60,18 @@ const createMockIgloo = (id, overrides = {}) => ({
     entryFee: { enabled: false, amount: 0 },
     paidEntryFees: [],
     stats: { totalVisits: 0, uniqueVisitors: 0, totalRentPaid: 0, timesRented: 0 },
-    banner: { title: null, ticker: null },
+    banner: { 
+        title: null, 
+        ticker: null,
+        shill: null,
+        styleIndex: 0,
+        useCustomColors: false,
+        customGradient: ['#845EF7', '#BE4BDB', '#F06595'],
+        textColor: '#FFFFFF',
+        accentColor: '#00FFFF',
+        font: 'Inter, system-ui, sans-serif',
+        textAlign: 'center'
+    },
     
     // Model methods
     canEnter: vi.fn(),
@@ -70,6 +81,7 @@ const createMockIgloo = (id, overrides = {}) => ({
     recordVisit: vi.fn(),
     resetEntryFees: vi.fn(),
     recordEntryFeePayment: vi.fn(),
+    markModified: vi.fn(), // For Mongoose change detection on nested objects
     getPublicInfo: vi.fn(() => ({ iglooId: id, isRented: overrides.isRented || false })),
     getOwnerInfo: vi.fn(() => ({ iglooId: id, ...overrides })),
     save: vi.fn().mockResolvedValue(true),

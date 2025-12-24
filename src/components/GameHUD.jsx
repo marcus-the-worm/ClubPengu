@@ -8,7 +8,7 @@ import WalletButton from './WalletButton';
  * GameHUD - Heads Up Display showing coins, stats, and quick actions
  * Responsive: horizontal on landscape/desktop, vertical sidebar on portrait mobile
  */
-const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenSettings, isMobile = false, playerCount = 0, totalPlayerCount = 0, onRequestAuth }) => {
+const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenSettings, isMobile = false, playerCount = 0, totalPlayerCount = 0, onRequestAuth, currentRoom, isInsideOwnedIgloo = false, onOpenIglooSettings }) => {
     const [coins, setCoins] = useState(0);
     const [showStats, setShowStats] = useState(false);
     const [recentReward, setRecentReward] = useState(null);
@@ -126,6 +126,17 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                         </button>
                     )}
                     
+                    {/* Igloo Settings - Only show when inside owned igloo */}
+                    {isInsideOwnedIgloo && onOpenIglooSettings && (
+                        <button
+                            onClick={onOpenIglooSettings}
+                            className={`${compactBtn} bg-gradient-to-r from-purple-600/80 to-pink-600/80`}
+                            title="Igloo Settings"
+                        >
+                            🏠
+                        </button>
+                    )}
+                    
                     {/* Puffles */}
                     <button
                         onClick={onOpenPuffles}
@@ -238,6 +249,18 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                         title="Settings"
                     >
                         ⚙️
+                    </button>
+                )}
+                
+                {/* Igloo Settings Button - Only show when inside owned igloo */}
+                {isInsideOwnedIgloo && onOpenIglooSettings && (
+                    <button
+                        onClick={onOpenIglooSettings}
+                        className="bg-gradient-to-r from-purple-600/80 to-pink-600/80 hover:from-purple-500 hover:to-pink-500 active:from-purple-700 active:to-pink-700 backdrop-blur-sm text-white w-9 h-9 sm:px-3 sm:py-2 sm:w-auto sm:h-auto rounded-lg retro-text text-xs transition-colors flex items-center justify-center gap-1"
+                        title="Igloo Settings"
+                    >
+                        🏠
+                        <span className="hidden sm:inline text-[10px]">Igloo</span>
                     </button>
                 )}
                 

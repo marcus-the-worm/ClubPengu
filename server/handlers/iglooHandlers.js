@@ -651,6 +651,9 @@ export async function handleIglooMessage(playerId, player, message, sendToPlayer
             try {
                 const { iglooId, settings } = message;
                 
+                console.log('🏠 [Handler] Received settings update for:', iglooId);
+                console.log('🏠 [Handler] Banner settings received:', JSON.stringify(settings?.banner, null, 2));
+                
                 if (!player.isAuthenticated || !player.walletAddress) {
                     sendToPlayer(playerId, {
                         type: 'igloo_settings_result',

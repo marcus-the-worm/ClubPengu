@@ -126,10 +126,12 @@ export function MultiplayerProvider({ children }) {
                 window.__multiplayerWs = ws;
                 
                 // Ping to keep connection alive
-                // Mobile browsers suspend WebSockets more aggressively, so ping faster
-                // During minigames with 3D rendering, mobile may not respond to WS-level pings
-                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                const pingInterval = isMobile ? 10000 : 25000; // 10s mobile (critical for minigames), 25s desktop
+                // Ping every 15s for all devices - ensures connection stays alive during:
+                // - Wallet popup interactions (Phantom)
+                // - Heavy 3D rendering
+                // - Mobile background/foreground transitions
+                // Server tolerates up to 120s without activity, so 15s gives plenty of margin
+                const pingInterval = 15000; // 15s for all devices
                 
                 pingIntervalRef.current = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
@@ -1231,26 +1233,26 @@ export function MultiplayerProvider({ children }) {
                 wasHidden = true;
                 hiddenAt = Date.now();
                 console.log('📱 Page hidden - WebSocket may be suspended');
-            } else if (wasHidden) {
-                // Page came back from background
+            } else {
+                // Page came back from background (or wallet popup closed)
+                const hiddenDuration = wasHidden ? Date.now() - hiddenAt : 0;
                 wasHidden = false;
-                const hiddenDuration = Date.now() - hiddenAt;
-                console.log(`📱 Page visible after ${Math.round(hiddenDuration/1000)}s`);
+                console.log(`📱 Page visible${hiddenDuration ? ` after ${Math.round(hiddenDuration/1000)}s` : ''}`);
                 
-                // If hidden for more than 5 seconds, check WebSocket health
-                if (hiddenDuration > 5000) {
-                    if (wsRef.current?.readyState !== WebSocket.OPEN) {
-                        console.log('📱 WebSocket disconnected while hidden, reconnecting...');
+                // ALWAYS send a ping when becoming visible to keep connection alive
+                // This is critical for wallet popup interactions
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    try {
+                        wsRef.current.send(JSON.stringify({ type: 'ping' }));
+                        console.log('📱 Sent keepalive ping on visibility change');
+                    } catch (e) {
+                        console.log('📱 Ping failed, reconnecting...');
                         connect();
-                    } else {
-                        // Send immediate ping to verify connection
-                        try {
-                            wsRef.current.send(JSON.stringify({ type: 'ping' }));
-                        } catch (e) {
-                            console.log('📱 Ping failed, reconnecting...');
-                            connect();
-                        }
                     }
+                } else if (hiddenDuration > 2000) {
+                    // Only reconnect if we were actually hidden for a while
+                    console.log('📱 WebSocket disconnected while hidden, reconnecting...');
+                    connect();
                 }
             }
         };
@@ -1272,10 +1274,22 @@ export function MultiplayerProvider({ children }) {
             }
         };
         
-        // Handle focus for Phantom wallet popups on mobile
+        // Handle focus for Phantom wallet popups on mobile and desktop
+        // ALWAYS send a ping when window gains focus to keep connection alive
         const handleFocus = () => {
-            if (wasHidden && wsRef.current?.readyState !== WebSocket.OPEN) {
-                console.log('📱 Window focused, checking connection...');
+            console.log('📱 Window focused - sending keepalive ping');
+            
+            // Always try to send a ping when window gains focus
+            // This helps after Phantom wallet popups close
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                try {
+                    wsRef.current.send(JSON.stringify({ type: 'ping' }));
+                } catch (e) {
+                    console.log('📱 Ping failed on focus, reconnecting...');
+                    connect();
+                }
+            } else if (wasHidden) {
+                console.log('📱 Connection lost while hidden, reconnecting...');
                 setTimeout(() => {
                     if (wsRef.current?.readyState !== WebSocket.OPEN) {
                         connect();

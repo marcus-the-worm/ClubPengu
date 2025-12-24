@@ -24,7 +24,19 @@ const createMockIglooDoc = (overrides = {}) => ({
     entryFee: { enabled: false, amount: 0 },
     paidEntryFees: [],
     entryFeeVersion: 1,
-    banner: { title: null, ticker: null, shill: null, styleIndex: 0 },
+    banner: { 
+        title: null, 
+        ticker: null, 
+        shill: null, 
+        styleIndex: 0,
+        // Custom color/style fields
+        useCustomColors: false,
+        customGradient: ['#845EF7', '#BE4BDB', '#F06595'],
+        textColor: '#FFFFFF',
+        accentColor: '#00FFFF',
+        font: 'Inter, system-ui, sans-serif',
+        textAlign: 'center'
+    },
     stats: { 
         totalVisits: 0, 
         uniqueVisitors: 0, 
@@ -282,19 +294,30 @@ describe('Igloo Model Methods', () => {
     });
     
     describe('evict', () => {
-        it('should clear all rental data', () => {
+        it('should clear all rental data including custom banner settings', () => {
             const igloo = createMockIglooDoc({
                 isRented: true,
                 ownerWallet: 'Owner123',
                 ownerUsername: 'Owner',
                 rentStatus: 'grace_period',
                 accessType: 'public',
-                banner: { title: 'My Igloo', ticker: '$COIN' },
+                banner: { 
+                    title: 'My Igloo', 
+                    ticker: '$COIN',
+                    shill: 'Join us!',
+                    styleIndex: 3,
+                    useCustomColors: true,
+                    customGradient: ['#FF0000', '#00FF00', '#0000FF'],
+                    textColor: '#FFFF00',
+                    accentColor: '#FF00FF',
+                    font: "'Orbitron', monospace",
+                    textAlign: 'right'
+                },
                 paidEntryFees: [{ walletAddress: 'User1' }],
                 entryFee: { enabled: true, amount: 100 }
             });
             
-            // Simulate evict
+            // Simulate evict - reset all banner fields to defaults
             igloo.isRented = false;
             igloo.ownerWallet = null;
             igloo.ownerUsername = null;
@@ -303,7 +326,18 @@ describe('Igloo Model Methods', () => {
             igloo.rentDueDate = null;
             igloo.rentStatus = 'evicted';
             igloo.accessType = 'private';
-            igloo.banner = { title: null, ticker: null, shill: null, styleIndex: 0 };
+            igloo.banner = { 
+                title: null, 
+                ticker: null, 
+                shill: null, 
+                styleIndex: 0,
+                useCustomColors: false,
+                customGradient: ['#845EF7', '#BE4BDB', '#F06595'],
+                textColor: '#FFFFFF',
+                accentColor: '#00FFFF',
+                font: 'Inter, system-ui, sans-serif',
+                textAlign: 'center'
+            };
             igloo.paidEntryFees = [];
             igloo.entryFeeVersion += 1;
             igloo.tokenGate = { enabled: false, tokenAddress: null, tokenSymbol: null, minimumBalance: 1 };
@@ -313,8 +347,79 @@ describe('Igloo Model Methods', () => {
             expect(igloo.ownerWallet).toBeNull();
             expect(igloo.rentStatus).toBe('evicted');
             expect(igloo.banner.title).toBeNull();
+            expect(igloo.banner.useCustomColors).toBe(false);
+            expect(igloo.banner.customGradient).toEqual(['#845EF7', '#BE4BDB', '#F06595']);
+            expect(igloo.banner.textColor).toBe('#FFFFFF');
+            expect(igloo.banner.textAlign).toBe('center');
             expect(igloo.paidEntryFees).toHaveLength(0);
             expect(igloo.entryFeeVersion).toBe(2);
+        });
+    });
+    
+    describe('banner customization', () => {
+        it('should support custom gradient colors', () => {
+            const igloo = createMockIglooDoc({
+                banner: {
+                    title: 'Gradient Test',
+                    useCustomColors: true,
+                    customGradient: ['#9945FF', '#14F195', '#00C2FF'] // Solana colors
+                }
+            });
+            
+            expect(igloo.banner.useCustomColors).toBe(true);
+            expect(igloo.banner.customGradient).toHaveLength(3);
+            expect(igloo.banner.customGradient[0]).toBe('#9945FF');
+        });
+        
+        it('should support custom fonts', () => {
+            const igloo = createMockIglooDoc({
+                banner: {
+                    title: 'Font Test',
+                    font: "'Press Start 2P', cursive"
+                }
+            });
+            
+            expect(igloo.banner.font).toBe("'Press Start 2P', cursive");
+        });
+        
+        it('should support text alignment options', () => {
+            const testCases = ['left', 'center', 'right'];
+            
+            testCases.forEach(alignment => {
+                const igloo = createMockIglooDoc({
+                    banner: {
+                        title: `Aligned ${alignment}`,
+                        textAlign: alignment
+                    }
+                });
+                
+                expect(igloo.banner.textAlign).toBe(alignment);
+            });
+        });
+        
+        it('should support shill descriptions up to 60 chars', () => {
+            const maxShill = 'A'.repeat(60);
+            const igloo = createMockIglooDoc({
+                banner: {
+                    title: 'Description Test',
+                    shill: maxShill
+                }
+            });
+            
+            expect(igloo.banner.shill.length).toBe(60);
+        });
+        
+        it('should preserve whitespace in shill for multi-line descriptions', () => {
+            const multiLineShill = 'Line 1\nLine 2\nLine 3';
+            const igloo = createMockIglooDoc({
+                banner: {
+                    title: 'Multi-line Test',
+                    shill: multiLineShill
+                }
+            });
+            
+            expect(igloo.banner.shill).toContain('\n');
+            expect(igloo.banner.shill.split('\n')).toHaveLength(3);
         });
     });
     

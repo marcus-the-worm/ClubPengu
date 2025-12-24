@@ -197,11 +197,15 @@ const VoxelWorld = ({
         myRentals, 
         openDetailsPanel,
         openRequirementsPanel,
+        openSettingsPanel,
         checkIglooEntry,
         enterIglooRoom,
         leaveIglooRoom,
         userClearance
     } = useIgloo();
+    
+    // Check if player is inside their own igloo (for HUD settings button)
+    const isInsideOwnedIgloo = room?.startsWith('igloo') && isIglooOwner(room);
     
     // Refs for other player meshes and state
     const otherPlayerMeshesRef = useRef(new Map()); // playerId -> { mesh, bubble, puffle }
@@ -5127,6 +5131,15 @@ const VoxelWorld = ({
     useEffect(() => {
         if (!igloos || igloos.length === 0) return;
         
+        console.log('🏠 [VoxelWorld] Igloos data changed, updating banners. Sample banner:', 
+            igloos[0]?.banner ? {
+                iglooId: igloos[0].iglooId,
+                font: igloos[0].banner.font,
+                styleIndex: igloos[0].banner.styleIndex,
+                useCustomColors: igloos[0].banner.useCustomColors
+            } : 'no banner data'
+        );
+        
         // Update each igloo sprite with the latest server data
         iglooOccupancySpritesRef.current.forEach((sprite, iglooId) => {
             const serverIglooData = igloos.find(i => i.iglooId === iglooId);
@@ -5942,6 +5955,9 @@ const VoxelWorld = ({
                 playerCount={playerCount}
                 totalPlayerCount={totalPlayerCount}
                 onRequestAuth={onRequestAuth}
+                currentRoom={room}
+                isInsideOwnedIgloo={isInsideOwnedIgloo}
+                onOpenIglooSettings={() => openSettingsPanel(room)}
              />
              
              {/* Chat Log - Desktop: bottom-left, Mobile: toggleable overlay */}
