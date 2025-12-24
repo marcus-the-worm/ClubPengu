@@ -6,6 +6,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { IGLOO_BANNER_STYLES } from '../config/roomConfig.js';
 import { useIgloo } from '../igloo/IglooContext.jsx';
+import { payIglooRent } from '../wallet/SolanaPayment.js';
+import { RENT_WALLET_ADDRESS, CPW3_TOKEN_ADDRESS, IGLOO_CONFIG } from '../config/solana.js';
 
 // Tokens for Token Gate (community/meme tokens that make sense for holder gating)
 const TOKEN_GATE_TOKENS = [
@@ -89,7 +91,7 @@ const IglooSettingsPanel = ({
     iglooData,
     onSave
 }) => {
-    const { updateSettings: sendSettings, isLoading: contextLoading } = useIgloo();
+    const { updateSettings: sendSettings, payRent: sendPayRent, isLoading: contextLoading } = useIgloo();
     
     const [settings, setSettings] = useState({
         accessType: 'private',
@@ -117,6 +119,8 @@ const IglooSettingsPanel = ({
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(false);
     const [activeTab, setActiveTab] = useState('access');
+    const [isPayingRent, setIsPayingRent] = useState(false);
+    const [rentPaymentSuccess, setRentPaymentSuccess] = useState(false);
     
     // Load existing settings - ensure all values are non-null for controlled inputs
     useEffect(() => {
@@ -173,6 +177,50 @@ const IglooSettingsPanel = ({
             onSave({ ...iglooData, ...settings });
         }
     }, [iglooData, settings, sendSettings, onSave]);
+    
+    /**
+     * Handle rent payment for past due igloos
+     */
+    const handlePayRent = useCallback(async () => {
+        if (!iglooData?.iglooId) {
+            setError('No igloo selected');
+            return;
+        }
+        
+        setIsPayingRent(true);
+        setError(null);
+        setRentPaymentSuccess(false);
+        
+        try {
+            console.log('💰 Starting rent payment...');
+            console.log(`   Igloo: ${iglooData.iglooId}`);
+            console.log(`   Amount: ${IGLOO_CONFIG.DAILY_RENT_CPW3} CPw3`);
+            
+            // Step 1: Send the Solana transaction
+            const paymentResult = await payIglooRent(
+                iglooData.iglooId,
+                IGLOO_CONFIG.DAILY_RENT_CPW3,
+                RENT_WALLET_ADDRESS,
+                CPW3_TOKEN_ADDRESS
+            );
+            
+            if (!paymentResult.success) {
+                throw new Error(paymentResult.message || 'Payment failed');
+            }
+            
+            console.log('✅ Rent payment transaction sent:', paymentResult.signature);
+            
+            // Step 2: Send to server for verification
+            sendPayRent(iglooData.iglooId, paymentResult.signature);
+            setRentPaymentSuccess(true);
+            
+        } catch (err) {
+            console.error('❌ Rent payment error:', err);
+            setError(err.message || 'Rent payment failed');
+        } finally {
+            setIsPayingRent(false);
+        }
+    }, [iglooData, sendPayRent]);
     
     if (!isOpen) return null;
     
@@ -559,11 +607,58 @@ const IglooSettingsPanel = ({
                                 </div>
                             </div>
                             
-                            {iglooData?.rentStatus === 'grace_period' && (
-                                <div className="bg-amber-500/20 border border-amber-500/40 rounded-lg p-4">
-                                    <p className="text-amber-400 font-semibold">⚠️ Rent Payment Required!</p>
+                            {/* Rent Payment Required Warning */}
+                            {(iglooData?.rentStatus === 'grace_period' || iglooData?.rentStatus === 'overdue') && (
+                                <div className={`border rounded-lg p-4 ${
+                                    iglooData?.rentStatus === 'overdue' 
+                                        ? 'bg-red-500/20 border-red-500/40' 
+                                        : 'bg-amber-500/20 border-amber-500/40'
+                                }`}>
+                                    <p className={`font-semibold ${
+                                        iglooData?.rentStatus === 'overdue' ? 'text-red-400' : 'text-amber-400'
+                                    }`}>
+                                        {iglooData?.rentStatus === 'overdue' 
+                                            ? '🚨 RENT OVERDUE - Eviction Imminent!' 
+                                            : '⚠️ Rent Payment Required!'}
+                                    </p>
                                     <p className="text-sm text-slate-300 mt-1">
-                                        Pay your daily rent to avoid eviction. You have 12 hours after due date.
+                                        {iglooData?.rentStatus === 'overdue'
+                                            ? 'Pay immediately to keep your igloo!'
+                                            : 'Pay your daily rent to avoid eviction. You have 12 hours after due date.'}
+                                    </p>
+                                    
+                                    {/* Rent Payment Success Message */}
+                                    {rentPaymentSuccess && (
+                                        <div className="mt-3 p-2 bg-green-500/20 border border-green-500/40 rounded text-green-400 text-sm">
+                                            ✅ Rent payment submitted! Refreshing...
+                                        </div>
+                                    )}
+                                    
+                                    {/* Pay Rent Button */}
+                                    <button
+                                        onClick={handlePayRent}
+                                        disabled={isPayingRent || rentPaymentSuccess}
+                                        className={`mt-3 w-full py-2 px-4 rounded-lg font-semibold transition-all ${
+                                            isPayingRent || rentPaymentSuccess
+                                                ? 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                                                : 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-400 hover:to-emerald-400'
+                                        }`}
+                                    >
+                                        {isPayingRent 
+                                            ? '⏳ Processing Payment...' 
+                                            : rentPaymentSuccess 
+                                                ? '✅ Payment Sent!'
+                                                : `💰 Pay Rent (${IGLOO_CONFIG.DAILY_RENT_CPW3.toLocaleString()} CPw3)`}
+                                    </button>
+                                </div>
+                            )}
+                            
+                            {/* Rent is current - show status */}
+                            {iglooData?.rentStatus === 'current' && (
+                                <div className="bg-green-500/20 border border-green-500/40 rounded-lg p-4">
+                                    <p className="text-green-400 font-semibold">✅ Rent Status: Current</p>
+                                    <p className="text-sm text-slate-300 mt-1">
+                                        Your rent is paid. Next payment due: {iglooData?.rentDueDate ? new Date(iglooData.rentDueDate).toLocaleString() : 'Unknown'}
                                     </p>
                                 </div>
                             )}

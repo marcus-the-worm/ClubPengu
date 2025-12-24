@@ -122,6 +122,28 @@ export const IglooProvider = ({ children }) => {
                     }
                     setIsLoading(false);
                     break;
+                
+                case 'igloo_pay_rent_result':
+                    console.log('🏠 Pay rent result:', msg);
+                    if (msg.success) {
+                        // Rent paid - refresh rentals to get new due date
+                        console.log('✅ Rent paid! New due date:', msg.newDueDate);
+                        send({ type: 'igloo_my_rentals' });
+                        send({ type: 'igloo_list' });
+                        
+                        // Update selected igloo if it's the one we just paid rent for
+                        if (selectedIgloo?.iglooId === msg.iglooId) {
+                            setSelectedIgloo(prev => prev ? {
+                                ...prev,
+                                rentStatus: 'current',
+                                rentDueDate: msg.newDueDate
+                            } : prev);
+                        }
+                    } else {
+                        console.error('❌ Rent payment failed:', msg.error, msg.message);
+                    }
+                    setIsLoading(false);
+                    break;
                     
                 case 'igloo_pay_entry_result':
                     if (msg.success) {
@@ -529,6 +551,22 @@ export const IglooProvider = ({ children }) => {
     }, [send]);
     
     /**
+     * Pay rent for an igloo (renewal)
+     * @param {string} iglooId - ID of the igloo
+     * @param {string} transactionSignature - Solana transaction signature from the rent payment
+     */
+    const payRent = useCallback((iglooId, transactionSignature) => {
+        if (!send) return;
+        console.log('🏠 Sending rent payment to server:', iglooId);
+        setIsLoading(true);
+        send({ 
+            type: 'igloo_pay_rent', 
+            iglooId, 
+            transactionSignature 
+        });
+    }, [send]);
+    
+    /**
      * Get igloo data by ID
      */
     const getIgloo = useCallback((iglooId) => {
@@ -620,6 +658,7 @@ export const IglooProvider = ({ children }) => {
         openRequirementsPanel,
         openSettingsPanel,
         updateSettings,
+        payRent,         // Pay rent renewal for owned igloo
         enterIglooDemo,
         enterIglooRoom,  // Track entering an igloo for eligibility checks
         leaveIglooRoom,  // Track leaving an igloo
