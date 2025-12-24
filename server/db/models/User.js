@@ -9,9 +9,8 @@ const userSchema = new mongoose.Schema({
     // ========== IDENTITY (Primary Key) ==========
     walletAddress: {
         type: String,
-        required: true,
-        unique: true
-        // index defined below with schema.index()
+        required: true
+        // unique index defined below with schema.index()
     },
 
     // ========== PROFILE ==========

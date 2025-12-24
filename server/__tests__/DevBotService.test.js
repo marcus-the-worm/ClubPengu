@@ -9,7 +9,8 @@ const mockChallengeService = {
 
 const mockMatchService = {
     makeMove: vi.fn(),
-    getMatch: vi.fn()
+    getMatch: vi.fn(),
+    playCard: vi.fn()
 };
 
 const mockSendToPlayer = vi.fn();
@@ -171,7 +172,8 @@ describe('DevBotService', () => {
                 opponentId: 'human_player'
             };
             
-            mockMatchService.makeMove.mockReturnValue({ success: true });
+            // playCard is used for TicTacToe moves
+            mockMatchService.playCard.mockReturnValue({ success: true });
         });
         
         it('should make a move on empty board', () => {
@@ -182,16 +184,17 @@ describe('DevBotService', () => {
             
             devBotService.makeTicTacToeMove('ttt_match', state);
             
-            expect(mockMatchService.makeMove).toHaveBeenCalledWith(
+            // playCard is called with (matchId, playerId, cellIndex)
+            expect(mockMatchService.playCard).toHaveBeenCalledWith(
                 'ttt_match',
                 BOT_CONFIG.id,
-                expect.objectContaining({ position: expect.any(Number) })
+                expect.any(Number)
             );
             
-            // Position should be 0-8
-            const call = mockMatchService.makeMove.mock.calls[0];
-            expect(call[2].position).toBeGreaterThanOrEqual(0);
-            expect(call[2].position).toBeLessThanOrEqual(8);
+            // Cell index should be 0-8
+            const call = mockMatchService.playCard.mock.calls[0];
+            expect(call[2]).toBeGreaterThanOrEqual(0);
+            expect(call[2]).toBeLessThanOrEqual(8);
         });
         
         it('should only move to empty cells', () => {
@@ -202,9 +205,9 @@ describe('DevBotService', () => {
             
             devBotService.makeTicTacToeMove('ttt_match', state);
             
-            const call = mockMatchService.makeMove.mock.calls[0];
+            const call = mockMatchService.playCard.mock.calls[0];
             // Only positions 7 and 8 are empty
-            expect([7, 8]).toContain(call[2].position);
+            expect([7, 8]).toContain(call[2]);
         });
         
         it('should not move if board is full', () => {
@@ -215,7 +218,7 @@ describe('DevBotService', () => {
             
             devBotService.makeTicTacToeMove('ttt_match', state);
             
-            expect(mockMatchService.makeMove).not.toHaveBeenCalled();
+            expect(mockMatchService.playCard).not.toHaveBeenCalled();
         });
     });
     
@@ -227,6 +230,9 @@ describe('DevBotService', () => {
                 isBotPlayer1: false, // Bot is O
                 opponentId: 'human_player'
             };
+            
+            // playCard is used for TicTacToe moves
+            mockMatchService.playCard.mockReturnValue({ success: true });
         });
         
         it('should respond to state update when it is bot turn', async () => {
@@ -235,14 +241,12 @@ describe('DevBotService', () => {
                 currentTurn: 'O' // Bot's turn
             };
             
-            mockMatchService.makeMove.mockReturnValue({ success: true });
-            
             devBotService.handleMatchState('state_match', state);
             
             // Wait for delayed move
             await new Promise(resolve => setTimeout(resolve, 2500));
             
-            expect(mockMatchService.makeMove).toHaveBeenCalled();
+            expect(mockMatchService.playCard).toHaveBeenCalled();
         });
         
         it('should not respond when it is opponent turn', async () => {

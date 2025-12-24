@@ -7,7 +7,7 @@
 
 import { Match as MatchModel } from '../db/models/index.js';
 import { isDBConnected } from '../db/connection.js';
-import wagerSettlementService from './WagerSettlementService.js';
+// NOTE: Token settlement is handled by handleMatchPayout() in server/index.js
 
 // Turn time limit (30 seconds)
 const TURN_TIME_LIMIT_MS = 30 * 1000;
@@ -1735,7 +1735,8 @@ class MatchService {
 
     /**
      * End a match and persist to DB
-     * Includes SPL token wager settlement (x402)
+     * NOTE: Token settlement is handled by handleMatchPayout() in server/index.js
+     * This method only handles cleanup and DB persistence
      */
     async endMatch(matchId) {
         const match = this.matches.get(matchId);
@@ -1746,34 +1747,6 @@ class MatchService {
         this.playerMatches.delete(match.player2.id);
         if (match.player1.wallet) this.walletMatches.delete(match.player1.wallet);
         if (match.player2.wallet) this.walletMatches.delete(match.player2.wallet);
-        
-        // Determine winner and loser info
-        const isPlayer1Winner = match.winnerId === match.player1.id;
-        const winnerName = isPlayer1Winner ? match.player1.name : match.player2.name;
-        const winnerWallet = isPlayer1Winner ? match.player1.wallet : match.player2.wallet;
-        const loserId = isPlayer1Winner ? match.player2.id : match.player1.id;
-        const loserWallet = isPlayer1Winner ? match.player2.wallet : match.player1.wallet;
-        const loserName = isPlayer1Winner ? match.player2.name : match.player1.name;
-        
-        // Handle SPL token wager settlement (x402)
-        if (match.wagerToken?.tokenAddress && match.wagerToken?.tokenAmount > 0) {
-            if (match.status === 'complete' && match.winnerId) {
-                // Winner receives loser's token wager
-                await wagerSettlementService.settleTokenWager(
-                    match,
-                    match.winnerId,
-                    winnerWallet,
-                    loserId,
-                    loserWallet
-                );
-            } else if (match.status === 'draw') {
-                // Draw - no token transfer needed
-                await wagerSettlementService.handleDraw(match);
-            } else if (match.status === 'void') {
-                // Voided match - no token transfer
-                await wagerSettlementService.handleVoid(match, 'void');
-            }
-        }
 
         // Update in database
         if (isDBConnected()) {
