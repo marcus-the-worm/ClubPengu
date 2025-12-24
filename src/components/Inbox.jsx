@@ -2,10 +2,133 @@
  * Inbox - Challenge requests and notifications panel
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useChallenge } from '../challenge';
 import { useMultiplayer } from '../multiplayer/MultiplayerContext';
 import { useClickOutside } from '../hooks';
+import { getTokenBalance } from '../wallet/SolanaPayment';
+
+/**
+ * TokenWagerInfo - Displays token wager details with copy CA, Solscan link, and balance check
+ */
+const TokenWagerInfo = ({ wagerToken, walletAddress }) => {
+    const [copied, setCopied] = useState(false);
+    const [userBalance, setUserBalance] = useState(null);
+    const [loadingBalance, setLoadingBalance] = useState(false);
+    
+    if (!wagerToken || !wagerToken.tokenAddress) return null;
+    
+    const shortCA = `${wagerToken.tokenAddress.slice(0, 4)}...${wagerToken.tokenAddress.slice(-4)}`;
+    const solscanUrl = `https://solscan.io/token/${wagerToken.tokenAddress}`;
+    const requiredAmount = wagerToken.tokenAmount || 0;
+    
+    // Check user's token balance
+    useEffect(() => {
+        if (walletAddress && wagerToken.tokenAddress) {
+            setLoadingBalance(true);
+            getTokenBalance(walletAddress, wagerToken.tokenAddress)
+                .then(result => {
+                    setUserBalance(result.balance);
+                })
+                .catch(() => setUserBalance(null))
+                .finally(() => setLoadingBalance(false));
+        }
+    }, [walletAddress, wagerToken.tokenAddress]);
+    
+    const hasEnough = userBalance !== null && userBalance >= requiredAmount;
+    const needsMore = userBalance !== null && userBalance < requiredAmount;
+    
+    const handleCopyCA = async (e) => {
+        e.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(wagerToken.tokenAddress);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    };
+    
+    return (
+        <div className={`mt-2 p-2 rounded-lg border ${
+            hasEnough 
+                ? 'bg-green-500/10 border-green-500/20' 
+                : 'bg-purple-500/10 border-purple-500/20'
+        }`}>
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-purple-400 font-medium text-sm">
+                        💎 {requiredAmount} {wagerToken.tokenSymbol}
+                    </span>
+                </div>
+                
+                {/* User's balance indicator */}
+                {walletAddress && (
+                    <div className="text-[10px]">
+                        {loadingBalance ? (
+                            <span className="text-white/40">Checking...</span>
+                        ) : hasEnough ? (
+                            <span className="text-green-400">✓ You have {userBalance.toLocaleString()}</span>
+                        ) : needsMore ? (
+                            <span className="text-red-400">
+                                ⚠️ Need {(requiredAmount - userBalance).toLocaleString()} more
+                            </span>
+                        ) : (
+                            <span className="text-yellow-400">? Balance unknown</span>
+                        )}
+                    </div>
+                )}
+            </div>
+            
+            {/* Token CA with copy and view buttons */}
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                <span className="text-white/40 text-xs font-mono">{shortCA}</span>
+                
+                {/* Copy CA Button */}
+                <button
+                    onClick={handleCopyCA}
+                    className={`px-1.5 py-0.5 rounded text-[10px] transition-all ${
+                        copied 
+                            ? 'bg-green-500/20 text-green-400' 
+                            : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+                    }`}
+                    title="Copy token address to buy"
+                >
+                    {copied ? '✓ Copied!' : '📋 Copy CA'}
+                </button>
+                
+                {/* Solscan Link */}
+                <a
+                    href={solscanUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-white/60 hover:bg-white/20 hover:text-white transition-all"
+                    title="View token on Solscan"
+                >
+                    🔍 View
+                </a>
+            </div>
+            
+            {/* Contextual help message */}
+            {needsMore && (
+                <p className="text-red-300/70 text-[10px] mt-1.5">
+                    ⚠️ You need to buy {wagerToken.tokenSymbol} to accept this challenge. Copy CA above!
+                </p>
+            )}
+            {hasEnough && (
+                <p className="text-green-300/70 text-[10px] mt-1.5">
+                    ✓ Ready to accept! Your tokens will be deposited when you click Accept.
+                </p>
+            )}
+            {!walletAddress && (
+                <p className="text-yellow-300/70 text-[10px] mt-1.5">
+                    🔗 Connect wallet to check your balance
+                </p>
+            )}
+        </div>
+    );
+};
 
 const Inbox = () => {
     const {
@@ -79,10 +202,11 @@ const Inbox = () => {
                             </p>
                             <p className="text-white/60 text-xs sm:text-sm">
                                 {gameNames[gameType] || gameType} • <span className="text-yellow-400">{wagerAmount} coins</span>
-                                {wagerToken && (
-                                    <span className="text-purple-400"> + {wagerToken.tokenAmount} {wagerToken.tokenSymbol}</span>
-                                )}
                             </p>
+                            
+                            {/* Token Wager Details - with copy CA, Solscan link, and balance check */}
+                            {wagerToken && <TokenWagerInfo wagerToken={wagerToken} walletAddress={userData?.walletAddress} />}
+                            
                             {!isExpired && msg.expiresAt && (
                                 <p className="text-white/40 text-[10px] sm:text-xs mt-1">
                                     ⏱️ {formatTimeRemaining(msg.expiresAt)} remaining

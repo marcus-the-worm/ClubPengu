@@ -7,6 +7,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useChallenge } from '../challenge';
 
+// Helper to generate Solscan link
+const getSolscanLink = (txSignature) => `https://solscan.io/tx/${txSignature}`;
+
 const ROWS = 6;
 const COLS = 7;
 
@@ -76,6 +79,14 @@ const P2PConnect4 = ({ onMatchEnd }) => {
     const isDraw = matchState.winner === 'draw';
     const didWin = matchState.winner === myColor;
     const totalPot = activeMatch.wagerAmount * 2;
+    
+    // Token wager info from match result OR active match
+    const matchResult = activeMatch.matchResult;
+    const tokenSettlement = matchResult?.tokenSettlement;
+    const wagerToken = matchResult?.wagerToken || activeMatch?.wagerToken;
+    const tokenWon = didWin && wagerToken ? (tokenSettlement?.amount || wagerToken.tokenAmount * 2) : 0;
+    const tokenLost = !didWin && !isDraw && wagerToken ? wagerToken.tokenAmount : 0;
+    const solscanLink = tokenSettlement?.txSignature ? getSolscanLink(tokenSettlement.txSignature) : null;
     
     const board = matchState.board || Array(ROWS * COLS).fill(null);
     const landscapeMobile = isLandscape && isMobile;
@@ -177,9 +188,22 @@ const P2PConnect4 = ({ onMatchEnd }) => {
                             <h2 className="text-lg font-bold text-white mb-1">
                                 {isDraw ? 'DRAW!' : didWin ? 'VICTORY!' : 'DEFEAT'}
                             </h2>
-                            <div className={`${isDraw ? 'text-gray-400' : didWin ? 'text-green-400' : 'text-red-400'} text-xl font-bold mb-3`}>
+                            <div className={`${isDraw ? 'text-gray-400' : didWin ? 'text-green-400' : 'text-red-400'} text-xl font-bold mb-1`}>
                                 {isDraw ? 'REFUNDED' : didWin ? `+${totalPot}` : `-${activeMatch.wagerAmount}`} 💰
                             </div>
+                            {wagerToken && (
+                                <div className={`${isDraw ? 'text-gray-400' : didWin ? 'text-cyan-400' : 'text-red-400'} text-lg font-bold mb-3`}>
+                                    {isDraw ? `${wagerToken.tokenAmount} ${wagerToken.tokenSymbol} REFUNDED` :
+                                     didWin ? `+${tokenWon} ${tokenSettlement?.tokenSymbol || wagerToken.tokenSymbol}` :
+                                     `-${tokenLost} ${wagerToken.tokenSymbol}`} 💎
+                                </div>
+                            )}
+                            {solscanLink && (
+                                <a href={solscanLink} target="_blank" rel="noopener noreferrer"
+                                   className="text-cyan-400 text-xs underline mb-3 block">
+                                    View on Solscan ↗
+                                </a>
+                            )}
                             <button 
                                 onClick={() => { clearMatch(); onMatchEnd?.(); }}
                                 className="w-full bg-cyan-500 active:bg-cyan-600 text-white py-2 rounded-lg font-bold text-sm"
@@ -288,11 +312,24 @@ const P2PConnect4 = ({ onMatchEnd }) => {
                         <p className="text-white/60 text-sm mb-4">
                             {isDraw ? 'The board is full!' : didWin ? `You connected 4 against ${opponent.name}!` : `${opponent.name} connected 4...`}
                         </p>
-                        <div className={`${isDraw ? 'bg-gray-500/20 border-gray-500/30' : didWin ? 'bg-green-500/20 border-green-500/30' : 'bg-red-500/20 border-red-500/30'} rounded-xl p-4 mb-6 border`}>
+                        <div className={`${isDraw ? 'bg-gray-500/20 border-gray-500/30' : didWin ? 'bg-green-500/20 border-green-500/30' : 'bg-red-500/20 border-red-500/30'} rounded-xl p-4 mb-4 border`}>
                             <p className={`${isDraw ? 'text-gray-400' : didWin ? 'text-green-400' : 'text-red-400'} text-xl sm:text-2xl font-bold`}>
                                 {isDraw ? 'REFUNDED' : didWin ? `+${totalPot}` : `-${activeMatch.wagerAmount}`} 💰
                             </p>
+                            {wagerToken && (
+                                <p className={`${isDraw ? 'text-gray-400' : didWin ? 'text-cyan-400' : 'text-red-400'} text-lg font-bold mt-2`}>
+                                    {isDraw ? `${wagerToken.tokenAmount} ${wagerToken.tokenSymbol} REFUNDED` :
+                                     didWin ? `+${tokenWon} ${tokenSettlement?.tokenSymbol || wagerToken.tokenSymbol}` :
+                                     `-${tokenLost} ${wagerToken.tokenSymbol}`} 💎
+                                </p>
+                            )}
                         </div>
+                        {solscanLink && (
+                            <a href={solscanLink} target="_blank" rel="noopener noreferrer"
+                               className="text-cyan-400 text-sm underline mb-4 block">
+                                View on Solscan ↗
+                            </a>
+                        )}
                         <button 
                             onClick={() => { clearMatch(); onMatchEnd?.(); }}
                             className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 active:from-cyan-600 active:to-blue-600 text-white px-8 py-3 rounded-xl font-bold text-sm sm:text-base shadow-lg"

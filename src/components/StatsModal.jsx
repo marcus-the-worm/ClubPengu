@@ -62,6 +62,7 @@ const gameNames = {
 
 // Transaction type display
 const txTypeDisplay = {
+    // Coin transactions
     wager_escrow: { label: 'Wager Locked', color: 'text-orange-400', icon: '🔒' },
     wager_payout: { label: 'Wager Won', color: 'text-green-400', icon: '🏆' },
     wager_refund: { label: 'Wager Refund', color: 'text-yellow-400', icon: '↩️' },
@@ -73,7 +74,13 @@ const txTypeDisplay = {
     promo_bonus: { label: 'Promo Code', color: 'text-pink-400', icon: '🎁' },
     starting_bonus: { label: 'Welcome Bonus', color: 'text-green-400', icon: '🎉' },
     puffle_adopt: { label: 'Puffle Adoption', color: 'text-red-400', icon: '🐾' },
-    purchase: { label: 'Purchase', color: 'text-red-400', icon: '🛒' }
+    purchase: { label: 'Purchase', color: 'text-red-400', icon: '🛒' },
+    // Token transactions (with Solscan links)
+    token_wager: { label: 'Token Wager', color: 'text-purple-400', icon: '💎' },
+    token_entry_fee: { label: 'Entry Fee (Token)', color: 'text-cyan-400', icon: '🎟️' },
+    token_rent: { label: 'Igloo Rent (Token)', color: 'text-blue-400', icon: '🏠' },
+    token_rent_renewal: { label: 'Rent Renewal (Token)', color: 'text-blue-400', icon: '🔄' },
+    token_transfer: { label: 'Token Transfer', color: 'text-gray-400', icon: '💸' }
 };
 
 const StatsModal = ({ isOpen, onClose }) => {
@@ -396,11 +403,17 @@ const StatsModal = ({ isOpen, onClose }) => {
                                         transactions.map((tx) => {
                                             const typeInfo = txTypeDisplay[tx.type] || { label: tx.type, color: 'text-white', icon: '📝' };
                                             const isIncoming = tx.direction === 'in';
+                                            const isTokenTx = tx.signature || tx.type?.startsWith('token_');
+                                            const solscanTxLink = tx.signature ? getSolscanLink(tx.signature, 'tx') : null;
                                             
                                             return (
                                                 <div 
                                                     key={tx.id}
-                                                    className="bg-black/30 rounded-xl p-3 border border-white/10 hover:border-white/20 transition-colors"
+                                                    className={`bg-black/30 rounded-xl p-3 border transition-colors ${
+                                                        isTokenTx 
+                                                            ? 'border-purple-500/30 hover:border-purple-500/50' 
+                                                            : 'border-white/10 hover:border-white/20'
+                                                    }`}
                                                 >
                                                     <div className="flex items-center justify-between">
                                                         <div className="flex items-center gap-2">
@@ -417,10 +430,33 @@ const StatsModal = ({ isOpen, onClose }) => {
                                                         </div>
                                                         <div className="text-right">
                                                             <p className={`font-bold ${isIncoming ? 'text-green-400' : 'text-red-400'}`}>
-                                                                {isIncoming ? '+' : '-'}{tx.amount} {tx.currency === 'coins' ? '💰' : tx.currency}
+                                                                {isIncoming ? '+' : '-'}{tx.amount} {tx.currency === 'coins' ? '💰' : `💎 ${tx.currency}`}
                                                             </p>
+                                                            {tx.tokenAddress && (
+                                                                <a
+                                                                    href={getSolscanLink(tx.tokenAddress, 'account')}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-purple-400/60 text-xs hover:text-purple-300"
+                                                                >
+                                                                    {tx.tokenAddress.slice(0, 4)}...{tx.tokenAddress.slice(-4)}
+                                                                </a>
+                                                            )}
                                                         </div>
                                                     </div>
+                                                    
+                                                    {/* Solscan Link for token transactions */}
+                                                    {solscanTxLink && (
+                                                        <a
+                                                            href={solscanTxLink}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="mt-2 flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300"
+                                                        >
+                                                            🔗 View on Solscan
+                                                            <span className="text-purple-400/50">({tx.signature.slice(0, 8)}...)</span>
+                                                        </a>
+                                                    )}
                                                 </div>
                                             );
                                         })

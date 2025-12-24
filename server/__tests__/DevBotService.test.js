@@ -238,21 +238,21 @@ describe('DevBotService', () => {
         it('should respond to state update when it is bot turn', async () => {
             const state = {
                 board: ['X', null, null, null, null, null, null, null, null],
-                currentTurn: 'O' // Bot's turn
+                currentTurn: 'player2' // Bot's turn (bot is player2 since isBotPlayer1: false)
             };
             
             devBotService.handleMatchState('state_match', state);
             
-            // Wait for delayed move
+            // Wait for delayed move (1000-2000ms delay + buffer)
             await new Promise(resolve => setTimeout(resolve, 2500));
             
-            expect(mockMatchService.playCard).toHaveBeenCalled();
+            expect(mockMatchService.makeMove).toHaveBeenCalled();
         });
         
         it('should not respond when it is opponent turn', async () => {
             const state = {
                 board: ['X', null, null, null, null, null, null, null, null],
-                currentTurn: 'X' // Opponent's turn
+                currentTurn: 'player1' // Opponent's turn (player1 is opponent since isBotPlayer1: false)
             };
             
             devBotService.handleMatchState('state_match', state);

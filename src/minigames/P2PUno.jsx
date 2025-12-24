@@ -19,6 +19,9 @@ import { createPenguinBuilder, cacheAnimatedParts, animateCosmeticsFromCache } f
 import { PALETTE } from '../constants';
 import ChatLog from '../components/ChatLog';
 
+// Helper to generate Solscan link
+const getSolscanLink = (txSignature) => `https://solscan.io/tx/${txSignature}`;
+
 // --- GAME CONFIG ---
 const CONFIG = {
     colors: ['Red', 'Blue', 'Green', 'Yellow'],
@@ -968,6 +971,14 @@ const P2PUno = ({ onMatchEnd }) => {
     const didWin = matchState.winner === (isPlayer1 ? 'player1' : 'player2');
     const totalPot = activeMatch.wagerAmount * 2;
     
+    // Token wager info from match result OR active match
+    const matchResult = activeMatch.matchResult;
+    const tokenSettlement = matchResult?.tokenSettlement;
+    const wagerToken = matchResult?.wagerToken || activeMatch?.wagerToken;
+    const tokenWon = didWin && wagerToken ? (tokenSettlement?.amount || wagerToken.tokenAmount * 2) : 0;
+    const tokenLost = !didWin && wagerToken ? wagerToken.tokenAmount : 0;
+    const solscanLink = tokenSettlement?.txSignature ? getSolscanLink(tokenSettlement.txSignature) : null;
+    
     // Show UNO button when player has 2 cards and it's their turn
     const showUnoButton = isMyTurn && matchState.myHand?.length === 2;
 
@@ -1229,9 +1240,20 @@ const P2PUno = ({ onMatchEnd }) => {
                         <p className="text-gray-400 mb-4">
                             {didWin ? `${opponent.name} ran out of cards!` : 'You couldn\'t get rid of your cards...'}
                         </p>
-                        <div className={`text-2xl font-bold mb-6 ${didWin ? 'text-green-400' : 'text-red-400'}`}>
-                            {didWin ? `+${totalPot}` : `-${activeMatch.wagerAmount}`} coins
+                        <div className={`text-2xl font-bold mb-2 ${didWin ? 'text-green-400' : 'text-red-400'}`}>
+                            {didWin ? `+${totalPot}` : `-${activeMatch.wagerAmount}`} 💰
                         </div>
+                        {wagerToken && (
+                            <div className={`text-xl font-bold mb-4 ${didWin ? 'text-cyan-400' : 'text-red-400'}`}>
+                                {didWin ? `+${tokenWon} ${tokenSettlement?.tokenSymbol || wagerToken.tokenSymbol}` : `-${tokenLost} ${wagerToken.tokenSymbol}`} 💎
+                            </div>
+                        )}
+                        {solscanLink && (
+                            <a href={solscanLink} target="_blank" rel="noopener noreferrer"
+                               className="text-cyan-400 text-sm underline mb-4 block">
+                                View on Solscan ↗
+                            </a>
+                        )}
                         <button 
                             onClick={() => { clearMatch(); onMatchEnd?.(); }}
                             className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-cyan-500 to-blue-500 hover:scale-105 transition-all"

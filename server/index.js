@@ -1935,9 +1935,13 @@ async function handleMessage(playerId, message) {
                 const MatchModel = (await import('./db/models/Match.js')).default;
                 const matchHistory = await MatchModel.findHistoryForPlayer(player.walletAddress, 50);
                 
-                // Get transaction history (last 50 transactions)
+                // Get coin transaction history (last 50)
                 const TransactionModel = (await import('./db/models/Transaction.js')).default;
-                const transactions = await TransactionModel.getHistoryForWallet(player.walletAddress, 50);
+                const coinTransactions = await TransactionModel.getHistoryForWallet(player.walletAddress, 50);
+                
+                // Get Solana token transaction history (last 50)
+                const SolanaTransactionModel = (await import('./db/models/SolanaTransaction.js')).default;
+                const tokenTransactions = await SolanaTransactionModel.getWalletHistory(player.walletAddress, 50);
                 
                 // Format match history for client
                 const formattedMatches = matchHistory.map(m => ({
@@ -1958,24 +1962,52 @@ async function handleMessage(playerId, message) {
                     duration: m.duration
                 }));
                 
-                // Format transactions for client
-                const formattedTransactions = transactions.map(t => ({
+                // Format coin transactions for client
+                const formattedCoinTransactions = coinTransactions.map(t => ({
                     id: t.transactionId,
                     type: t.type,
                     amount: t.amount,
-                    currency: t.currency,
+                    currency: 'coins',
                     direction: t.toWallet === player.walletAddress ? 'in' : 'out',
                     otherParty: t.toWallet === player.walletAddress ? t.fromWallet : t.toWallet,
                     reason: t.reason,
                     matchId: t.relatedData?.matchId,
-                    timestamp: t.createdAt
+                    timestamp: t.createdAt,
+                    signature: null // No Solscan for coin transactions
                 }));
+                
+                // Format Solana token transactions for client
+                const formattedTokenTransactions = tokenTransactions.map(t => ({
+                    id: t.signature?.slice(0, 16) || t._id.toString(),
+                    type: t.type === 'wager' ? 'token_wager' : 
+                          t.type === 'igloo_entry_fee' ? 'token_entry_fee' :
+                          t.type === 'igloo_rent' ? 'token_rent' :
+                          t.type === 'igloo_rent_renewal' ? 'token_rent_renewal' : 'token_transfer',
+                    amount: t.amount,
+                    currency: t.tokenSymbol || 'SPL',
+                    tokenAddress: t.tokenMint,
+                    direction: t.recipientWallet === player.walletAddress ? 'in' : 'out',
+                    otherParty: t.recipientWallet === player.walletAddress ? t.senderWallet : t.recipientWallet,
+                    reason: t.type === 'wager' ? `Wager ${t.matchId ? `for match ${t.matchId}` : ''}` :
+                            t.type === 'igloo_entry_fee' ? `Entry fee ${t.iglooId ? `for ${t.iglooId}` : ''}` :
+                            t.type === 'igloo_rent' ? `Rent ${t.iglooId ? `for ${t.iglooId}` : ''}` :
+                            t.type === 'igloo_rent_renewal' ? `Rent renewal ${t.iglooId ? `for ${t.iglooId}` : ''}` : 'Token transfer',
+                    matchId: t.matchId,
+                    iglooId: t.iglooId,
+                    timestamp: t.processedAt || t.createdAt,
+                    signature: t.signature // For Solscan link
+                }));
+                
+                // Merge and sort all transactions by timestamp (newest first)
+                const allTransactions = [...formattedCoinTransactions, ...formattedTokenTransactions]
+                    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                    .slice(0, 100); // Limit to 100 total
                 
                 sendToPlayer(playerId, {
                     type: 'my_full_stats',
                     stats,
                     matchHistory: formattedMatches,
-                    transactions: formattedTransactions
+                    transactions: allTransactions
                 });
             } catch (err) {
                 console.error('Error fetching full stats:', err);

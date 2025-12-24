@@ -7,6 +7,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useChallenge } from '../challenge';
 
+// Helper to generate Solscan link
+const getSolscanLink = (txSignature) => `https://solscan.io/tx/${txSignature}`;
+
 const P2PCardJitsu = ({ onMatchEnd }) => {
     const {
         activeMatch,
@@ -85,6 +88,14 @@ const P2PCardJitsu = ({ onMatchEnd }) => {
     const didWin = matchState.winnerId === (isPlayer1 ? activeMatch.player1.id : activeMatch.player2.id);
     const totalPot = activeMatch.wagerAmount * 2;
     const landscapeMobile = isLandscape && isMobile;
+    
+    // Token wager info from match result OR active match
+    const matchResult = activeMatch.matchResult;
+    const tokenSettlement = matchResult?.tokenSettlement;
+    const wagerToken = matchResult?.wagerToken || activeMatch?.wagerToken;
+    const tokenWon = didWin && wagerToken ? (tokenSettlement?.amount || wagerToken.tokenAmount * 2) : 0;
+    const tokenLost = !didWin && wagerToken ? wagerToken.tokenAmount : 0;
+    const solscanLink = tokenSettlement?.txSignature ? getSolscanLink(tokenSettlement.txSignature) : null;
     
     // Render a card
     const renderCard = (card, { isPlayed = false, isHidden = false, size = 'normal' } = {}) => {
@@ -278,9 +289,20 @@ const P2PCardJitsu = ({ onMatchEnd }) => {
                             <h2 className="text-lg font-bold text-white mb-1">
                                 {didWin ? 'VICTORY!' : 'DEFEAT'}
                             </h2>
-                            <div className={`${didWin ? 'text-green-400' : 'text-red-400'} text-xl font-bold mb-3`}>
+                            <div className={`${didWin ? 'text-green-400' : 'text-red-400'} text-xl font-bold mb-1`}>
                                 {didWin ? `+${totalPot}` : `-${activeMatch.wagerAmount}`} 💰
                             </div>
+                            {wagerToken && (
+                                <div className={`${didWin ? 'text-cyan-400' : 'text-red-400'} text-lg font-bold mb-3`}>
+                                    {didWin ? `+${tokenWon} ${tokenSettlement?.tokenSymbol || wagerToken.tokenSymbol}` : `-${tokenLost} ${wagerToken.tokenSymbol}`} 💎
+                                </div>
+                            )}
+                            {solscanLink && (
+                                <a href={solscanLink} target="_blank" rel="noopener noreferrer"
+                                   className="text-cyan-400 text-xs underline mb-3 block">
+                                    View on Solscan ↗
+                                </a>
+                            )}
                             <button 
                                 onClick={() => { clearMatch(); onMatchEnd?.(); }}
                                 className="w-full bg-cyan-500 active:bg-cyan-600 text-white py-2 rounded-lg font-bold text-sm"
@@ -444,11 +466,22 @@ const P2PCardJitsu = ({ onMatchEnd }) => {
                         <p className="text-white/60 text-sm mb-4">
                             {didWin ? `You defeated ${opponent.name}!` : `${opponent.name} wins...`}
                         </p>
-                        <div className={`${didWin ? 'bg-green-500/20 border-green-500/30' : 'bg-red-500/20 border-red-500/30'} rounded-xl p-4 mb-6 border`}>
+                        <div className={`${didWin ? 'bg-green-500/20 border-green-500/30' : 'bg-red-500/20 border-red-500/30'} rounded-xl p-4 mb-4 border`}>
                             <p className={`${didWin ? 'text-green-400' : 'text-red-400'} text-xl sm:text-2xl font-bold`}>
                                 {didWin ? `+${totalPot}` : `-${activeMatch.wagerAmount}`} 💰
                             </p>
+                            {wagerToken && (
+                                <p className={`${didWin ? 'text-cyan-400' : 'text-red-400'} text-lg font-bold mt-2`}>
+                                    {didWin ? `+${tokenWon} ${tokenSettlement?.tokenSymbol || wagerToken.tokenSymbol}` : `-${tokenLost} ${wagerToken.tokenSymbol}`} 💎
+                                </p>
+                            )}
                         </div>
+                        {solscanLink && (
+                            <a href={solscanLink} target="_blank" rel="noopener noreferrer"
+                               className="text-cyan-400 text-sm underline mb-4 block">
+                                View on Solscan ↗
+                            </a>
+                        )}
                         <button 
                             onClick={() => { clearMatch(); onMatchEnd?.(); }}
                             className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 active:from-cyan-600 active:to-blue-600 text-white px-8 py-3 rounded-xl font-bold text-sm sm:text-base shadow-lg"

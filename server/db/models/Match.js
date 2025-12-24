@@ -184,7 +184,8 @@ matchSchema.statics.findActiveForPlayer = function(walletAddress) {
  */
 matchSchema.statics.findHistoryForPlayer = function(walletAddress, limit = 50) {
     return this.find({
-        status: { $in: ['completed', 'draw'] },
+        // Match status is 'complete' (not 'completed') when game ends normally
+        status: { $in: ['complete', 'draw', 'void', 'abandoned'] },
         $or: [
             { 'player1.wallet': walletAddress },
             { 'player2.wallet': walletAddress }
