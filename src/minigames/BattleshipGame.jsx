@@ -329,13 +329,28 @@ class Board {
         const { grid, ships } = placeShipsRandomly();
         this.ships = ships;
         
-        // Update cells
+        // CRITICAL: Clear ALL cells first before repopulating (fixes scramble bug)
+        for (let i = 0; i < this.cells.length; i++) {
+            this.cells[i].hasShip = false;
+            this.cells[i].isHit = false;
+            this.cells[i].ship = null;
+        }
+        
+        // Update cells with new ship positions
         for (let i = 0; i < grid.length; i++) {
             if (grid[i]) {
                 this.cells[i].hasShip = true;
                 this.cells[i].ship = ships.find(s => s.id === grid[i]);
             }
         }
+        
+        // Clear markers (in case of re-scramble)
+        this.markers.forEach(m => {
+            this.root.remove(m);
+            if (m.geometry) m.geometry.dispose();
+            if (m.material) m.material.dispose();
+        });
+        this.markers = [];
         
         // Render ship meshes
         this.renderShips();
