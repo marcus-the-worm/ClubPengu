@@ -24,6 +24,7 @@ import {
   ScrollText,
 } from "lucide-react";
 import Changelog from "../components/Changelog";
+import GachaSystemSection from "../components/GachaSystem";
 
 // Custom Icons
 const GitHubIcon = ({ className }: { className?: string }) => (
@@ -101,7 +102,7 @@ function Navigation() {
   }, []);
 
   const [featuresOpen, setFeaturesOpen] = useState(false);
-  
+
   const navItems = [
     { label: "Product", href: "#about" },
     { label: "Wagering", href: "#wagering" },
@@ -113,7 +114,7 @@ function Navigation() {
   const gameFeatures = [
     { label: "Customization", href: "#customization" },
     { label: "Whale Status", href: "#whale-status" },
-    { label: "Casino & Gacha", href: "#casino" },
+    { label: "Gacha System", href: "#gacha-system" },
     { label: "Token Economy", href: "#economy" },
     { label: "Changelog", href: "#changelog" },
   ];
@@ -175,10 +176,10 @@ function Navigation() {
                       key={item.label}
                       href={item.href}
                       className="block px-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-                    >
-                      {item.label}
-                    </a>
-                  ))}
+              >
+                {item.label}
+              </a>
+            ))}
                 </div>
               )}
             </div>
@@ -278,8 +279,8 @@ function Navigation() {
                 <a
                   key={social.label}
                   href={social.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
+            target="_blank"
+            rel="noopener noreferrer"
                   className="flex items-center gap-2 py-2 text-slate-400 hover:text-white transition-all"
                 >
                   {social.icon}
@@ -1062,121 +1063,6 @@ function WhaleStatusSection() {
   );
 }
 
-// Casino Section
-function CasinoSection() {
-  const rarities = [
-    { name: "Common", chance: "55%", color: "text-slate-400", items: "Basic hats, simple colors" },
-    { name: "Uncommon", chance: "25%", color: "text-green-400", items: "Patterns, unique eyes" },
-    { name: "Rare", chance: "12%", color: "text-blue-400", items: "Animated trails, special outfits" },
-    { name: "Epic", chance: "6%", color: "text-purple-400", items: "Glowing effects, rare mounts" },
-    { name: "Legendary", chance: "2%", color: "text-yellow-400", items: "Ultra-rare, tradeable for big $$$" },
-  ];
-
-  return (
-    <section id="casino" className="py-32 px-6 relative overflow-hidden">
-      <div className="section-divider mb-32" />
-      
-      {/* Slot machine background effect */}
-      <div className="absolute inset-0">
-        <div className="absolute top-0 left-1/4 w-[400px] h-[400px] bg-pink-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-yellow-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
-      </div>
-      
-      <div className="max-w-6xl mx-auto relative">
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="text-center mb-16"
-        >
-          <span className="text-pink-400 text-sm font-semibold uppercase tracking-widest">Casino</span>
-          <h2 className="text-4xl md:text-5xl font-bold mt-4 mb-6">
-            🎰 <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-yellow-400 to-pink-400">Slots & Gacha</span>
-          </h2>
-          <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-            Spin slots with <span className="text-yellow-400 font-semibold">tokens</span> to win exclusive cosmetics. 
-            Every item is tradeable on the open market.
-          </p>
-        </motion.div>
-
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
-          {/* Slot Machine Visual */}
-          <motion.div
-            initial={{ opacity: 0, x: -40 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            className="relative"
-          >
-            <div className="glass-card rounded-2xl p-8 border-2 border-pink-500/30 bg-gradient-to-br from-pink-500/5 to-yellow-500/5">
-              {/* Slot Display */}
-              <div className="bg-black/50 rounded-xl p-6 mb-6 border border-white/10">
-                <div className="flex justify-center gap-4 mb-4">
-                  {["🎩", "👑", "🎩"].map((emoji, i) => (
-                    <motion.div
-                      key={i}
-                      animate={{ y: [0, -5, 0] }}
-                      transition={{ duration: 0.5, delay: i * 0.1, repeat: Infinity, repeatDelay: 2 }}
-                      className="w-20 h-20 bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg flex items-center justify-center text-4xl border border-white/10"
-                    >
-                      {emoji}
-                    </motion.div>
-                  ))}
-                </div>
-                <p className="text-center text-yellow-400 font-bold text-sm">🎉 YOU WON: Rare Crown!</p>
-              </div>
-              
-              {/* Spin Button */}
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="w-full py-4 bg-gradient-to-r from-pink-500 to-yellow-500 rounded-xl font-bold text-lg text-white shadow-lg shadow-pink-500/20"
-              >
-                🎰 SPIN (100 tokens)
-              </motion.button>
-              
-              <p className="text-center text-slate-500 text-xs mt-4">Provably fair • All drops tradeable</p>
-            </div>
-          </motion.div>
-
-          {/* Drop Rates */}
-          <motion.div
-            initial={{ opacity: 0, x: 40 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-          >
-            <h3 className="text-2xl font-bold mb-6">Drop Rates</h3>
-            <div className="space-y-3">
-              {rarities.map((rarity, i) => (
-                <div key={i} className="glass-card rounded-xl p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className={`font-bold ${rarity.color}`}>{rarity.name}</span>
-                    <span className="text-slate-500 text-sm">•</span>
-                    <span className="text-slate-400 text-sm">{rarity.items}</span>
-                  </div>
-                  <span className={`font-mono font-bold ${rarity.color}`}>{rarity.chance}</span>
-                </div>
-              ))}
-            </div>
-            
-            {/* Trading callout */}
-            <div className="mt-6 p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30">
-              <div className="flex items-start gap-3">
-                <span className="text-2xl">💰</span>
-                <div>
-                  <h4 className="font-bold text-green-400 mb-1">Trade Your Wins</h4>
-                  <p className="text-sm text-slate-400">
-                    Hit a legendary? Sell it on the open market. 
-                    Supply &amp; demand determines the price.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </div>
-    </section>
-  );
-}
 
 // Wagering Section
 function WageringSection() {
@@ -2093,7 +1979,7 @@ export default function WhitepaperPage() {
       <FeaturesSection />
       <CustomizationSection />
       <WhaleStatusSection />
-      <CasinoSection />
+      <GachaSystemSection />
       <EconomySection />
       <WageringSection />
       <PlatformEconomicsSection />
