@@ -49,10 +49,10 @@ const PumpFunIcon = ({ className }: { className?: string }) => (
 const SOCIAL_LINKS = {
   github: "https://github.com/Tanner253/ClubPengu",
   x: "https://x.com/i/communities/1998537610592137381",
-  pumpfun: "https://pump.fun/coin/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump",
+  pumpfun: "#", // Coming soon
 };
 
-const CONTRACT_ADDRESS = "63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump";
+const CONTRACT_ADDRESS = "Coming Soon...";
 
 // Snow effect component
 function Snowfall() {
@@ -100,13 +100,21 @@ function Navigation() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const [featuresOpen, setFeaturesOpen] = useState(false);
+  
   const navItems = [
-    { label: "About", href: "#about" },
-    { label: "Features", href: "#features" },
-    { label: "Whale Status", href: "#whale-status" },
-    { label: "Casino", href: "#casino" },
+    { label: "Product", href: "#about" },
     { label: "Wagering", href: "#wagering" },
+    { label: "Economics", href: "#economics" },
+    { label: "Team", href: "#team" },
     { label: "Roadmap", href: "#roadmap" },
+  ];
+
+  const gameFeatures = [
+    { label: "Customization", href: "#customization" },
+    { label: "Whale Status", href: "#whale-status" },
+    { label: "Casino & Gacha", href: "#casino" },
+    { label: "Token Economy", href: "#economy" },
     { label: "Changelog", href: "#changelog" },
   ];
 
@@ -129,17 +137,17 @@ function Navigation() {
           {/* Logo */}
           <a href="#" className="flex items-center gap-2 sm:gap-3">
             <img 
-              src="/icon.jpg" 
-              alt="Club Pengu" 
+              src="/character.png" 
+              alt="Coming Soon" 
               className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg object-cover"
             />
             <span className="font-bold text-lg sm:text-xl tracking-tight">
-              Club <span className="gradient-text-blue">Pengu</span>
+              Coming <span className="gradient-text-blue">Soon</span>
             </span>
           </a>
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-6">
             {navItems.map((item) => (
               <a
                 key={item.label}
@@ -149,6 +157,31 @@ function Navigation() {
                 {item.label}
               </a>
             ))}
+            
+            {/* Game Features Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setFeaturesOpen(!featuresOpen)}
+                onBlur={() => setTimeout(() => setFeaturesOpen(false), 150)}
+                className="flex items-center gap-1 text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                Game Features
+                <ChevronDown className={`w-4 h-4 transition-transform ${featuresOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {featuresOpen && (
+                <div className="absolute top-full mt-2 right-0 w-48 py-2 rounded-xl bg-[rgb(15,20,30)] border border-white/10 shadow-xl">
+                  {gameFeatures.map((item) => (
+                    <a
+                      key={item.label}
+                      href={item.href}
+                      className="block px-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                    >
+                      {item.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Desktop Social Links & Token */}
@@ -172,14 +205,14 @@ function Navigation() {
             <div className="w-px h-6 bg-white/10" />
             
             <span className="px-3 py-1.5 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 text-cyan-400 text-sm font-medium">
-              $CPw3
+              Token Soon
             </span>
           </div>
 
           {/* Mobile Menu Button */}
           <div className="flex md:hidden items-center gap-3">
             <span className="px-2 py-1 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 text-cyan-400 text-xs font-medium">
-              $CPw3
+              Soon
             </span>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -199,8 +232,8 @@ function Navigation() {
           exit={{ opacity: 0, y: -20 }}
           className="fixed top-[72px] left-0 right-0 z-40 bg-[rgb(8,12,21)]/95 backdrop-blur-xl border-b border-white/5 md:hidden"
         >
-          <div className="px-4 py-6 space-y-4">
-            {/* Nav Links */}
+          <div className="px-4 py-6 space-y-2">
+            {/* Main Nav Links */}
             {navItems.map((item) => (
               <a
                 key={item.label}
@@ -212,6 +245,31 @@ function Navigation() {
               </a>
             ))}
             
+            {/* Game Features Collapsible */}
+            <div className="py-2">
+              <button
+                onClick={() => setFeaturesOpen(!featuresOpen)}
+                className="flex items-center justify-between w-full text-slate-400 hover:text-white transition-colors"
+              >
+                <span>Game Features</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${featuresOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {featuresOpen && (
+                <div className="mt-2 ml-4 space-y-2">
+                  {gameFeatures.map((item) => (
+                    <a
+                      key={item.label}
+                      href={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block py-1 text-sm text-slate-500 hover:text-white transition-colors"
+                    >
+                      {item.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+            
             <div className="h-px bg-white/10 my-4" />
             
             {/* Social Links */}
@@ -220,8 +278,8 @@ function Navigation() {
                 <a
                   key={social.label}
                   href={social.href}
-            target="_blank"
-            rel="noopener noreferrer"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="flex items-center gap-2 py-2 text-slate-400 hover:text-white transition-all"
                 >
                   {social.icon}
@@ -277,8 +335,8 @@ function HeroSection() {
           transition={{ delay: 0.3 }}
           className="text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-6"
         >
-          <span className="block">Club</span>
-          <span className="gradient-text">Pengu</span>
+          <span className="block">Coming</span>
+          <span className="gradient-text">Soon</span>
         </motion.h1>
 
         {/* Tagline */}
@@ -288,23 +346,70 @@ function HeroSection() {
           transition={{ delay: 0.4 }}
           className="text-xl md:text-2xl text-slate-400 mb-4 max-w-2xl mx-auto"
         >
-          The First <span className="text-cyan-400 font-semibold">Trencher</span> Social Platform
+          The First <span className="text-cyan-400 font-semibold">Permissionless</span> Social Wagering Platform
         </motion.p>
         
         <motion.p
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="text-lg text-slate-500 mb-12 max-w-xl mx-auto"
+          className="text-lg text-slate-500 mb-6 max-w-2xl mx-auto"
         >
-          Reviving Club Pengu culture with Solana-native wagering, tradeable cosmetics, and virtual property rentals.
+          No KYC. No accounts. Just connect your wallet and wager <span className="text-white font-medium">any SPL token</span> against 
+          anyone, anywhere. Powered by x402 payment protocol with instant on-chain settlement.
         </motion.p>
+
+        {/* Tech Stack Pills */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.55 }}
+          className="flex flex-wrap justify-center gap-2 mb-8 max-w-2xl mx-auto"
+        >
+          {[
+            { label: "No KYC", color: "from-green-500/20 to-emerald-500/20 border-green-500/30 text-green-400" },
+            { label: "x403 Wallet Auth", color: "from-cyan-500/20 to-blue-500/20 border-cyan-500/30 text-cyan-400" },
+            { label: "x402 P2P Protocol", color: "from-purple-500/20 to-pink-500/20 border-purple-500/30 text-purple-400" },
+            { label: "Any SPL Token", color: "from-yellow-500/20 to-orange-500/20 border-yellow-500/30 text-yellow-400" },
+            { label: "All Solana Cults", color: "from-pink-500/20 to-red-500/20 border-pink-500/30 text-pink-400" },
+          ].map((pill, i) => (
+            <span
+              key={i}
+              className={`px-3 py-1.5 rounded-full bg-gradient-to-r ${pill.color} text-xs font-semibold border`}
+            >
+              {pill.label}
+            </span>
+          ))}
+        </motion.div>
+
+        {/* Traction Stats */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="flex justify-center gap-8 mb-12"
+        >
+          <div className="text-center">
+            <div className="text-2xl md:text-3xl font-bold text-white">700+</div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">Peak Concurrent</div>
+          </div>
+          <div className="w-px h-12 bg-white/10" />
+          <div className="text-center">
+            <div className="text-2xl md:text-3xl font-bold text-white">7+</div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">P2P Games</div>
+          </div>
+          <div className="w-px h-12 bg-white/10" />
+          <div className="text-center">
+            <div className="text-2xl md:text-3xl font-bold text-white">Live</div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">On Mainnet</div>
+          </div>
+        </motion.div>
 
         {/* CTA Buttons */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
+          transition={{ delay: 0.7 }}
           className="flex flex-col sm:flex-row items-center justify-center gap-4"
         >
           <a
@@ -333,7 +438,7 @@ function HeroSection() {
           className="mt-16 inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20"
         >
           <Coins className="w-5 h-5 text-yellow-500" />
-          <span className="text-yellow-500 font-bold">$CPw3</span>
+          <span className="text-yellow-500 font-bold">$TOKEN</span>
           <span className="text-slate-400">•</span>
           <span className="text-slate-400 text-sm">Solana Native</span>
         </motion.div>
@@ -375,7 +480,7 @@ function AboutSection() {
             Waddle Into <span className="gradient-text-blue">Web3</span>
           </h2>
           <p className="text-slate-400 text-lg max-w-3xl mx-auto">
-            Club Pengu brings the nostalgia of classic penguin social gaming into the future—combining 
+            Coming Soon brings the nostalgia of classic penguin social gaming into the future—combining 
             beloved mechanics with Solana&apos;s speed and the thrill of crypto-native wagering.
           </p>
         </motion.div>
@@ -384,7 +489,7 @@ function AboutSection() {
           {[
             {
               icon: <Users className="w-8 h-8" />,
-              title: "Club Pengu Vibes",
+              title: "Coming Soon Vibes",
               description: "Classic 3D voxel world, penguin customization, puffles, emotes, and the social experience you remember—rebuilt for Web3.",
               color: "from-cyan-500 to-blue-500",
             },
@@ -663,7 +768,7 @@ function CustomizationSection() {
                 </div>
                 <div className="flex-1">
                   <h4 className="font-semibold text-yellow-500 text-sm sm:text-base">Unlock Rare Items</h4>
-                  <p className="text-slate-400 text-xs sm:text-sm">Spend $CPw3 on gacha or trade with other players</p>
+                  <p className="text-slate-400 text-xs sm:text-sm">Spend tokens on gacha or trade with other players</p>
                 </div>
               </div>
             </motion.div>
@@ -689,10 +794,10 @@ function EconomySection() {
         >
           <span className="text-yellow-400 text-sm font-semibold uppercase tracking-widest">Economy</span>
           <h2 className="text-4xl md:text-5xl font-bold mt-4 mb-6">
-            The <span className="text-yellow-400">$CPw3</span> Token
+            The <span className="text-yellow-400">Native</span> Token
           </h2>
           <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-            The native platform token that powers the Club Pengu ecosystem.
+            The native platform token that powers the Coming Soon ecosystem.
           </p>
         </motion.div>
 
@@ -712,12 +817,12 @@ function EconomySection() {
               <div className="absolute inset-8 rounded-full bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center glow-gold">
                 <div className="text-center">
                   <img 
-                    src="/icon.jpg" 
-                    alt="Club Pengu" 
+                    src="/character.png" 
+                    alt="Coming Soon" 
                     className="w-20 h-20 md:w-28 md:h-28 rounded-2xl object-cover mx-auto shadow-lg"
                   />
-                  <p className="text-2xl font-bold text-white mt-4">$CPw3</p>
-                  <p className="text-sm text-yellow-100/80">Club Pengu Web3</p>
+                  <p className="text-2xl font-bold text-white mt-4">Coming Soon</p>
+                  <p className="text-sm text-yellow-100/80">New Token Launch</p>
                 </div>
               </div>
               
@@ -752,12 +857,12 @@ function EconomySection() {
                 {
                   icon: <Home className="w-5 h-5" />,
                   title: "Property Rentals",
-                  description: "Use $CPw3 to rent igloos, apartments, lounges, and exclusive spaces throughout the game world.",
+                  description: "Use tokens to rent igloos, apartments, lounges, and exclusive spaces throughout the game world.",
                 },
                 {
                   icon: <Sparkles className="w-5 h-5" />,
                   title: "Gacha System",
-                  description: "Spend $CPw3 to open gacha for rare, tradeable cosmetics. Hunt for legendary items.",
+                  description: "Spend tokens to open gacha for rare, tradeable cosmetics. Hunt for legendary items.",
                 },
                 {
                   icon: <Repeat className="w-5 h-5" />,
@@ -767,7 +872,7 @@ function EconomySection() {
                 {
                   icon: <Shield className="w-5 h-5" />,
                   title: "Access Control",
-                  description: "Property owners can paywall their spaces with any Solana token—including $CPw3.",
+                  description: "Property owners can paywall their spaces with any Solana token.",
                 },
               ].map((item, i) => (
                 <div key={i} className="flex gap-4">
@@ -869,7 +974,7 @@ function WhaleStatusSection() {
             Whale <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-purple-400 to-cyan-400">Status</span>
           </h2>
           <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-            Your $CPw3 balance determines your visual status in-game. 
+            Your token balance determines your visual status in-game. 
             <span className="text-yellow-400 font-semibold"> Bigger bags = bigger clout.</span>
           </p>
         </motion.div>
@@ -907,7 +1012,7 @@ function WhaleStatusSection() {
                 ✨
               </motion.div>
             </div>
-            <p className="text-xs text-purple-400 mt-3">Legendary Tier • 15.2M $CPw3</p>
+            <p className="text-xs text-purple-400 mt-3">Legendary Tier • 15.2M tokens</p>
           </div>
         </motion.div>
 
@@ -928,7 +1033,7 @@ function WhaleStatusSection() {
               <div className="relative">
                 <div className="flex items-center justify-between mb-3">
                   <span className={`text-lg font-bold ${tier.color}`}>{tier.name}</span>
-                  <span className="text-xs text-slate-500 font-mono">{tier.balance} $CPw3</span>
+                  <span className="text-xs text-slate-500 font-mono">{tier.balance} tokens</span>
                 </div>
                 <p className="text-sm text-slate-400">{tier.effects}</p>
               </div>
@@ -989,7 +1094,7 @@ function CasinoSection() {
             🎰 <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-yellow-400 to-pink-400">Slots & Gacha</span>
           </h2>
           <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-            Spin slots with <span className="text-yellow-400 font-semibold">$CPw3</span> to win exclusive cosmetics. 
+            Spin slots with <span className="text-yellow-400 font-semibold">tokens</span> to win exclusive cosmetics. 
             Every item is tradeable on the open market.
           </p>
         </motion.div>
@@ -1026,7 +1131,7 @@ function CasinoSection() {
                 whileTap={{ scale: 0.98 }}
                 className="w-full py-4 bg-gradient-to-r from-pink-500 to-yellow-500 rounded-xl font-bold text-lg text-white shadow-lg shadow-pink-500/20"
               >
-                🎰 SPIN (100 $CPw3)
+                🎰 SPIN (100 tokens)
               </motion.button>
               
               <p className="text-center text-slate-500 text-xs mt-4">Provably fair • All drops tradeable</p>
@@ -1078,8 +1183,11 @@ function WageringSection() {
   const games = [
     { name: "Card Jitsu", emoji: "⚔️", description: "Fire beats Snow, Snow beats Water, Water beats Fire" },
     { name: "Connect 4", emoji: "🔴", description: "Classic four-in-a-row strategy game" },
+    { name: "Blackjack", emoji: "🃏", description: "P2P vs shared dealer - best result wins" },
+    { name: "Battleship", emoji: "🚢", description: "Classic naval warfare strategy game" },
     { name: "Tic Tac Toe", emoji: "⭕", description: "Quick matches, high stakes" },
-    { name: "Pong", emoji: "🏓", description: "Fast reflexes, winner takes all" },
+    { name: "Monopoly", emoji: "🎩", description: "Property trading and strategy" },
+    { name: "UNO", emoji: "🎴", description: "Classic card game, first to empty hand wins" },
   ];
 
   return (
@@ -1099,7 +1207,7 @@ function WageringSection() {
           </h2>
           <p className="text-slate-400 text-lg max-w-2xl mx-auto">
             P2P wagering on minigames. You choose the token, you set the stakes. 
-            All Solana-based tokens supported—not just $CPw3.
+            All Solana-based tokens supported.
           </p>
         </motion.div>
 
@@ -1110,7 +1218,7 @@ function WageringSection() {
           viewport={{ once: true }}
           className="flex flex-wrap justify-center gap-3 mb-16"
         >
-          {["$SOL", "$CPw3", "$BONK", "$WIF", "$PENGU", "Any SPL Token"].map((token, i) => (
+          {["$SOL", "$BONK", "$WIF", "$PENGU", "Any SPL Token"].map((token, i) => (
             <span
               key={i}
               className={`px-4 py-2 rounded-full text-sm font-medium ${
@@ -1125,19 +1233,19 @@ function WageringSection() {
         </motion.div>
 
         {/* Games grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
           {games.map((game, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 40 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              className="feature-card glass-card rounded-2xl p-6 text-center"
+              transition={{ delay: i * 0.05 }}
+              className="feature-card glass-card rounded-2xl p-4 md:p-6 text-center"
             >
-              <span className="text-5xl mb-4 block">{game.emoji}</span>
-              <h3 className="text-lg font-bold mb-2">{game.name}</h3>
-              <p className="text-slate-400 text-sm">{game.description}</p>
+              <span className="text-4xl md:text-5xl mb-3 md:mb-4 block">{game.emoji}</span>
+              <h3 className="text-base md:text-lg font-bold mb-1 md:mb-2">{game.name}</h3>
+              <p className="text-slate-400 text-xs md:text-sm">{game.description}</p>
             </motion.div>
           ))}
         </div>
@@ -1155,7 +1263,7 @@ function WageringSection() {
               { step: "01", title: "Challenge", desc: "Challenge another player to any minigame" },
               { step: "02", title: "Select Token", desc: "Both players agree on which Solana token to wager" },
               { step: "03", title: "Set Stakes", desc: "Determine the amount—micro bets to high stakes" },
-              { step: "04", title: "Play & Win", desc: "Winner takes all. Instant settlement on Solana" },
+              { step: "04", title: "Play & Win", desc: "Winner gets 95% of pot. 5% rake supports platform." },
             ].map((item, i) => (
               <div key={i} className="text-center">
                 <div className="text-4xl font-bold text-cyan-500/30 mb-4">{item.step}</div>
@@ -1164,7 +1272,411 @@ function WageringSection() {
               </div>
             ))}
           </div>
+          
+          {/* Rake disclosure */}
+          <div className="mt-8 p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-cyan-500/10 border border-green-500/20">
+            <div className="flex items-center gap-3">
+              <div className="text-2xl">💰</div>
+              <div>
+                <h4 className="font-semibold text-green-400">Platform Rake: 5%</h4>
+                <p className="text-slate-400 text-sm">
+                  A 5% rake is taken from all P2P wager pots to support platform development. 
+                  Winner receives 95% of the total pot instantly on-chain.
+                </p>
+              </div>
+            </div>
+          </div>
         </motion.div>
+      </div>
+    </section>
+  );
+}
+
+// Platform Economics Section
+function PlatformEconomicsSection() {
+  const revenueStreams = [
+    {
+      name: "P2P Rake",
+      rate: "5%",
+      description: "All player-vs-player wagers",
+      icon: "🎮",
+    },
+    {
+      name: "Cosmetic Sales",
+      rate: "Premium",
+      description: "Skins, hats, effects & bundles",
+      icon: "🎨",
+    },
+    {
+      name: "Igloo Rentals",
+      rate: "Weekly",
+      description: "Virtual property subscriptions",
+      icon: "🏠",
+    },
+  ];
+
+  return (
+    <section id="economics" className="py-32 px-6 relative">
+      <div className="section-divider mb-32" />
+      
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-16"
+        >
+          <span className="text-green-400 text-sm font-semibold uppercase tracking-widest">Sustainability</span>
+          <h2 className="text-4xl md:text-5xl font-bold mt-4 mb-6">
+            Platform <span className="text-green-400">Economics</span>
+          </h2>
+          <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+            A sustainable revenue model that funds continuous development, 
+            supports token value, and grows the ecosystem.
+          </p>
+        </motion.div>
+
+        {/* Revenue Flywheel Diagram */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="glass-card rounded-2xl p-8 mb-12 border border-green-500/20 bg-gradient-to-br from-green-500/5 to-cyan-500/5"
+        >
+          <h3 className="text-xl font-bold text-center mb-8 text-green-400">💫 The Growth Flywheel</h3>
+          <div className="grid md:grid-cols-5 gap-4 items-center">
+            {[
+              { step: "1", label: "Players Wager", icon: "🎮" },
+              { step: "2", label: "Platform Earns", icon: "💰" },
+              { step: "3", label: "Revenue Reinvested", icon: "📊" },
+              { step: "4", label: "Platform Improves", icon: "🚀" },
+              { step: "5", label: "More Players Join", icon: "👥" },
+            ].map((item, i) => (
+              <div key={i} className="text-center">
+                <div className="text-3xl mb-2">{item.icon}</div>
+                <div className="w-8 h-8 mx-auto mb-2 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-green-400 text-sm font-bold">
+                  {item.step}
+                </div>
+                <p className="text-sm text-slate-300">{item.label}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-slate-500 text-sm mt-6">
+            ↻ Sustainable growth cycle — platform profits benefit everyone
+          </p>
+        </motion.div>
+
+        {/* Revenue Streams */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mb-12"
+        >
+          <h3 className="text-2xl font-bold mb-6 text-center">Revenue Streams</h3>
+          <div className="grid md:grid-cols-3 gap-4">
+            {revenueStreams.map((stream, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="glass-card rounded-xl p-6 text-center"
+              >
+                <div className="text-4xl mb-4">{stream.icon}</div>
+                <h4 className="font-bold text-lg mb-2">{stream.name}</h4>
+                <div className="text-2xl font-bold text-cyan-400 mb-2">{stream.rate}</div>
+                <p className="text-slate-400 text-sm">{stream.description}</p>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* P2P Rake Deep Dive */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="glass-card rounded-2xl p-8 mb-12"
+        >
+          <div className="grid md:grid-cols-2 gap-8 items-center">
+            <div>
+              <h3 className="text-2xl font-bold mb-4">🎯 P2P Rake: 5%</h3>
+              <p className="text-slate-400 mb-4">
+                Industry-standard rake on player-vs-player wagers. The same proven model 
+                used by poker rooms and betting exchanges worldwide.
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-green-400">✓</span>
+                  <span className="text-slate-300">Winner receives 95% of pot instantly</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-green-400">✓</span>
+                  <span className="text-slate-300">Platform receives 5% to fund growth</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-green-400">✓</span>
+                  <span className="text-slate-300">All settlements on-chain and verifiable</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-green-400">✓</span>
+                  <span className="text-slate-300">Competitive with industry standards</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-black/30 rounded-xl p-6 border border-white/10">
+              <h4 className="font-bold text-center mb-4 text-slate-300">Example Settlement</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-2 border-b border-white/5">
+                  <span className="text-slate-400">Player A Wager</span>
+                  <span className="font-mono text-white">1.00 SOL</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-white/5">
+                  <span className="text-slate-400">Player B Wager</span>
+                  <span className="font-mono text-white">1.00 SOL</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-white/5">
+                  <span className="text-slate-400">Total Pot</span>
+                  <span className="font-mono text-cyan-400">2.00 SOL</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-white/5">
+                  <span className="text-slate-400">Platform Rake (5%)</span>
+                  <span className="font-mono text-yellow-400">0.10 SOL</span>
+                </div>
+                <div className="flex justify-between items-center py-2 bg-green-500/10 rounded-lg px-3 -mx-3">
+                  <span className="text-green-400 font-semibold">Winner Receives</span>
+                  <span className="font-mono text-green-400 font-bold">1.90 SOL</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Where Revenue Goes */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="glass-card rounded-2xl p-8 mb-12"
+        >
+          <h3 className="text-2xl font-bold mb-4 text-center">Where Revenue Goes</h3>
+          <p className="text-slate-400 text-center mb-8 max-w-2xl mx-auto">
+            Platform revenue is reinvested to grow the ecosystem and support token value. 
+            When the platform wins, everyone wins.
+          </p>
+          <div className="grid md:grid-cols-4 gap-6">
+            {[
+              { icon: "🛠️", title: "Development", desc: "New games, features, bug fixes, and infrastructure improvements", color: "text-blue-400" },
+              { icon: "📈", title: "Buybacks", desc: "Supporting token value through market purchases", color: "text-green-400" },
+              { icon: "📣", title: "Marketing", desc: "Growing the community through partnerships and campaigns", color: "text-purple-400" },
+              { icon: "🏦", title: "Reserve", desc: "Ensuring long-term stability and operational runway", color: "text-yellow-400" },
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="text-center"
+              >
+                <div className="text-4xl mb-3">{item.icon}</div>
+                <h4 className={`font-bold mb-2 ${item.color}`}>{item.title}</h4>
+                <p className="text-slate-400 text-sm">{item.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Industry Comparison */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="glass-card rounded-2xl p-8"
+        >
+          <h3 className="text-2xl font-bold mb-6 text-center">Industry Comparison</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">Platform</th>
+                  <th className="text-center py-3 px-4 text-slate-400 font-medium">Rake/Edge</th>
+                  <th className="text-center py-3 px-4 text-slate-400 font-medium">Model</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                <tr className="bg-green-500/5">
+                  <td className="py-3 px-4 font-semibold text-green-400">Coming Soon</td>
+                  <td className="py-3 px-4 text-center font-mono text-green-400">5%</td>
+                  <td className="py-3 px-4 text-center text-slate-300">P2P Rake</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-4 text-slate-300">PokerStars</td>
+                  <td className="py-3 px-4 text-center font-mono text-slate-400">2.5-5%</td>
+                  <td className="py-3 px-4 text-center text-slate-400">P2P Rake</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-4 text-slate-300">Stake.com</td>
+                  <td className="py-3 px-4 text-center font-mono text-slate-400">1-5%</td>
+                  <td className="py-3 px-4 text-center text-slate-400">House Edge</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-4 text-slate-300">Vegas Casinos</td>
+                  <td className="py-3 px-4 text-center font-mono text-slate-400">2-15%</td>
+                  <td className="py-3 px-4 text-center text-slate-400">House Edge</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-4 text-slate-300">Betfair Exchange</td>
+                  <td className="py-3 px-4 text-center font-mono text-slate-400">2-5%</td>
+                  <td className="py-3 px-4 text-center text-slate-400">P2P Commission</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-center text-slate-500 text-sm mt-4">
+            Our 5% rake is competitive with industry leaders.
+          </p>
+        </motion.div>
+
+        {/* Bottom CTA */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mt-12 text-center"
+        >
+          <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-green-500/20 to-cyan-500/20 border border-green-500/30">
+            <span className="text-green-400 font-semibold">🔒 Transparent</span>
+            <span className="text-slate-500">•</span>
+            <span className="text-cyan-400 font-semibold">📊 Sustainable</span>
+            <span className="text-slate-500">•</span>
+            <span className="text-purple-400 font-semibold">🚀 Growth-Focused</span>
+          </div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+// Team Section
+function TeamSection() {
+  return (
+    <section id="team" className="py-32 px-6 relative">
+      <div className="section-divider mb-32" />
+      
+      <div className="max-w-4xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-16"
+        >
+          <span className="text-cyan-400 text-sm font-semibold uppercase tracking-widest">Team</span>
+          <h2 className="text-4xl md:text-5xl font-bold mt-4 mb-6">
+            Built by <span className="text-cyan-400">Builders</span>
+          </h2>
+          <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+            Doxxed developer with a track record. Open source. Transparent development.
+          </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="glass-card rounded-2xl p-8 max-w-xl mx-auto"
+        >
+          <div className="flex flex-col sm:flex-row items-center gap-6">
+            <img
+              src="https://avatars.githubusercontent.com/u/43557479?v=4"
+              alt="Tanner"
+              className="w-24 h-24 rounded-2xl object-cover border-2 border-cyan-500/30"
+            />
+            <div className="text-center sm:text-left">
+              <h3 className="text-2xl font-bold text-white mb-1">Tanner</h3>
+              <p className="text-cyan-400 font-medium mb-3">Lead Developer</p>
+              <p className="text-slate-400 text-sm mb-4">
+                8 years engineering experience. $10M+ volume devved across projects. 
+                125+ public repos. Building in public since day one.
+              </p>
+              <div className="flex justify-center sm:justify-start gap-3">
+                <a
+                  href="https://github.com/Tanner253"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 transition-all text-sm"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                  GitHub
+                </a>
+                <a
+                  href="https://x.com/osknyo_dev"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 transition-all text-sm"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                  @osknyo_dev
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="mt-8 pt-6 border-t border-white/10">
+            <div className="grid grid-cols-4 gap-4 text-center">
+              <div>
+                <div className="text-2xl font-bold text-green-400">$10M+</div>
+                <div className="text-xs text-slate-500">Volume Devved</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-white">8</div>
+                <div className="text-xs text-slate-500">Years Coding</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-white">125+</div>
+                <div className="text-xs text-slate-500">Public Repos</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-cyan-400">Doxxed</div>
+                <div className="text-xs text-slate-500">Identity</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Achievements */}
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            {[
+              "🏆 Arctic Code Vault Contributor",
+              "🦈 Pull Shark x3",
+              "⚡ Quickdraw",
+              "🎯 YOLO",
+            ].map((badge, i) => (
+              <span
+                key={i}
+                className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-slate-400"
+              >
+                {badge}
+              </span>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Open Source Note */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          className="text-center text-slate-500 text-sm mt-8"
+        >
+          🔓 This project is open source. View the codebase on{" "}
+          <a href="https://github.com/Tanner253/ClubPengu" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">
+            GitHub
+          </a>
+        </motion.p>
       </div>
     </section>
   );
@@ -1176,72 +1688,175 @@ function RoadmapSection() {
     {
       phase: "Phase 1",
       title: "Foundation",
-      status: "current",
+      status: "complete",
       items: [
-        "✅ 3D Voxel World Engine",
-        "✅ Penguin Customization System",
+        "✅ 3D Voxel World Engine (Three.js)",
+        "✅ Penguin Customization (24+ skins, 50+ items)",
         "✅ Puffle Companion System",
-        "✅ Card Jitsu Minigame",
-        "✅ AI NPCs & Social Features",
-        "🔄 MongoDB Database Migration",
+        "✅ Real-time Multiplayer (WebSocket)",
+        "✅ AI NPCs & Chat System",
+        "✅ MongoDB Database Integration",
       ],
     },
     {
       phase: "Phase 2",
-      title: "Web3 Auth",
-      status: "upcoming",
+      title: "Web3 & Auth",
+      status: "complete",
       items: [
-        "x403 Phantom Wallet Auth",
-        "Anti-Bot Protection",
-        "Whale Status Nametags",
-        "Friend System",
-        "Match History & Stats",
+        "✅ Phantom Wallet Authentication",
+        "✅ Solana Signature Verification",
+        "✅ Whale Status Nametags",
+        "✅ JWT Session Management",
+        "✅ Guest Mode Support",
+        "✅ Match History & Player Stats",
       ],
     },
     {
       phase: "Phase 3",
-      title: "Economy",
-      status: "planned",
+      title: "P2P Gaming",
+      status: "complete",
       items: [
-        "🎰 Casino & Slot Machines",
-        "Tradeable Cosmetics",
-        "P2P Wagering (Any SPL Token)",
-        "Audit Logging & Security",
-        "Leaderboards & Rankings",
+        "✅ Card Jitsu, Connect 4, Tic Tac Toe",
+        "✅ Monopoly, UNO, Blackjack, Battleship",
+        "✅ SPL Token Wagering (Any Token)",
+        "✅ Custodial Wallet Settlement",
+        "✅ 5% Platform Rake System",
+        "✅ Orphan Match Recovery",
       ],
     },
     {
       phase: "Phase 4",
-      title: "Properties",
+      title: "Properties & Casino",
+      status: "complete",
+      items: [
+        "✅ Igloo Ownership System",
+        "✅ Weekly Rental Payments",
+        "✅ Igloo Customization (Banners, Themes)",
+        "✅ Slot Machine Gacha System",
+        "✅ Casino Room Environment",
+        "✅ Jackpot Celebrations",
+      ],
+    },
+    {
+      phase: "Phase 5",
+      title: "Rebranding",
+      status: "current",
+      items: [
+        "🔄 New Token Launch",
+        "🔄 OG Holder Airdrop",
+        "🔄 Brand Refresh & Marketing",
+        "🔄 Community Growth Campaign",
+        "🔄 Influencer Partnerships",
+        "🔄 Exchange Listings",
+      ],
+    },
+    {
+      phase: "Phase 6",
+      title: "House Games",
+      status: "upcoming",
+      items: [
+        "🎲 Dice (1-2% House Edge)",
+        "📍 Plinko (3-5% House Edge)",
+        "📈 Limbo / Crash Game",
+        "🎰 Enhanced Slots (Real Payouts)",
+        "🃏 PvE Blackjack vs Dealer",
+        "⛏️ Mines Game",
+      ],
+    },
+    {
+      phase: "Phase 7",
+      title: "Expansion",
       status: "planned",
       items: [
-        "🏠 Igloo Ownership (NFT)",
-        "Igloo Rentals System",
-        "Marketplace Trading",
-        "Property Paywalls",
-        "Cross-Cult Events",
+        "🏆 Tournament System",
+        "💎 VIP & Rakeback Program",
+        "🎨 Tradeable Cosmetics (NFTs)",
+        "📱 Mobile App (iOS/Android)",
+        "🤝 Major Partnerships",
+        "🌍 Multi-language Support",
+      ],
+    },
+    {
+      phase: "Phase 8",
+      title: "Ecosystem",
+      status: "planned",
+      items: [
+        "🏛️ DAO Governance",
+        "💰 Revenue Sharing for Holders",
+        "🎮 Third-party Game SDK",
+        "🔗 Cross-chain Expansion",
+        "📺 Streaming Integration",
+        "🌐 Metaverse Interoperability",
       ],
     },
   ];
+
+  // Progress stats
+  const completedPhases = phases.filter(p => p.status === "complete").length;
+  const totalItems = phases.reduce((acc, p) => acc + p.items.length, 0);
+  const completedItems = phases
+    .filter(p => p.status === "complete")
+    .reduce((acc, p) => acc + p.items.length, 0);
 
   return (
     <section id="roadmap" className="py-32 px-6 relative">
       <div className="section-divider mb-32" />
       
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mb-16"
+          className="text-center mb-12"
         >
           <span className="text-purple-400 text-sm font-semibold uppercase tracking-widest">Roadmap</span>
           <h2 className="text-4xl md:text-5xl font-bold mt-4 mb-6">
-            The <span className="text-purple-400">Journey</span> Ahead
+            The <span className="text-purple-400">Journey</span>
           </h2>
           <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-            Our path from demo to the ultimate Web3 social gaming platform.
+            From concept to the ultimate Web3 social gaming platform. 
+            Building in public, shipping fast.
           </p>
+        </motion.div>
+
+        {/* Progress Bar */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="glass-card rounded-2xl p-6 mb-12"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-slate-400 text-sm">Development Progress</span>
+            <span className="text-green-400 font-bold">{completedPhases}/{phases.length} Phases Complete</span>
+          </div>
+          <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden mb-4">
+            <motion.div
+              initial={{ width: 0 }}
+              whileInView={{ width: `${(completedPhases / phases.length) * 100}%` }}
+              viewport={{ once: true }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+              className="h-full bg-gradient-to-r from-green-500 to-cyan-500"
+            />
+          </div>
+          <div className="grid grid-cols-4 gap-4 text-center text-xs">
+            <div>
+              <div className="text-2xl font-bold text-green-400">{completedItems}</div>
+              <div className="text-slate-500">Features Done</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-cyan-400">{totalItems - completedItems}</div>
+              <div className="text-slate-500">In Progress</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-purple-400">7+</div>
+              <div className="text-slate-500">P2P Games</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-yellow-400">18</div>
+              <div className="text-slate-500">Days Building</div>
+            </div>
+          </div>
         </motion.div>
 
         <div className="relative">
@@ -1254,25 +1869,35 @@ function RoadmapSection() {
               initial={{ opacity: 0, x: i % 2 === 0 ? -40 : 40 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              className={`relative flex items-start gap-8 mb-12 ${
+              transition={{ delay: i * 0.05 }}
+              className={`relative flex items-start gap-8 mb-8 ${
                 i % 2 === 0 ? "md:flex-row" : "md:flex-row-reverse"
               }`}
             >
               {/* Dot */}
-              <div className="absolute left-4 md:left-1/2 w-4 h-4 rounded-full bg-cyan-500 border-4 border-[rgb(8,12,21)] md:-translate-x-1/2 z-10" />
+              <div className={`absolute left-4 md:left-1/2 w-4 h-4 rounded-full border-4 border-[rgb(8,12,21)] md:-translate-x-1/2 z-10 ${
+                phase.status === "complete" ? "bg-green-500" :
+                phase.status === "current" ? "bg-cyan-500 animate-pulse" :
+                phase.status === "upcoming" ? "bg-purple-500" :
+                "bg-slate-500"
+              }`} />
 
               {/* Content */}
               <div className={`ml-12 md:ml-0 md:w-1/2 ${i % 2 === 0 ? "md:pr-12 md:text-right" : "md:pl-12"}`}>
                 <div
-                  className={`glass-card rounded-2xl p-6 ${
-                    phase.status === "current" ? "border-cyan-500/50" : ""
+                  className={`glass-card rounded-2xl p-5 transition-all ${
+                    phase.status === "complete" ? "border-green-500/30 bg-green-500/5" :
+                    phase.status === "current" ? "border-cyan-500/50 bg-cyan-500/5 ring-1 ring-cyan-500/20" :
+                    phase.status === "upcoming" ? "border-purple-500/30" :
+                    ""
                   }`}
                 >
-                  <div className="flex items-center gap-3 mb-4">
+                  <div className={`flex items-center gap-3 mb-3 ${i % 2 === 0 ? "md:justify-end" : ""}`}>
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        phase.status === "current"
+                        phase.status === "complete"
+                          ? "bg-green-500/20 text-green-400"
+                          : phase.status === "current"
                           ? "bg-cyan-500/20 text-cyan-400"
                           : phase.status === "upcoming"
                           ? "bg-purple-500/20 text-purple-400"
@@ -1281,14 +1906,20 @@ function RoadmapSection() {
                     >
                       {phase.phase}
                     </span>
+                    {phase.status === "complete" && (
+                      <span className="text-xs text-green-400">✓ Complete</span>
+                    )}
                     {phase.status === "current" && (
-                      <span className="text-xs text-cyan-400">● Live</span>
+                      <span className="text-xs text-cyan-400">● In Progress</span>
+                    )}
+                    {phase.status === "upcoming" && (
+                      <span className="text-xs text-purple-400">◐ Next</span>
                     )}
                   </div>
-                  <h3 className="text-xl font-bold mb-4">{phase.title}</h3>
-                  <ul className={`space-y-2 text-sm text-slate-400 ${i % 2 === 0 ? "md:text-right" : ""}`}>
+                  <h3 className="text-lg font-bold mb-3">{phase.title}</h3>
+                  <ul className={`space-y-1.5 text-sm text-slate-400 ${i % 2 === 0 ? "md:text-right" : ""}`}>
                     {phase.items.map((item, j) => (
-                      <li key={j}>{item}</li>
+                      <li key={j} className={item.startsWith("✅") ? "text-slate-300" : ""}>{item}</li>
                     ))}
                   </ul>
                 </div>
@@ -1324,7 +1955,7 @@ function ContractAddress() {
           </div>
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wider">Contract Address</p>
-            <p className="text-sm font-medium text-slate-300">$CPw3 on Solana</p>
+            <p className="text-sm font-medium text-slate-300">New Token on Solana</p>
           </div>
         </div>
         
@@ -1382,7 +2013,7 @@ function Footer() {
             <div>
               <h4 className="font-semibold text-yellow-500 mb-2 text-sm sm:text-base">Development Notice</h4>
               <p className="text-slate-400 text-xs sm:text-sm">
-                Club Pengu is currently in active development. Features, tokenomics, and gameplay mechanics 
+                Coming Soon is currently in active development. Features, tokenomics, and gameplay mechanics 
                 described in this whitepaper are subject to change. Join our community to stay updated on progress.
               </p>
             </div>
@@ -1395,13 +2026,13 @@ function Footer() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-3">
               <img 
-                src="/icon.jpg" 
-                alt="Club Pengu" 
+                src="/character.png" 
+                alt="Coming Soon" 
                 className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover"
               />
               <div className="text-center sm:text-left">
-                <span className="font-bold text-base sm:text-lg">Club Pengu</span>
-                <p className="text-slate-500 text-xs sm:text-sm">The First Trencher Social Platform</p>
+                <span className="font-bold text-base sm:text-lg">Coming Soon</span>
+                <p className="text-slate-500 text-xs sm:text-sm">Permissionless Social Wagering</p>
               </div>
             </div>
 
@@ -1425,9 +2056,9 @@ function Footer() {
           {/* Bottom row: Links and Copyright */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-white/5">
             <div className="flex flex-wrap items-center justify-center gap-4 text-slate-500 text-xs sm:text-sm">
-              <a href={SOCIAL_LINKS.pumpfun} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
-                Buy $CPw3
-              </a>
+              <span className="text-slate-600 cursor-not-allowed">
+                Token Coming Soon
+              </span>
               <span className="text-slate-700">•</span>
               <a href={SOCIAL_LINKS.github} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
                 GitHub
@@ -1442,7 +2073,7 @@ function Footer() {
               <span>Built on</span>
               <span className="text-purple-400 font-semibold">Solana</span>
               <span className="text-slate-700">•</span>
-              <span>© 2025 Club Pengu</span>
+              <span>© 2025 Coming Soon</span>
             </div>
           </div>
         </div>
@@ -1465,6 +2096,8 @@ export default function WhitepaperPage() {
       <CasinoSection />
       <EconomySection />
       <WageringSection />
+      <PlatformEconomicsSection />
+      <TeamSection />
       <RoadmapSection />
       <Changelog />
       <Footer />

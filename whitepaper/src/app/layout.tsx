@@ -15,24 +15,24 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Club Pengu | Web3 Social Gaming on Solana",
-  description: "The first trencher social platform. Reviving Club Pengu culture with Solana-native wagering, tradeable cosmetics, and property rentals.",
-  keywords: ["Club Pengu", "Solana", "Web3", "Gaming", "NFT", "Crypto", "Social"],
+  title: "Coming Soon | Permissionless Social Wagering on Solana",
+  description: "No KYC. No accounts. Wager any SPL token P2P with instant on-chain settlement. x402 payment protocol, x403 wallet auth. First of its kind.",
+  keywords: ["Solana", "Web3", "P2P Wagering", "No KYC", "x402", "SPL Token", "Crypto Gaming", "DeFi"],
   icons: {
-    icon: "/icon.jpg",
-    apple: "/icon.jpg",
+    icon: "/character.png",
+    apple: "/character.png",
   },
   openGraph: {
-    title: "Club Pengu | Web3 Social Gaming on Solana",
-    description: "The first trencher social platform. Reviving Club Pengu culture with Solana-native wagering.",
+    title: "Coming Soon | Permissionless Social Wagering on Solana",
+    description: "No KYC. No accounts. Wager any SPL token P2P with instant on-chain settlement.",
     type: "website",
-    images: ["/icon.jpg"],
+    images: ["/character.png"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Club Pengu | Web3 Social Gaming on Solana",
-    description: "The first trencher social platform on Solana.",
-    images: ["/icon.jpg"],
+    title: "Coming Soon | Permissionless Social Wagering on Solana",
+    description: "No KYC. Wager any SPL token. x402 protocol. First permissionless social wagering platform.",
+    images: ["/character.png"],
   },
 };
 
