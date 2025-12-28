@@ -246,10 +246,12 @@ ownedCosmeticSchema.statics.getFullInventory = async function(walletAddress, opt
     
     const skip = (page - 1) * limit;
     
-    // Get owned items
+    // Get owned items - exclude non-tradable promo items from inventory display
+    // Promo items are for customization only, not inventory trading/burning
     const items = await this.find({ 
         ownerId: walletAddress, 
-        convertedToGold: false 
+        convertedToGold: false,
+        tradable: { $ne: false }  // Exclude promo/achievement items
     })
     .sort({ mintedAt: -1 })
     .lean();

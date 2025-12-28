@@ -206,7 +206,7 @@ class PromoCodeService {
 
         const walletAddress = user.walletAddress;
 
-        // Helper to create OwnedCosmetic record for promo items (non-tradable)
+        // Helper to create OwnedCosmetic record for promo items (non-tradable, worthless)
         const createPromoOwnedCosmetic = async (template) => {
             try {
                 // Check if user already owns this template (any instance)
@@ -221,21 +221,22 @@ class PromoCodeService {
                     return null;
                 }
 
-                // Get next serial number atomically
-                const { serialNumber, isFirstEdition } = await OwnedCosmetic.getNextSerialAtomic(template.templateId);
+                // PROMO ITEMS: Get next serial but NEVER mark as first edition
+                // We still need unique serials due to index constraint
+                const { serialNumber } = await OwnedCosmetic.getNextSerialAtomic(template.templateId);
 
-                // Create the owned cosmetic record
+                // Create the owned cosmetic record - WORTHLESS, non-tradable, hidden from inventory
                 const ownedCosmetic = new OwnedCosmetic({
                     instanceId: OwnedCosmetic.generateInstanceId(),
                     templateId: template.templateId,
                     ownerId: walletAddress,
-                    serialNumber,
-                    quality: 'standard',  // Promo items are standard quality
+                    serialNumber,  // Unique serial (required by index)
+                    quality: 'worn',  // Lowest quality - worthless
                     isHolographic: false,
-                    isFirstEdition,
-                    mintedBy: walletAddress,
+                    isFirstEdition: false,  // NEVER first edition for promo items (overrides atomic result)
+                    mintedBy: 'PROMO_SYSTEM',  // Mark as system-generated
                     acquisitionMethod: 'promo_code',
-                    tradable: false  // PROMO ITEMS CANNOT BE TRADED/SOLD
+                    tradable: false  // PROMO ITEMS CANNOT BE TRADED/SOLD/BURNED
                 });
 
                 await ownedCosmetic.save();
