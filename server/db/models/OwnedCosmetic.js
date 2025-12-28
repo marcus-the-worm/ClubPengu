@@ -443,12 +443,12 @@ ownedCosmeticSchema.statics.countUserDuplicates = async function(walletAddress, 
 };
 
 /**
- * Get inventory stats for a user
+ * Get inventory stats for a user (excludes promo items)
  * @param {string} walletAddress - User's wallet
  */
 ownedCosmeticSchema.statics.getInventoryStats = async function(walletAddress) {
     const items = await this.find(
-        { ownerId: walletAddress, convertedToGold: false },
+        { ownerId: walletAddress, convertedToGold: false, tradable: { $ne: false } },
         'templateId quality isHolographic isFirstEdition'
     ).lean();
     

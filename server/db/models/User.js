@@ -776,13 +776,15 @@ userSchema.methods.updateCustomization = function(customization) {
 // ==================== INVENTORY METHODS ====================
 
 /**
- * Get current inventory count (non-burned items)
+ * Get current inventory count (non-burned, tradable items only)
+ * Promo items (tradable=false) don't count towards inventory limit
  */
 userSchema.methods.getInventoryCount = async function() {
     const OwnedCosmetic = mongoose.model('OwnedCosmetic');
     return await OwnedCosmetic.countDocuments({ 
         ownerId: this.walletAddress, 
-        convertedToGold: false 
+        convertedToGold: false,
+        tradable: { $ne: false }  // Exclude promo items from count
     });
 };
 
