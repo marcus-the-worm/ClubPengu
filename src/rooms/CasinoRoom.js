@@ -297,6 +297,7 @@ class CasinoRoom extends BaseRoom {
         const THREE = this.THREE;
         
         // Create rows of slot machines along left and right walls
+        // All 12 slot machines on all devices - mobile uses static displays (no canvas animation)
         const slotRowZ = [15, 25, 35, 45, 55, 65];
         
         // Left wall slots
@@ -1472,10 +1473,19 @@ class CasinoRoom extends BaseRoom {
     }
 
     update(time, delta, nightFactor = 0.5) {
+        // MOBILE OPTIMIZATION: Throttle update rate on mobile
+        // Skip every other frame on mobile devices
+        if (this.needsOptimization) {
+            this._updateFrameSkip = (this._updateFrameSkip || 0) + 1;
+            if (this._updateFrameSkip < 2) return;
+            this._updateFrameSkip = 0;
+            delta *= 2; // Compensate for skipped frame
+        }
+        
         // Call parent update for all props
         super.update(time, delta, nightFactor);
         
-        // Animate roulette wheels
+        // Animate roulette wheels (cheap operation)
         this.rouletteMeshes.forEach((table, idx) => {
             table.traverse(child => {
                 if (child.userData.isRouletteWheel) {
@@ -1483,6 +1493,9 @@ class CasinoRoom extends BaseRoom {
                 }
             });
         });
+        
+        // MOBILE OPTIMIZATION: Skip glow animations on mobile (they require material updates)
+        if (this.needsOptimization) return;
         
         // Animate exit glow
         this.meshes.forEach(mesh => {

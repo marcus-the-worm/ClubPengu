@@ -289,16 +289,22 @@ class SlotMachineDisplay extends BaseProp {
     }
     
     update(time, delta) {
-        // MOBILE OPTIMIZATION: Throttle updates to every 3rd frame
+        // MOBILE OPTIMIZATION: Completely disable animated canvas on mobile
+        // Canvas→GPU texture uploads through WebGL/Metal bridge are extremely expensive on iOS
+        // This is THE main cause of lag - each texture upload costs ~5-10ms on iPhone
         if (this.isMobile) {
-            this.frameSkip++;
-            if (this.frameSkip < 3) return;
-            this.frameSkip = 0;
+            // Only do lightweight jackpot sign scale animation (no texture updates)
+            this.meshes.forEach(mesh => {
+                if (mesh.userData.isJackpotSign) {
+                    mesh.scale.setScalar(1 + Math.sin(time * 4) * 0.05);
+                }
+            });
+            return; // Skip ALL canvas/texture updates on mobile
         }
         
-        // Auto-spin every few seconds (longer interval on mobile)
-        const spinInterval = this.isMobile ? 8 : 4;
-        if (time - this.lastSpinTime > spinInterval) {
+        // Desktop: Full animation experience
+        // Auto-spin every few seconds
+        if (time - this.lastSpinTime > 4) {
             this.startSpin();
             this.lastSpinTime = time;
         }
@@ -308,7 +314,7 @@ class SlotMachineDisplay extends BaseProp {
         for (let r = 0; r < 3; r++) {
             if (this.spinning[r]) {
                 anySpinning = true;
-                this.reelPositions[r] += this.spinSpeed[r] * delta * (this.isMobile ? 3 : 1);
+                this.reelPositions[r] += this.spinSpeed[r] * delta;
                 
                 // Slow down gradually
                 this.spinSpeed[r] *= 0.98;
@@ -335,36 +341,34 @@ class SlotMachineDisplay extends BaseProp {
             }
         }
         
-        // Update LED border animation - SKIP ON MOBILE (LEDs not created)
-        if (!this.isMobile) {
-            // Throttle LED updates to every 100ms
-            if (time - this.lastLEDUpdate > 0.1) {
-                this.lastLEDUpdate = time;
-                this.meshes.forEach(mesh => {
-                    if (mesh.userData.ledIndex !== undefined) {
-                        const idx = mesh.userData.ledIndex;
-                        const chasePhase = (time * 10 + idx) % 20;
-                        const isLit = chasePhase < 3;
-                        
-                        mesh.material.emissiveIntensity = isLit ? 1.0 : 0.2;
-                        
-                        // Color cycling
-                        const hue = (time * 0.3 + idx * 0.02) % 1;
-                        mesh.material.emissive.setHSL(hue, 1, 0.5);
-                        mesh.material.color.setHSL(hue, 1, 0.5);
-                    }
-                });
-            }
+        // Update LED border animation
+        // Throttle LED updates to every 100ms
+        if (time - this.lastLEDUpdate > 0.1) {
+            this.lastLEDUpdate = time;
+            this.meshes.forEach(mesh => {
+                if (mesh.userData.ledIndex !== undefined) {
+                    const idx = mesh.userData.ledIndex;
+                    const chasePhase = (time * 10 + idx) % 20;
+                    const isLit = chasePhase < 3;
+                    
+                    mesh.material.emissiveIntensity = isLit ? 1.0 : 0.2;
+                    
+                    // Color cycling
+                    const hue = (time * 0.3 + idx * 0.02) % 1;
+                    mesh.material.emissive.setHSL(hue, 1, 0.5);
+                    mesh.material.color.setHSL(hue, 1, 0.5);
+                }
+            });
         }
         
-        // Jackpot sign animation (lightweight, keep it)
+        // Jackpot sign animation (lightweight)
         this.meshes.forEach(mesh => {
             if (mesh.userData.isJackpotSign) {
                 mesh.scale.setScalar(1 + Math.sin(time * 4) * 0.05);
             }
         });
         
-        // Redraw the display - ONLY if spinning or jackpot (major perf savings!)
+        // Redraw the display - ONLY if spinning or jackpot
         if (anySpinning || this.jackpotFlash > 0) {
             this.drawSlotDisplay();
         }

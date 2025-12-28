@@ -190,12 +190,17 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
         'bonkExclamation', 'bonkEyes', 'bonkShirt', 'penguShirt'
     ];
     
-    // BASE SKIN COLORS (free for everyone)
-    // Other colors require unlocking via gacha
-    const BASE_SKIN_COLORS = ['blue', 'white', 'black', 'red', 'green', 'orange', 'pink', 'gold', 'purple', 'brown'];
+    // BASE SKIN COLORS (free for everyone) - Only blue is default
+    // All other colors require unlocking via gacha
+    const BASE_SKIN_COLORS = ['blue'];
     
-    // PREMIUM SKIN COLORS (gacha drops)
-    const PREMIUM_SKIN_COLORS = ['darkBlue', 'grey', 'teal', 'lime', 'cyan', 'magenta', 'lavender', 'coral', 'mint', 'navy', 'maroon', 'olive', 'silver', 'sky'];
+    // PREMIUM SKIN COLORS (gacha drops) - All other colors are premium
+    const PREMIUM_SKIN_COLORS = [
+        // Former base colors (now premium)
+        'white', 'black', 'red', 'green', 'orange', 'pink', 'gold', 'purple', 'brown',
+        // Original premium colors
+        'darkBlue', 'grey', 'teal', 'lime', 'cyan', 'magenta', 'lavender', 'coral', 'mint', 'navy', 'maroon', 'olive', 'silver', 'sky'
+    ];
     
     // Get gacha-owned cosmetics from server data
     const gachaOwnedCosmetics = useMemo(() => {
