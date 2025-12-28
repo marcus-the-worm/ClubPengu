@@ -9,24 +9,14 @@
 
 import React, { useState, useEffect, useRef, memo } from 'react';
 import { thumbnailCache } from './CosmeticThumbnailCache';
-
-// Color palette for skins
-const PALETTE = {
-    white: '#FFFFFF', black: '#1a1a1a', blue: '#4169E1', red: '#DC143C',
-    green: '#228B22', yellow: '#FFD700', orange: '#FF8C00', pink: '#FF69B4',
-    purple: '#8B008B', grey: '#808080', gray: '#808080', brown: '#8B4513',
-    gold: '#FFD700', silver: '#C0C0C0', cyan: '#00CED1', magenta: '#FF00FF',
-    lime: '#32CD32', teal: '#008080', navy: '#000080', maroon: '#800000',
-    olive: '#808000', coral: '#FF7F50', salmon: '#FA8072', lavender: '#E6E6FA',
-    tan: '#D2B48C', beige: '#F5F5DC', ivory: '#FFFFF0', peach: '#FFDAB9',
-    mint: '#98FF98', sky: '#87CEEB', darkBlue: '#00008B',
-};
+import { PALETTE } from '../constants';
 
 /**
  * CosmeticThumbnail component
  * 
  * @param {string} templateId - The cosmetic template ID
  * @param {string} category - The category (hat, eyes, mouth, bodyItem, mount, skin)
+ * @param {string} assetKey - Direct asset key (optional, more reliable than parsing templateId)
  * @param {string} rarity - Rarity level for glow effects
  * @param {boolean} isHolographic - Whether item has holographic effect
  * @param {number} size - Size in pixels (default 72)
@@ -35,6 +25,7 @@ const PALETTE = {
 const CosmeticThumbnail = memo(({ 
     templateId, 
     category,
+    assetKey = null,
     rarity = 'common',
     isHolographic = false,
     size = 72,
@@ -52,7 +43,8 @@ const CosmeticThumbnail = memo(({
         const cached = thumbnailCache.getCached(templateId, category, {
             size,
             rarity,
-            isHolographic
+            isHolographic,
+            assetKey
         });
         
         if (cached) {
@@ -68,7 +60,8 @@ const CosmeticThumbnail = memo(({
         thumbnailCache.getThumbnail(templateId, category, {
             size,
             rarity,
-            isHolographic
+            isHolographic,
+            assetKey
         })
             .then(url => {
                 if (mountedRef.current) {
@@ -87,7 +80,7 @@ const CosmeticThumbnail = memo(({
         return () => {
             mountedRef.current = false;
         };
-    }, [templateId, category, size, rarity, isHolographic]);
+    }, [templateId, category, size, rarity, isHolographic, assetKey]);
     
     // Loading state
     if (loading) {
@@ -108,7 +101,7 @@ const CosmeticThumbnail = memo(({
     if (error || !imageUrl) {
         // For skins without proper voxels, show colored circle
         if (category === 'skin') {
-            const colorKey = templateId?.replace('skin_', '') || 'blue';
+            const colorKey = assetKey || templateId?.replace('skin_', '') || 'blue';
             const skinColor = PALETTE[colorKey] || colorKey || '#4169E1';
             
             return (

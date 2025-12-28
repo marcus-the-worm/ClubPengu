@@ -57,6 +57,13 @@ const promoCodeSchema = new mongoose.Schema({
             type: Number,
             default: 0,
             min: 0
+        },
+        // Unlock all cosmetics by rarity (e.g., ['common', 'uncommon', 'rare'])
+        // This will query CosmeticTemplate and unlock ALL items at these rarities
+        unlockByRarity: {
+            type: [String],
+            enum: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'divine'],
+            default: []
         }
     },
     
@@ -189,6 +196,9 @@ promoCodeSchema.methods.getUnlocksSummary = function() {
     }
     if (this.unlocks.coins > 0) {
         items.push(`${this.unlocks.coins} coins`);
+    }
+    if (this.unlocks.unlockByRarity && this.unlocks.unlockByRarity.length > 0) {
+        items.push(`all ${this.unlocks.unlockByRarity.join('/')} cosmetics`);
     }
     
     return items.join(', ') || 'nothing';

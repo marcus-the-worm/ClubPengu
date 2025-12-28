@@ -11,22 +11,11 @@
 
 import * as THREE from 'three';
 import { ASSETS } from '../assets';
+import { PALETTE } from '../constants';
 
 // Shared geometry for all voxels
 const VOXEL_SIZE = 0.12;
 let sharedGeometry = null;
-
-// Color palette (same as VoxelWorld)
-const PALETTE = {
-    white: '#FFFFFF', black: '#1a1a1a', blue: '#4169E1', red: '#DC143C',
-    green: '#228B22', yellow: '#FFD700', orange: '#FF8C00', pink: '#FF69B4',
-    purple: '#8B008B', grey: '#808080', gray: '#808080', brown: '#8B4513',
-    gold: '#FFD700', silver: '#C0C0C0', cyan: '#00CED1', magenta: '#FF00FF',
-    lime: '#32CD32', teal: '#008080', navy: '#000080', maroon: '#800000',
-    olive: '#808000', coral: '#FF7F50', salmon: '#FA8072', lavender: '#E6E6FA',
-    tan: '#D2B48C', beige: '#F5F5DC', ivory: '#FFFFF0', peach: '#FFDAB9',
-    mint: '#98FF98', sky: '#87CEEB', darkBlue: '#00008B',
-};
 
 // Rarity glow colors
 const RARITY_GLOW = {
@@ -40,16 +29,23 @@ const RARITY_GLOW = {
 };
 
 /**
- * Get voxel data for a cosmetic by templateId
+ * Get voxel data for a cosmetic by templateId or assetKey
+ * @param {string} templateId - Full template ID (e.g., "hat_topHat") or assetKey
+ * @param {string} category - Category override (hat, eyes, mouth, bodyItem, mount, skin)
+ * @param {string} assetKey - Direct asset key override (e.g., "topHat")
  */
-function getCosmeticVoxels(templateId, category) {
-    let assetKey = templateId;
+function getCosmeticVoxels(templateId, category, assetKey = null) {
+    let key = assetKey || templateId;
     let cat = category;
     
-    if (templateId?.includes('_')) {
+    // If no direct assetKey provided, try to parse from templateId
+    if (!assetKey && templateId?.includes('_')) {
         const parts = templateId.split('_');
-        cat = parts[0];
-        assetKey = parts.slice(1).join('_');
+        // Only use parsed category if not already provided
+        if (!category || category === 'unknown') {
+            cat = parts[0];
+        }
+        key = parts.slice(1).join('_');
     }
     
     const categoryMap = {
@@ -62,10 +58,16 @@ function getCosmeticVoxels(templateId, category) {
     };
     
     const assetCategory = categoryMap[cat];
-    if (!assetCategory) return [];
+    if (!assetCategory) {
+        // console.warn(`[ThumbnailCache] Unknown category: ${cat} for templateId: ${templateId}`);
+        return [];
+    }
     
-    const assetData = assetCategory[assetKey];
-    if (!assetData) return [];
+    const assetData = assetCategory[key];
+    if (!assetData) {
+        // console.warn(`[ThumbnailCache] Asset not found: ${key} in ${cat}`);
+        return [];
+    }
     
     if (Array.isArray(assetData)) {
         return assetData;
@@ -226,8 +228,8 @@ class CosmeticThumbnailCache {
      * Generate cache key from parameters
      */
     _getCacheKey(templateId, category, options = {}) {
-        const { size = this.defaultSize, rarity = 'common', isHolographic = false, rotation = 0 } = options;
-        return `${templateId}_${category}_${size}_${rarity}_${isHolographic}_${rotation}`;
+        const { size = this.defaultSize, rarity = 'common', isHolographic = false, rotation = 0, assetKey = '' } = options;
+        return `${templateId}_${category}_${assetKey}_${size}_${rarity}_${isHolographic}_${rotation}`;
     }
     
     /**
@@ -321,16 +323,17 @@ class CosmeticThumbnailCache {
             size = this.defaultSize, 
             rarity = 'common', 
             isHolographic = false,
-            rotation = Math.PI / 6 // Default slight rotation
+            rotation = Math.PI / 6, // Default slight rotation
+            assetKey = null
         } = options;
         
         // Handle skins (just colors, not voxels)
         if (category === 'skin') {
-            return this._renderSkinThumbnail(templateId, size);
+            return this._renderSkinThumbnail(templateId, size, assetKey);
         }
         
-        // Get voxel data
-        const voxels = getCosmeticVoxels(templateId, category);
+        // Get voxel data - use assetKey if provided, otherwise parse from templateId
+        const voxels = getCosmeticVoxels(templateId, category, assetKey);
         if (!voxels || voxels.length === 0) {
             return this._renderPlaceholder(size);
         }
@@ -421,8 +424,9 @@ class CosmeticThumbnailCache {
     /**
      * Render a skin thumbnail (colored circle)
      */
-    _renderSkinThumbnail(templateId, size) {
-        const colorKey = templateId?.replace('skin_', '') || 'blue';
+    _renderSkinThumbnail(templateId, size, assetKey = null) {
+        // Use assetKey directly if provided, otherwise extract from templateId
+        const colorKey = assetKey || templateId?.replace('skin_', '') || 'blue';
         const skinColor = PALETTE[colorKey] || colorKey || '#4169E1';
         
         // Create a canvas for skin thumbnail
@@ -504,7 +508,7 @@ class CosmeticThumbnailCache {
     
     /**
      * Preload thumbnails for a list of items
-     * @param {Array} items - Array of { templateId, category, rarity, isHolographic }
+     * @param {Array} items - Array of { templateId, category, assetKey, rarity, isHolographic }
      * @param {number} size - Thumbnail size
      */
     async preloadThumbnails(items, size = 72) {
@@ -512,7 +516,8 @@ class CosmeticThumbnailCache {
             this.getThumbnail(item.templateId, item.category, {
                 size,
                 rarity: item.rarity,
-                isHolographic: item.isHolographic
+                isHolographic: item.isHolographic,
+                assetKey: item.assetKey
             })
         );
         

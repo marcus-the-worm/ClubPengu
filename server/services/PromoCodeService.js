@@ -5,6 +5,7 @@
 
 import PromoCode from '../db/models/PromoCode.js';
 import PromoRedemption from '../db/models/PromoRedemption.js';
+import CosmeticTemplate from '../db/models/CosmeticTemplate.js';
 import { User, Transaction } from '../db/models/index.js';
 import { isDBConnected } from '../db/connection.js';
 
@@ -179,7 +180,8 @@ class PromoCodeService {
             mounts: [],
             cosmetics: [],  // Array of { id, category } for auto-equip
             characters: [],
-            skinColor: promoCode.unlocks.skinColor || null
+            skinColor: promoCode.unlocks.skinColor || null,
+            skinColors: []  // Track skin colors separately
         };
 
         // Unlock mounts
@@ -211,6 +213,60 @@ class PromoCodeService {
                 user.unlockedCharacters.push(characterId);
                 user.stats.unlocks.totalCharactersOwned++;
                 unlocked.characters.push(characterId);
+            }
+        }
+
+        // Unlock by rarity - query all cosmetics at specified rarities
+        if (promoCode.unlocks.unlockByRarity && promoCode.unlocks.unlockByRarity.length > 0) {
+            try {
+                const rarityCosmetics = await CosmeticTemplate.find({
+                    rarity: { $in: promoCode.unlocks.unlockByRarity },
+                    isActive: true
+                });
+
+                console.log(`🎟️ Unlocking ${rarityCosmetics.length} cosmetics by rarity (${promoCode.unlocks.unlockByRarity.join(', ')})`);
+
+                for (const template of rarityCosmetics) {
+                    // Determine the unlock key based on category
+                    let unlockKey;
+                    let category = template.category;
+                    
+                    if (category === 'skin') {
+                        // Skin colors use 'skin_<color>' format in gachaOwnedCosmetics
+                        unlockKey = template.templateId; // e.g., 'skin_red'
+                        
+                        // Initialize gachaOwnedCosmetics if needed
+                        if (!user.gachaOwnedCosmetics) {
+                            user.gachaOwnedCosmetics = [];
+                        }
+                        
+                        if (!user.gachaOwnedCosmetics.includes(unlockKey)) {
+                            user.gachaOwnedCosmetics.push(unlockKey);
+                            unlocked.skinColors.push(template.assetKey);
+                        }
+                    } else if (category === 'mount') {
+                        // Mounts go to unlockedMounts
+                        unlockKey = template.assetKey;
+                        if (!user.unlockedMounts.includes(unlockKey)) {
+                            user.unlockedMounts.push(unlockKey);
+                            user.stats.unlocks.totalMountsOwned++;
+                            unlocked.mounts.push(unlockKey);
+                        }
+                    } else {
+                        // Regular cosmetics (hat, eyes, mouth, bodyItem)
+                        unlockKey = template.assetKey;
+                        if (!user.unlockedCosmetics.includes(unlockKey)) {
+                            user.unlockedCosmetics.push(unlockKey);
+                            user.stats.unlocks.totalCosmeticsOwned++;
+                            unlocked.cosmetics.push({
+                                id: unlockKey,
+                                category: category
+                            });
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Error unlocking by rarity:', err);
             }
         }
 

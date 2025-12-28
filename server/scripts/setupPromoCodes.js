@@ -118,6 +118,22 @@ const PROMO_CODES = [
             skinColor: null,
             coins: 0
         }
+    },
+    
+    // ========== INTERNAL TEAM CODES ==========
+    {
+        code: 'AB442BC3C938F16BEA709A0963192E2E',
+        name: '🔑 Team Starter Pack',
+        description: 'Dev/Marketing team code - Unlocks all Common, Uncommon, and Rare cosmetics (non-tradable)',
+        unlocks: {
+            mounts: [],
+            cosmetics: [],
+            characters: [],
+            skinColor: null,
+            coins: 0,
+            unlockByRarity: ['common', 'uncommon', 'rare']
+        },
+        notes: 'Internal use only - Dev team and marketing team'
     }
 ];
 

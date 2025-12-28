@@ -483,6 +483,7 @@ const InventoryModal = ({ isOpen, onClose }) => {
                                                 <CosmeticThumbnail
                                                     templateId={item.templateId}
                                                     category={item.category}
+                                                    assetKey={item.assetKey}
                                                     rarity={item.rarity}
                                                     isHolographic={item.isHolographic}
                                                     size={72}
