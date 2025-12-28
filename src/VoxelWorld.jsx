@@ -4753,23 +4753,21 @@ const VoxelWorld = ({
                     console.log('🏠 Owner entering igloo directly');
                     // Continue to room transition below
                 } else {
-                    // Check if igloo has requirements (token gate, entry fee, or private)
-                    const hasTokenGate = iglooData.tokenGate?.enabled || iglooData.hasTokenGate;
-                    const hasEntryFee = iglooData.entryFee?.enabled || iglooData.hasEntryFee;
                     const accessType = iglooData.accessType;
                     
-                    // Private igloos - only owner can enter (handled above), show requirements panel for others
-                    if (accessType === 'private') {
+                    // PUBLIC igloo - anyone can enter freely, no requirements check needed
+                    if (accessType === 'public') {
+                        console.log('🏠 Public igloo - entering directly');
+                        // Continue to room transition below
+                    }
+                    // PRIVATE igloo - only owner can enter, show requirements panel for others
+                    else if (accessType === 'private') {
                         console.log('🔒 Private igloo - showing requirements panel');
                         openRequirementsPanel(nearbyPortal.targetRoom);
                         return;
                     }
-                    
-                    // Determine if entry is restricted (token gate, entry fee, or access type)
-                    const isRestricted = hasTokenGate || hasEntryFee || 
-                        accessType === 'token' || accessType === 'fee' || accessType === 'both';
-                    
-                    if (isRestricted) {
+                    // TOKEN, FEE, or BOTH - check requirements
+                    else if (accessType === 'token' || accessType === 'fee' || accessType === 'both') {
                         // Check if user is already cleared (from previous check or payment)
                         const clearance = userClearance?.[nearbyPortal.targetRoom];
                         if (clearance?.canEnter) {
@@ -4793,9 +4791,10 @@ const VoxelWorld = ({
                             return; // Wait for server response
                         }
                     }
-                    
-                    // Public igloo (no restrictions) - allow entry
-                    console.log('🏠 Public igloo - entering directly');
+                    // Default (unknown access type) - allow entry
+                    else {
+                        console.log('🏠 Default access - entering directly');
+                    }
                 }
             }
             

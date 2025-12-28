@@ -242,13 +242,38 @@ export async function handleIglooMessage(playerId, player, message, sendToPlayer
                     return true;
                 }
                 
-                // Check all requirements with REAL on-chain data
+                // PRIVATE igloo - only owner can enter
+                if (igloo.accessType === 'private') {
+                    sendToPlayer(playerId, {
+                        type: 'igloo_can_enter',
+                        iglooId,
+                        canEnter: false,
+                        isOwner: false,
+                        blockingReason: 'IGLOO_LOCKED',
+                        message: 'This igloo is private'
+                    });
+                    return true;
+                }
+                
+                // PUBLIC igloo - anyone can enter (no restrictions)
+                if (igloo.accessType === 'public') {
+                    sendToPlayer(playerId, {
+                        type: 'igloo_can_enter',
+                        iglooId,
+                        canEnter: true,
+                        isOwner: false
+                    });
+                    return true;
+                }
+                
+                // TOKEN, FEE, or BOTH access types - check requirements
                 let tokenGateMet = true;
                 let entryFeePaid = true;
                 let userTokenBalance = 0;
                 
-                // Check token gate (query real balance)
-                if (igloo.tokenGate?.enabled && igloo.tokenGate?.tokenAddress) {
+                // Check token gate (query real balance) - only for 'token' or 'both' access
+                if ((igloo.accessType === 'token' || igloo.accessType === 'both') && 
+                    igloo.tokenGate?.enabled && igloo.tokenGate?.tokenAddress) {
                     try {
                         const balanceCheck = await solanaPaymentService.checkMinimumBalance(
                             walletAddress,
@@ -265,8 +290,9 @@ export async function handleIglooMessage(playerId, player, message, sendToPlayer
                     }
                 }
                 
-                // Check entry fee (from database)
-                if (igloo.entryFee?.enabled && igloo.entryFee?.amount > 0) {
+                // Check entry fee (from database) - only for 'fee' or 'both' access
+                if ((igloo.accessType === 'fee' || igloo.accessType === 'both') &&
+                    igloo.entryFee?.enabled && igloo.entryFee?.amount > 0) {
                     const paidEntry = igloo.paidEntryFees?.find(p => p.walletAddress === walletAddress);
                     entryFeePaid = !!paidEntry;
                 }
