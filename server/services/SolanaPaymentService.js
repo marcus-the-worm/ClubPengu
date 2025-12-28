@@ -601,6 +601,150 @@ class SolanaPaymentService {
             amount: expectedAmount
         };
     }
+    
+    /**
+     * Verify a NATIVE SOL transfer (System Program transfer, not SPL token)
+     * Used for Pebble deposits
+     * 
+     * @param {string} signature - Transaction signature
+     * @param {string} expectedSender - Sender's wallet address
+     * @param {string} expectedRecipient - Recipient's wallet address (RAKE_WALLET)
+     * @param {number} expectedLamports - Expected amount in lamports
+     * @param {object} options - Additional options for logging
+     */
+    async verifyNativeSOLTransfer(signature, expectedSender, expectedRecipient, expectedLamports, options = {}) {
+        if (!this.connection) {
+            return { success: false, error: 'RPC_NOT_INITIALIZED', message: 'Solana connection not ready' };
+        }
+        
+        // Rate limiting
+        const rateCheck = rateLimiter.check('payment', expectedSender);
+        if (!rateCheck.allowed) {
+            return { success: false, error: 'RATE_LIMITED', message: 'Too many attempts. Please wait.' };
+        }
+        
+        // Replay attack prevention
+        if (this.recentSignatures.has(signature)) {
+            console.warn(`🚨 REPLAY BLOCKED (cache): ${signature.slice(0, 16)}...`);
+            return { success: false, error: 'SIGNATURE_ALREADY_USED', message: 'Transaction already used' };
+        }
+        
+        try {
+            const existsInDb = await SolanaTransaction.isSignatureUsed(signature);
+            if (existsInDb) {
+                this.recentSignatures.add(signature);
+                return { success: false, error: 'SIGNATURE_ALREADY_USED', message: 'Transaction already used' };
+            }
+        } catch (e) {
+            console.warn('⚠️ DB check failed, proceeding with caution');
+        }
+        
+        try {
+            console.log(`🔍 Verifying native SOL transfer: ${signature.slice(0, 16)}...`);
+            console.log(`   Expected sender:    ${expectedSender?.slice(0, 8)}...`);
+            console.log(`   Expected recipient: ${expectedRecipient?.slice(0, 8)}...`);
+            console.log(`   Expected lamports:  ${expectedLamports}`);
+            
+            // Fetch the transaction
+            const tx = await this.connection.getParsedTransaction(signature, {
+                commitment: 'confirmed',
+                maxSupportedTransactionVersion: 0
+            });
+            
+            if (!tx) {
+                return { success: false, error: 'TX_NOT_FOUND', message: 'Transaction not found on-chain' };
+            }
+            
+            if (tx.meta?.err) {
+                return { success: false, error: 'TX_FAILED', message: `Transaction failed: ${JSON.stringify(tx.meta.err)}` };
+            }
+            
+            // Look for System Program transfer instruction
+            const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111';
+            const instructions = tx.transaction.message.instructions;
+            
+            let foundValidTransfer = false;
+            
+            for (const ix of instructions) {
+                // Check if this is a System Program transfer
+                if (ix.programId?.toString() === SYSTEM_PROGRAM_ID && ix.parsed?.type === 'transfer') {
+                    const info = ix.parsed.info;
+                    const source = info.source;
+                    const destination = info.destination;
+                    const lamports = info.lamports;
+                    
+                    console.log(`   Found transfer: ${source?.slice(0, 8)}... -> ${destination?.slice(0, 8)}... (${lamports} lamports)`);
+                    
+                    // Verify sender
+                    if (source !== expectedSender) {
+                        console.log(`   ❌ Sender mismatch: expected ${expectedSender?.slice(0, 8)}...`);
+                        continue;
+                    }
+                    
+                    // Verify recipient
+                    if (destination !== expectedRecipient) {
+                        console.log(`   ❌ Recipient mismatch: expected ${expectedRecipient?.slice(0, 8)}...`);
+                        continue;
+                    }
+                    
+                    // Verify amount (allow small tolerance for fees)
+                    const expectedLamportsBigInt = BigInt(expectedLamports);
+                    const actualLamportsBigInt = BigInt(lamports);
+                    const tolerance = BigInt(10000); // 0.00001 SOL tolerance
+                    
+                    if (actualLamportsBigInt < expectedLamportsBigInt - tolerance) {
+                        console.log(`   ❌ Amount too low: got ${lamports}, expected ${expectedLamports}`);
+                        continue;
+                    }
+                    
+                    foundValidTransfer = true;
+                    console.log(`   ✅ Valid SOL transfer found!`);
+                    break;
+                }
+            }
+            
+            if (!foundValidTransfer) {
+                return { success: false, error: 'TRANSFER_NOT_FOUND', message: 'Valid SOL transfer not found in transaction' };
+            }
+            
+            // Mark signature as used
+            this.recentSignatures.add(signature);
+            
+            // Persist to database
+            try {
+                await SolanaTransaction.create({
+                    signature,
+                    sender: expectedSender,
+                    recipient: expectedRecipient,
+                    amount: expectedLamports.toString(),
+                    currency: 'SOL',
+                    transactionType: options.transactionType || 'native_sol_transfer',
+                    metadata: {
+                        tokenSymbol: 'SOL',
+                        ...options
+                    }
+                });
+            } catch (dbError) {
+                if (!dbError.code || dbError.code !== 11000) {
+                    console.error('⚠️ Failed to persist signature to DB:', dbError.message);
+                }
+            }
+            
+            console.log(`✅ Native SOL transfer verified!`);
+            
+            return {
+                success: true,
+                transactionHash: signature,
+                amount: expectedLamports,
+                sender: expectedSender,
+                recipient: expectedRecipient
+            };
+            
+        } catch (error) {
+            console.error(`❌ SOL transfer verification error:`, error.message);
+            return { success: false, error: 'VERIFICATION_FAILED', message: error.message };
+        }
+    }
 }
 
 // Export singleton instance

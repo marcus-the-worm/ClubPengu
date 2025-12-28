@@ -77,6 +77,9 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     const [promoCode, setPromoCode] = useState('');
     const [promoMessage, setPromoMessage] = useState(null);
     
+    // Show only owned cosmetics toggle
+    const [showOwnedOnly, setShowOwnedOnly] = useState(false);
+    
     // Customization state - from props (synced from server for auth users)
     const [skinColor, setSkinColor] = useState(currentData?.skin || 'blue');
     const [hat, setHat] = useState(currentData?.hat || 'none');
@@ -165,9 +168,12 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     }, [isAuthenticated, userData?.unlockedCosmetics]);
     
     // Check if a mount is unlocked
-    const isMountUnlocked = (mountId) => {
+    const isMountUnlocked = React.useCallback((mountId) => {
+        // 'none' is always available
+        if (mountId === 'none') return true;
+        // All mounts are promo-exclusive currently
         return unlockedMounts.includes(mountId);
-    };
+    }, [unlockedMounts]);
     
     // Handle username change (only for new authenticated users)
     const handleUsernameChange = (value) => {
@@ -184,14 +190,91 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
         'bonkExclamation', 'bonkEyes', 'bonkShirt', 'penguShirt'
     ];
     
-    // Check if a cosmetic is unlocked (or doesn't require unlock)
-    const isCosmeticUnlocked = (cosmeticId) => {
-        // Check if this cosmetic requires a promo code
-        if (!PROMO_COSMETIC_IDS.includes(cosmeticId)) {
-            return true; // Doesn't require promo code - always available
+    // BASE SKIN COLORS (free for everyone)
+    // Other colors require unlocking via gacha
+    const BASE_SKIN_COLORS = ['blue', 'white', 'black', 'red', 'green', 'orange', 'pink', 'gold', 'purple', 'brown'];
+    
+    // PREMIUM SKIN COLORS (gacha drops)
+    const PREMIUM_SKIN_COLORS = ['darkBlue', 'grey', 'teal', 'lime', 'cyan', 'magenta', 'lavender', 'coral', 'mint', 'navy', 'maroon', 'olive', 'silver', 'sky'];
+    
+    // Get gacha-owned cosmetics from server data
+    const gachaOwnedCosmetics = useMemo(() => {
+        if (isAuthenticated && userData?.gachaOwnedCosmetics) {
+            return userData.gachaOwnedCosmetics;
         }
-        return unlockedCosmetics.includes(cosmeticId);
+        return [];
+    }, [isAuthenticated, userData?.gachaOwnedCosmetics]);
+    
+    // Check if a skin color is unlocked
+    const isSkinColorUnlocked = (colorId) => {
+        // Base colors are always unlocked
+        if (BASE_SKIN_COLORS.includes(colorId)) return true;
+        // Premium colors require gacha unlock
+        if (PREMIUM_SKIN_COLORS.includes(colorId)) {
+            return gachaOwnedCosmetics.includes(`skin_${colorId}`) || unlockedCosmetics.includes(`skin_${colorId}`);
+        }
+        // Unknown colors - locked by default
+        return false;
     };
+    
+    // Default cosmetics that are free for everyone (including guests)
+    const FREE_DEFAULT_COSMETICS = ['none', 'normal', 'beak'];
+    
+    // Check if a cosmetic is unlocked (or doesn't require unlock)
+    const isCosmeticUnlocked = React.useCallback((cosmeticId, category = null) => {
+        // Default items are always available
+        if (FREE_DEFAULT_COSMETICS.includes(cosmeticId)) return true;
+        
+        // Guests cannot own ANY non-default cosmetics
+        if (!isAuthenticated) return false;
+        
+        // Check if this cosmetic requires a promo code
+        if (PROMO_COSMETIC_IDS.includes(cosmeticId)) {
+            return unlockedCosmetics.includes(cosmeticId);
+        }
+        
+        // Check gacha-owned cosmetics (templateId format: category_assetKey)
+        // Try both with and without category prefix since server returns templateId
+        if (gachaOwnedCosmetics.includes(cosmeticId)) {
+            return true;
+        }
+        
+        // Also check with category prefix (server stores as "hat_topHat", "eyes_bored", etc.)
+        if (category) {
+            const templateId = `${category}_${cosmeticId}`;
+            if (gachaOwnedCosmetics.includes(templateId)) {
+                return true;
+            }
+        }
+        
+        // All non-free items require gacha unlock or promo code
+        return false;
+    }, [isAuthenticated, unlockedCosmetics, gachaOwnedCosmetics]);
+    
+    // Check if current customization is valid (all equipped items owned)
+    const isCustomizationValid = useMemo(() => {
+        // Guests can only use default appearance (all 'none'/defaults or base items)
+        if (!isAuthenticated) {
+            // Allow guests to use base colors and default options only
+            if (!BASE_SKIN_COLORS.includes(skinColor)) return false;
+            if (hat !== 'none') return false; // Guests cannot wear hats
+            if (eyes !== 'normal') return false; // Guests can only use default eyes
+            if (mouth !== 'beak') return false; // Guests can only use default mouth
+            if (bodyItem !== 'none') return false; // Guests cannot wear body items
+            if (mount !== 'none') return false; // Guests cannot use mounts
+            return true;
+        }
+        
+        // Authenticated users - check all equipped items
+        if (!isSkinColorUnlocked(skinColor)) return false;
+        if (!isCosmeticUnlocked(hat, 'hat')) return false;
+        if (!isCosmeticUnlocked(eyes, 'eyes')) return false;
+        if (!isCosmeticUnlocked(mouth, 'mouth')) return false;
+        if (!isCosmeticUnlocked(bodyItem, 'bodyItem')) return false;
+        if (!isMountUnlocked(mount)) return false;
+        
+        return true;
+    }, [isAuthenticated, skinColor, hat, eyes, mouth, bodyItem, mount, gachaOwnedCosmetics, unlockedCosmetics, unlockedMounts]);
     
     // Handle promo code submission - SERVER HANDLES ALL VALIDATION
     const handlePromoCodeSubmit = async () => {
@@ -937,21 +1020,92 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
 
     }, [scriptsLoaded, skinColor, hat, eyes, mouth, bodyItem, mount, characterType]);
 
-    const options = {
-        skin: Object.keys(PALETTE).filter(k => !['floorLight','floorDark','wood','rug','glass','beerGold','mirrorFrame','mirrorGlass', 'asphalt', 'roadLine', 'buildingBrickRed', 'buildingBrickYellow', 'buildingBrickBlue', 'windowLight', 'windowDark', 'grass', 'snow', 'water', 'waterDeep', 'butterfly1', 'butterfly2', 'butterfly3'].includes(k) && !k.startsWith('tie') && !k.startsWith('shirt') && !k.startsWith('camo') && !k.startsWith('jeans')),
-        head: Object.keys(ASSETS.HATS).filter(k => isCosmeticUnlocked(k)),
-        eyes: Object.keys(ASSETS.EYES).filter(k => isCosmeticUnlocked(k)),
-        mouth: Object.keys(ASSETS.MOUTH).filter(k => isCosmeticUnlocked(k)),
-        body: Object.keys(ASSETS.BODY).filter(k => isCosmeticUnlocked(k)),
-        mounts: Object.keys(ASSETS.MOUNTS || {})
+    // Get available skin colors - base + unlocked premium
+    const availableSkinColors = useMemo(() => {
+        const available = [...BASE_SKIN_COLORS];
+        // Add any unlocked premium colors
+        PREMIUM_SKIN_COLORS.forEach(color => {
+            if (isSkinColorUnlocked(color)) {
+                available.push(color);
+            }
+        });
+        return available;
+    }, [gachaOwnedCosmetics, unlockedCosmetics]);
+    
+    // Show cosmetics - filter by owned if toggle is on
+    const options = useMemo(() => {
+        const allOptions = {
+            skin: BASE_SKIN_COLORS,
+            head: Object.keys(ASSETS.HATS),
+            eyes: Object.keys(ASSETS.EYES),
+            mouth: Object.keys(ASSETS.MOUTH),
+            body: Object.keys(ASSETS.BODY),
+            mounts: Object.keys(ASSETS.MOUNTS || {})
+        };
+        
+        if (!showOwnedOnly || !isAuthenticated) {
+            return allOptions;
+        }
+        
+        // Filter to only owned items (always include defaults)
+        // For skins, include base colors + any gacha-won skin colors
+        const ownedSkinColors = gachaOwnedCosmetics
+            .filter(id => id.startsWith('skin_'))
+            .map(id => id.replace('skin_', ''));
+        const allSkinOptions = [...new Set([...BASE_SKIN_COLORS, ...ownedSkinColors])];
+        
+        return {
+            skin: allSkinOptions,
+            head: allOptions.head.filter(k => k === 'none' || isCosmeticUnlocked(k, 'hat')),
+            eyes: allOptions.eyes.filter(k => k === 'none' || k === 'normal' || isCosmeticUnlocked(k, 'eyes')),
+            mouth: allOptions.mouth.filter(k => k === 'none' || k === 'beak' || isCosmeticUnlocked(k, 'mouth')),
+            body: allOptions.body.filter(k => k === 'none' || isCosmeticUnlocked(k, 'bodyItem')),
+            mounts: allOptions.mounts.filter(k => k === 'none' || isMountUnlocked(k))
+        };
+    }, [showOwnedOnly, isAuthenticated, isCosmeticUnlocked, isMountUnlocked, gachaOwnedCosmetics]);
+    
+    // Count all and unlocked items for display
+    const allCounts = {
+        head: Object.keys(ASSETS.HATS).length,
+        eyes: Object.keys(ASSETS.EYES).length,
+        mouth: Object.keys(ASSETS.MOUTH).length,
+        body: Object.keys(ASSETS.BODY).length,
+        mounts: Object.keys(ASSETS.MOUNTS || {}).length
     };
     
+    const unlockedCounts = {
+        head: Object.keys(ASSETS.HATS).filter(k => isCosmeticUnlocked(k, 'hat')).length,
+        eyes: Object.keys(ASSETS.EYES).filter(k => isCosmeticUnlocked(k, 'eyes')).length,
+        mouth: Object.keys(ASSETS.MOUTH).filter(k => isCosmeticUnlocked(k, 'mouth')).length,
+        body: Object.keys(ASSETS.BODY).filter(k => isCosmeticUnlocked(k, 'bodyItem')).length,
+        mounts: Object.keys(ASSETS.MOUNTS || {}).filter(k => isMountUnlocked(k)).length
+    };
+    
+    // Cycle function - allows selecting ANY item for window shopping/preview
     const cycle = (current, list, setter, dir) => {
+        if (list.length <= 1) return; // Nothing to cycle
+        
         const idx = list.indexOf(current);
-        let nextIdx = idx + dir;
-        if(nextIdx < 0) nextIdx = list.length - 1;
-        if(nextIdx >= list.length) nextIdx = 0;
+        let nextIdx;
+        if (idx === -1) {
+            nextIdx = 0;
+        } else {
+            nextIdx = idx + dir;
+            if(nextIdx < 0) nextIdx = list.length - 1;
+            if(nextIdx >= list.length) nextIdx = 0;
+        }
         setter(list[nextIdx]);
+    };
+    
+    // Reset to default appearance
+    const handleResetToDefault = () => {
+        setSkinColor('blue');
+        setHat('none');
+        setEyes('normal');
+        setMouth('beak');
+        setBodyItem('none');
+        setMount('none');
+        setCharacterType('penguin');
     };
 
     return (
@@ -1009,65 +1163,67 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                             <hr className="border-gray-600/50" />
 
                             {[
-                                { label: `HEADWEAR (${options.head.length})`, val: hat, set: setHat, list: options.head },
-                                { label: `EYES (${options.eyes.length})`, val: eyes, set: setEyes, list: options.eyes },
-                                { label: `MOUTH (${options.mouth.length})`, val: mouth, set: setMouth, list: options.mouth },
-                                { label: `CLOTHING (${options.body.length})`, val: bodyItem, set: setBodyItem, list: options.body },
-                                { label: `MOUNTS (${options.mounts.length})`, val: mount, set: setMount, list: options.mounts, isMount: true },
-                            ].map((opt, i) => (
-                                <div key={i} className="flex flex-col gap-1">
-                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                                        {opt.label}
-                                        {opt.isMount && <span className="text-orange-400 ml-1">(PROMO)</span>}
-                                    </span>
-                                    <div className="flex items-center justify-between bg-black/30 rounded-lg p-1">
-                                        <button 
-                                            className="voxel-btn p-2 text-white hover:text-yellow-400"
-                                            onClick={() => {
-                                                if (opt.isMount) {
-                                                    // Only cycle to unlocked mounts
-                                                    const unlockedList = opt.list.filter(m => isMountUnlocked(m));
-                                                    cycle(opt.val, unlockedList, opt.set, -1);
-                                                } else {
-                                                    cycle(opt.val, opt.list, opt.set, -1);
-                                                }
-                                            }}
-                                        >
-                                            <IconChevronLeft size={20} />
-                                        </button>
-                                        <span className={`font-medium text-sm capitalize truncate max-w-[120px] text-center ${
-                                            opt.isMount && !isMountUnlocked(opt.val) ? 'text-red-400' : 'text-white'
-                                        }`}>
-                                            {opt.isMount && !isMountUnlocked(opt.val) 
-                                                ? `🔒 ${opt.val.replace(/([A-Z])/g, ' $1').trim()}`
-                                                : opt.val.replace(/([A-Z])/g, ' $1').trim()
+                                { label: 'HEADWEAR', key: 'head', val: hat, set: setHat, list: options.head },
+                                { label: 'EYES', key: 'eyes', val: eyes, set: setEyes, list: options.eyes },
+                                { label: 'MOUTH', key: 'mouth', val: mouth, set: setMouth, list: options.mouth },
+                                { label: 'CLOTHING', key: 'body', val: bodyItem, set: setBodyItem, list: options.body },
+                                { label: 'MOUNTS', key: 'mounts', val: mount, set: setMount, list: options.mounts, isMount: true },
+                            ].map((opt, i) => {
+                                const categoryForCheck = opt.key === 'head' ? 'hat' : opt.key === 'body' ? 'bodyItem' : opt.key;
+                                const isCurrentLocked = opt.isMount ? !isMountUnlocked(opt.val) : !isCosmeticUnlocked(opt.val, categoryForCheck);
+                                const unlockedCount = opt.isMount ? unlockedCounts.mounts : unlockedCounts[opt.key];
+                                const totalCount = opt.isMount ? allCounts.mounts : allCounts[opt.key];
+                                const displayCount = showOwnedOnly ? opt.list.length : totalCount;
+                                
+                                return (
+                                    <div key={i} className="flex flex-col gap-1">
+                                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                            {opt.label} {showOwnedOnly 
+                                                ? <span className="text-green-400">({displayCount} owned)</span>
+                                                : `(${unlockedCount}/${totalCount})`
                                             }
+                                            {opt.isMount && <span className="text-orange-400 ml-1">(PROMO)</span>}
                                         </span>
-                                        <button 
-                                            className="voxel-btn p-2 text-white hover:text-yellow-400"
-                                            onClick={() => {
-                                                if (opt.isMount) {
-                                                    // Only cycle to unlocked mounts
-                                                    const unlockedList = opt.list.filter(m => isMountUnlocked(m));
-                                                    cycle(opt.val, unlockedList, opt.set, 1);
-                                                } else {
-                                                    cycle(opt.val, opt.list, opt.set, 1);
-                                                }
-                                            }}
-                                        >
-                                            <IconChevronRight size={20} />
-                                        </button>
-                                    </div>
-                                    {opt.isMount && !isMountUnlocked('minecraftBoat') && !isMountUnlocked('penguMount') && (
-                                        <p className="text-[10px] text-orange-400/80 text-center">Enter promo code to unlock mounts</p>
-                                    )}
-                                    {opt.isMount && opt.val === 'penguMount' && isMountUnlocked('penguMount') && (
-                                        <div className="flex items-center justify-center gap-1 mt-1">
-                                            <span className="text-[10px] text-green-400 font-bold">⚡ +5% SPEED</span>
+                                        <div className={`flex items-center justify-between rounded-lg p-1 ${
+                                            isCurrentLocked ? 'bg-red-900/30 border border-red-500/30' : 'bg-black/30'
+                                        }`}>
+                                            <button 
+                                                className="voxel-btn p-2 text-white hover:text-yellow-400"
+                                                onClick={() => cycle(opt.val, opt.list, opt.set, -1)}
+                                            >
+                                                <IconChevronLeft size={20} />
+                                            </button>
+                                            <div className="flex flex-col items-center">
+                                                <span className={`font-medium text-sm capitalize truncate max-w-[120px] text-center ${
+                                                    isCurrentLocked ? 'text-red-400' : 'text-white'
+                                                }`}>
+                                                    {isCurrentLocked && '🔒 '}
+                                                    {opt.val.replace(/([A-Z])/g, ' $1').trim()}
+                                                </span>
+                                                {isCurrentLocked && (
+                                                    <span className="text-[9px] text-red-400/80">
+                                                        {opt.isMount ? 'Promo Only' : 'Unlock in Casino!'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <button 
+                                                className="voxel-btn p-2 text-white hover:text-yellow-400"
+                                                onClick={() => cycle(opt.val, opt.list, opt.set, 1)}
+                                            >
+                                                <IconChevronRight size={20} />
+                                            </button>
                                         </div>
-                                    )}
-                                </div>
-                            ))}
+                                        {opt.isMount && !isMountUnlocked('minecraftBoat') && !isMountUnlocked('penguMount') && (
+                                            <p className="text-[10px] text-orange-400/80 text-center">Enter promo code to unlock mounts</p>
+                                        )}
+                                        {opt.isMount && opt.val === 'penguMount' && isMountUnlocked('penguMount') && (
+                                            <div className="flex items-center justify-center gap-1 mt-1">
+                                                <span className="text-[10px] text-green-400 font-bold">⚡ +5% SPEED</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </>
                     ) : (
                         /* Special character info - no customization */
@@ -1082,6 +1238,34 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                                     Special characters cannot be customized
                                 </p>
                             </div>
+                        </div>
+                    )}
+                    
+                    {/* Show Owned Only Toggle + Reset Button */}
+                    {characterType === 'penguin' && (
+                        <div className="flex gap-2 mt-2">
+                            {/* Owned Only Toggle */}
+                            {isAuthenticated && (
+                                <button
+                                    onClick={() => setShowOwnedOnly(!showOwnedOnly)}
+                                    className={`flex-1 py-2 text-xs font-medium rounded-lg transition-colors border ${
+                                        showOwnedOnly 
+                                            ? 'bg-green-600/30 border-green-500 text-green-300 hover:bg-green-600/40' 
+                                            : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+                                    }`}
+                                    title="Show only cosmetics you own"
+                                >
+                                    {showOwnedOnly ? '✓ Owned Only' : '👁 Show All'}
+                                </button>
+                            )}
+                            
+                            {/* Reset Button */}
+                            <button
+                                onClick={handleResetToDefault}
+                                className={`${isAuthenticated ? 'flex-1' : 'w-full'} py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-medium rounded-lg transition-colors border border-gray-600`}
+                            >
+                                ↺ Reset
+                            </button>
                         </div>
                     )}
                     
@@ -1256,6 +1440,21 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                             </button>
                             <p className="text-xs text-amber-400 text-center mt-2">
                                 Pick an available username to continue
+                            </p>
+                        </div>
+                    ) : !isCustomizationValid ? (
+                        <div className="mt-4">
+                            <button 
+                                disabled
+                                className="w-full py-3 bg-red-900/50 text-red-400 font-bold rounded-lg retro-text text-xs border-b-4 border-red-900 flex justify-center items-center gap-2 cursor-not-allowed"
+                            >
+                                <IconWorld size={16} /> 🔒 INVALID COSMETICS
+                            </button>
+                            <p className="text-xs text-red-400 text-center mt-2">
+                                {isAuthenticated 
+                                    ? '⚠️ Unequip locked items or unlock them in the Casino!'
+                                    : '⚠️ Guests can only use default appearance'
+                                }
                             </p>
                         </div>
                     ) : (

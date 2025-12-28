@@ -3,7 +3,24 @@
  * Server-authoritative for all user data
  */
 
-import { User, Transaction, Puffle } from '../db/models/index.js';
+import { User, Transaction, Puffle, OwnedCosmetic, CosmeticTemplate } from '../db/models/index.js';
+
+// ========== FREE ITEMS (always available, no gacha needed) ==========
+const FREE_ITEMS = ['none', 'normal', 'beak'];
+
+// ========== 10 BASE SKIN COLORS (free selection) ==========
+const FREE_SKIN_COLORS = [
+    'blue', 'white', 'black', 'red', 'green', 
+    'orange', 'pink', 'gold', 'purple', 'brown'
+];
+
+// ========== PROMO EXCLUSIVE IDS (must be unlocked via promo code) ==========
+const PROMO_EXCLUSIVE_IDS = [
+    'lmao', 'bonkEyes', 'mistorEyes',
+    'bonkExclamation', 'mistorHair',
+    'joe', 'bonkShirt', 'mistorShirt', 'penguShirt',
+    'penguMount', 'minecraftBoat'
+];
 
 class UserService {
     /**
@@ -33,21 +50,31 @@ class UserService {
             }
         }
 
-        // Validate customization ownership
+        // Validate customization ownership (async checks for gacha items)
         if (filteredUpdates.customization) {
             const user = await this.getUser(walletAddress);
             if (!user) return { success: false, error: 'USER_NOT_FOUND' };
 
-            const { hat, bodyItem, mount } = filteredUpdates.customization;
+            const { skin, hat, eyes, mouth, bodyItem, mount } = filteredUpdates.customization;
             
-            if (hat && !user.ownsCosmetic(hat)) {
-                return { success: false, error: 'COSMETIC_NOT_OWNED', item: hat };
+            // Check each cosmetic with the authoritative ownsCosmetic method
+            if (skin && !await this.ownsCosmetic(walletAddress, skin, 'skin')) {
+                return { success: false, error: 'COSMETIC_NOT_OWNED', item: skin, category: 'skin' };
             }
-            if (bodyItem && !user.ownsCosmetic(bodyItem)) {
-                return { success: false, error: 'COSMETIC_NOT_OWNED', item: bodyItem };
+            if (hat && !await this.ownsCosmetic(walletAddress, hat, 'hat')) {
+                return { success: false, error: 'COSMETIC_NOT_OWNED', item: hat, category: 'hat' };
             }
-            if (mount && !user.ownsCosmetic(mount)) {
-                return { success: false, error: 'MOUNT_NOT_OWNED', item: mount };
+            if (eyes && !await this.ownsCosmetic(walletAddress, eyes, 'eyes')) {
+                return { success: false, error: 'COSMETIC_NOT_OWNED', item: eyes, category: 'eyes' };
+            }
+            if (mouth && !await this.ownsCosmetic(walletAddress, mouth, 'mouth')) {
+                return { success: false, error: 'COSMETIC_NOT_OWNED', item: mouth, category: 'mouth' };
+            }
+            if (bodyItem && !await this.ownsCosmetic(walletAddress, bodyItem, 'bodyItem')) {
+                return { success: false, error: 'COSMETIC_NOT_OWNED', item: bodyItem, category: 'bodyItem' };
+            }
+            if (mount && !await this.ownsCosmetic(walletAddress, mount, 'mount')) {
+                return { success: false, error: 'MOUNT_NOT_OWNED', item: mount, category: 'mount' };
             }
         }
 
@@ -332,6 +359,191 @@ class UserService {
     // ==================== COSMETIC OPERATIONS ====================
 
     /**
+     * Check if a cosmetic is owned by the user
+     * This is the AUTHORITATIVE check for cosmetic ownership
+     * 
+     * @param {string} walletAddress - User's wallet
+     * @param {string} cosmeticId - Asset key of the cosmetic
+     * @param {string} category - Category (skin, hat, eyes, mouth, bodyItem, mount)
+     * @returns {Promise<boolean>} Whether the user owns the cosmetic
+     */
+    async ownsCosmetic(walletAddress, cosmeticId, category = null) {
+        // Always allow 'none' and other free defaults
+        if (FREE_ITEMS.includes(cosmeticId)) {
+            return true;
+        }
+        
+        // Free skin colors are always available
+        if (category === 'skin' && FREE_SKIN_COLORS.includes(cosmeticId)) {
+            return true;
+        }
+        
+        const user = await this.getUser(walletAddress);
+        if (!user) return false;
+        
+        // Check promo exclusives - must be in unlockedCosmetics or unlockedMounts
+        if (PROMO_EXCLUSIVE_IDS.includes(cosmeticId)) {
+            return user.unlockedCosmetics.includes(cosmeticId) || 
+                   user.unlockedMounts.includes(cosmeticId);
+        }
+        
+        // Check if in legacy unlocked arrays (for backwards compat)
+        if (user.unlockedCosmetics.includes(cosmeticId) || 
+            user.unlockedMounts.includes(cosmeticId)) {
+            return true;
+        }
+        
+        // Check if owned via gacha (OwnedCosmetic)
+        const owned = await OwnedCosmetic.userOwnsTemplate(walletAddress, cosmeticId);
+        
+        return owned;
+    }
+    
+    /**
+     * Get all cosmetics owned by a user with their ownership status
+     * Used by frontend to show locked/unlocked state
+     * 
+     * @param {string} walletAddress - User's wallet
+     * @returns {Promise<object>} Owned cosmetics by category
+     */
+    async getOwnedCosmetics(walletAddress) {
+        const user = await this.getUser(walletAddress);
+        if (!user) return null;
+        
+        // Get gacha-owned cosmetics
+        const gachaOwned = await OwnedCosmetic.getUserCosmeticsWithTemplates(walletAddress);
+        
+        // Combine legacy unlocks with gacha ownership
+        const owned = {
+            skin: [...FREE_SKIN_COLORS],  // Free skins always available
+            hat: ['none'],
+            eyes: ['none', 'normal'],
+            mouth: ['none', 'beak'],
+            bodyItem: ['none'],
+            mount: ['none'],
+            // Detailed gacha items for display
+            gachaItems: gachaOwned
+        };
+        
+        // Add legacy unlocked cosmetics
+        for (const cosmeticId of user.unlockedCosmetics) {
+            // We don't know the category for legacy items, so we'll need to
+            // check the template or frontend will handle it
+            if (!owned.hat.includes(cosmeticId)) owned.hat.push(cosmeticId);
+            if (!owned.eyes.includes(cosmeticId)) owned.eyes.push(cosmeticId);
+            if (!owned.mouth.includes(cosmeticId)) owned.mouth.push(cosmeticId);
+            if (!owned.bodyItem.includes(cosmeticId)) owned.bodyItem.push(cosmeticId);
+        }
+        
+        // Add legacy unlocked mounts
+        for (const mountId of user.unlockedMounts) {
+            if (!owned.mount.includes(mountId)) owned.mount.push(mountId);
+        }
+        
+        // Add gacha-owned items to their categories
+        for (const item of gachaOwned) {
+            const category = item.template?.category;
+            if (category && owned[category] && !owned[category].includes(item.templateId)) {
+                owned[category].push(item.templateId);
+            }
+        }
+        
+        return owned;
+    }
+    
+    /**
+     * Check and unequip any locked cosmetics from user's customization
+     * Called when user enters world or updates profile
+     * 
+     * @param {string} walletAddress - User's wallet
+     * @returns {Promise<object>} Result with any unequipped items
+     */
+    async validateAndUnequipLockedCosmetics(walletAddress) {
+        const user = await this.getUser(walletAddress);
+        if (!user) return { success: false, error: 'USER_NOT_FOUND' };
+        
+        const unequipped = [];
+        const updates = {};
+        
+        // Check each equipped cosmetic
+        const categories = [
+            { field: 'skin', default: 'blue' },
+            { field: 'hat', default: 'none' },
+            { field: 'eyes', default: 'normal' },
+            { field: 'mouth', default: 'beak' },
+            { field: 'bodyItem', default: 'none' },
+            { field: 'mount', default: 'none' }
+        ];
+        
+        for (const { field, default: defaultVal } of categories) {
+            const equipped = user.customization[field];
+            if (equipped && equipped !== defaultVal) {
+                const owns = await this.ownsCosmetic(walletAddress, equipped, field);
+                if (!owns) {
+                    updates[`customization.${field}`] = defaultVal;
+                    unequipped.push({ field, item: equipped, replacedWith: defaultVal });
+                }
+            }
+        }
+        
+        // Apply updates if any items were unequipped
+        if (Object.keys(updates).length > 0) {
+            await User.updateOne({ walletAddress }, { $set: updates });
+            console.log(`⚠️ Unequipped locked cosmetics for ${walletAddress.slice(0, 8)}:`, unequipped);
+        }
+        
+        return { 
+            success: true, 
+            unequipped,
+            hasLockedItems: unequipped.length > 0
+        };
+    }
+    
+    /**
+     * Reset customization to defaults (clear button)
+     * 
+     * @param {string} walletAddress - User's wallet
+     * @returns {Promise<object>} Result
+     */
+    async resetCustomization(walletAddress) {
+        const defaultCustomization = {
+            skin: 'blue',
+            hat: 'none',
+            eyes: 'normal',
+            mouth: 'beak',
+            bodyItem: 'none',
+            mount: 'none'
+        };
+        
+        const result = await User.findOneAndUpdate(
+            { walletAddress },
+            { $set: { customization: defaultCustomization } },
+            { new: true }
+        );
+        
+        if (!result) return { success: false, error: 'USER_NOT_FOUND' };
+        
+        return { 
+            success: true, 
+            customization: defaultCustomization 
+        };
+    }
+    
+    /**
+     * Get free skin colors (for display in penguin maker)
+     */
+    static getFreeSkinColors() {
+        return FREE_SKIN_COLORS;
+    }
+    
+    /**
+     * Get promo exclusive IDs
+     */
+    static getPromoExclusiveIds() {
+        return PROMO_EXCLUSIVE_IDS;
+    }
+
+    /**
      * Purchase a cosmetic
      */
     async purchaseCosmetic(walletAddress, cosmeticId, price, category = 'cosmetic') {
@@ -365,6 +577,16 @@ class UserService {
         await user.save();
 
         return { success: true, newBalance: coinResult.newBalance };
+    }
+    
+    /**
+     * Raw MongoDB update (for complex operations like $inc, $set)
+     * Used by GachaService for atomic stat updates
+     * @param {string} walletAddress - User's wallet
+     * @param {object} update - MongoDB update object ($inc, $set, etc.)
+     */
+    async updateUserRaw(walletAddress, update) {
+        return User.updateOne({ walletAddress }, update);
     }
 
     // ==================== STATS OPERATIONS ====================

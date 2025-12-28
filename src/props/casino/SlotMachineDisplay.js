@@ -1,6 +1,6 @@
 /**
  * SlotMachineDisplay - Giant animated slot machine display with spinning reels
- * Creates an eye-catching animated display showing slot machine symbols
+ * Creates an eye-catching animated display showing cosmetic gacha rarity symbols
  */
 
 import BaseProp from '../BaseProp';
@@ -15,7 +15,8 @@ class SlotMachineDisplay extends BaseProp {
         this.canvas = null;
         this.ctx = null;
         this.texture = null;
-        this.symbols = ['7️⃣', '🍒', '🔔', '💎', '⭐', '🎰', '💰', '🃏'];
+        // Rarity symbols for cosmetic gacha
+        this.symbols = ['⚪', '🟢', '🔵', '🟣', '🟡', '🔴', '✨', '💎'];
         this.jackpotFlash = 0;
         this.lastSpinTime = 0;
     }
@@ -185,9 +186,9 @@ class SlotMachineDisplay extends BaseProp {
         gradient.addColorStop(1, '#FFD700');
         
         jackpotCtx.fillStyle = gradient;
-        jackpotCtx.shadowColor = '#FF0000';
+        jackpotCtx.shadowColor = '#A855F7';
         jackpotCtx.shadowBlur = 15;
-        jackpotCtx.fillText('★ JACKPOT ★', 256, 48);
+        jackpotCtx.fillText('✨ GACHA ✨', 256, 48);
         
         const jackpotTexture = new THREE.CanvasTexture(jackpotCanvas);
         const jackpotMat = new THREE.MeshBasicMaterial({

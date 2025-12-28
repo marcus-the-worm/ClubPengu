@@ -298,6 +298,99 @@ class PhantomWallet {
     }
     
     /**
+     * Send native SOL to a recipient
+     * @param {string} recipientAddress - Wallet address to send SOL to
+     * @param {number} amountSol - Amount in SOL (e.g., 0.1 = 0.1 SOL)
+     * @returns {Promise<{ success: boolean, signature?: string, error?: string }>}
+     */
+    async sendSOL(recipientAddress, amountSol) {
+        const provider = this.getProvider();
+        
+        if (!provider || !this.connected) {
+            return {
+                success: false,
+                error: 'NOT_CONNECTED',
+                message: 'Wallet not connected'
+            };
+        }
+        
+        try {
+            const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = await import('@solana/web3.js');
+            
+            const SOLANA_RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+            
+            console.log(`💸 Sending ${amountSol} SOL to ${recipientAddress.slice(0, 8)}...`);
+            
+            const connection = new Connection(SOLANA_RPC_URL, {
+                commitment: 'confirmed',
+                confirmTransactionInitialTimeout: 60000
+            });
+            
+            const fromPubkey = new PublicKey(this.publicKey);
+            const toPubkey = new PublicKey(recipientAddress);
+            const lamports = Math.floor(amountSol * LAMPORTS_PER_SOL);
+            
+            // Get latest blockhash
+            const { blockhash } = await connection.getLatestBlockhash('confirmed');
+            
+            // Create transaction
+            const transaction = new Transaction({
+                recentBlockhash: blockhash,
+                feePayer: fromPubkey
+            }).add(
+                SystemProgram.transfer({
+                    fromPubkey,
+                    toPubkey,
+                    lamports
+                })
+            );
+            
+            // Sign via Phantom
+            console.log('✍️ Requesting signature...');
+            const signedTx = await provider.signTransaction(transaction);
+            
+            // Broadcast
+            console.log('📡 Broadcasting transaction...');
+            const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+                skipPreflight: false,
+                preflightCommitment: 'confirmed'
+            });
+            
+            console.log(`✅ SOL sent! Tx: ${signature}`);
+            
+            return {
+                success: true,
+                signature
+            };
+            
+        } catch (error) {
+            console.error('Send SOL error:', error);
+            
+            if (error.code === 4001 || error.message?.includes('User rejected')) {
+                return {
+                    success: false,
+                    error: 'USER_REJECTED',
+                    message: 'Transaction cancelled by user'
+                };
+            }
+            
+            if (error.message?.includes('insufficient') || error.message?.includes('Insufficient')) {
+                return {
+                    success: false,
+                    error: 'INSUFFICIENT_BALANCE',
+                    message: 'Insufficient SOL balance'
+                };
+            }
+            
+            return {
+                success: false,
+                error: error.code || 'SEND_FAILED',
+                message: error.message || 'Failed to send SOL'
+            };
+        }
+    }
+    
+    /**
      * Get the current public key
      */
     getPublicKey() {

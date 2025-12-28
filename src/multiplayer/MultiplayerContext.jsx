@@ -286,6 +286,91 @@ export function MultiplayerProvider({ children }) {
                 }
                 break;
                 
+            case 'pebbles_update':
+            case 'pebbles_deposited':
+                // Server-authoritative pebbles update
+                if (message.pebbles !== undefined) {
+                    console.log(`🪨 Pebbles updated: ${message.pebbles}`);
+                    setUserData(prev => prev ? { ...prev, pebbles: message.pebbles } : prev);
+                }
+                callbacksRef.current.onPebblesUpdate?.(message);
+                break;
+                
+            case 'pebbles_withdrawn':
+                // Withdrawal processed (instant or queued)
+                if (message.pebbles !== undefined) {
+                    console.log(`🪨 Pebbles after withdrawal: ${message.pebbles}`);
+                    setUserData(prev => prev ? { ...prev, pebbles: message.pebbles } : prev);
+                }
+                callbacksRef.current.onPebblesWithdrawn?.(message);
+                break;
+                
+            case 'pebbles_withdrawal_cancelled':
+                // Withdrawal cancelled, pebbles refunded
+                if (message.pebbles !== undefined) {
+                    setUserData(prev => prev ? { ...prev, pebbles: message.pebbles } : prev);
+                }
+                callbacksRef.current.onPebblesWithdrawalCancelled?.(message);
+                break;
+                
+            case 'pebbles_withdrawal_completed':
+                // Queued withdrawal was processed (server sent SOL)
+                console.log(`🪨 Withdrawal completed! ${message.solReceived} SOL sent. Tx: ${message.txSignature}`);
+                callbacksRef.current.onPebblesWithdrawalCompleted?.(message);
+                break;
+                
+            case 'pebbles_withdrawals':
+                // User's withdrawal history
+                callbacksRef.current.onPebblesWithdrawals?.(message.withdrawals || []);
+                break;
+                
+            case 'pebbles_error':
+                // Pebble operation error
+                console.error(`🪨 Pebble error: ${message.error}`);
+                callbacksRef.current.onPebblesError?.(message);
+                break;
+                
+            // ==================== INVENTORY MESSAGES ====================
+            case 'inventory_data':
+                // Full inventory data with pagination
+                callbacksRef.current.onInventoryData?.(message);
+                break;
+                
+            case 'inventory_stats':
+                // Inventory statistics
+                callbacksRef.current.onInventoryStats?.(message);
+                break;
+                
+            case 'inventory_burned':
+                // Single item burned
+                if (message.newCoins !== undefined) {
+                    setUserData(prev => prev ? { ...prev, coins: message.newCoins } : prev);
+                }
+                callbacksRef.current.onInventoryBurned?.(message);
+                break;
+                
+            case 'inventory_bulk_burned':
+                // Multiple items burned
+                if (message.newCoins !== undefined) {
+                    setUserData(prev => prev ? { ...prev, coins: message.newCoins } : prev);
+                }
+                callbacksRef.current.onInventoryBulkBurned?.(message);
+                break;
+                
+            case 'inventory_upgraded':
+                // Inventory slots upgraded
+                if (message.newCoins !== undefined) {
+                    setUserData(prev => prev ? { ...prev, coins: message.newCoins } : prev);
+                }
+                callbacksRef.current.onInventoryUpgraded?.(message);
+                break;
+                
+            case 'inventory_error':
+                // Inventory operation error
+                console.error(`📦 Inventory error: ${message.error}`);
+                callbacksRef.current.onInventoryError?.(message);
+                break;
+                
             case 'username_changed':
                 // Username successfully changed
                 console.log(`📝 Username changed: ${message.oldUsername} → ${message.newUsername}`);
@@ -361,14 +446,31 @@ export function MultiplayerProvider({ children }) {
             }
             
             case 'slot_result': {
-                // Local player's spin completed
+                // Local player's spin completed - now cosmetic gacha
                 setSlotSpinning(false);
                 setSlotResult(message);
                 
-                // Update coins
-                if (message.newBalance !== undefined) {
-                    GameManager.getInstance().setCoinsFromServer(message.newBalance);
-                    setUserData(prev => prev ? { ...prev, coins: message.newBalance } : prev);
+                // Update Pebble balance (cosmetic gacha uses Pebbles, not coins)
+                if (message.newPebbleBalance !== undefined) {
+                    setUserData(prev => prev ? { ...prev, pebbles: message.newPebbleBalance } : prev);
+                }
+                
+                // Update gold if duplicate awarded gold
+                if (message.goldAwarded && message.goldAwarded > 0) {
+                    GameManager.getInstance().addCoins(message.goldAwarded);
+                    setUserData(prev => prev ? { ...prev, coins: (prev.coins || 0) + message.goldAwarded } : prev);
+                }
+                
+                // If not a duplicate, add the new cosmetic to owned list
+                if (!message.isDuplicate && !message.isDemo && message.templateId) {
+                    setUserData(prev => {
+                        if (!prev) return prev;
+                        const existingGacha = prev.gachaOwnedCosmetics || [];
+                        if (!existingGacha.includes(message.templateId)) {
+                            return { ...prev, gachaOwnedCosmetics: [...existingGacha, message.templateId] };
+                        }
+                        return prev;
+                    });
                 }
                 
                 if (slotCallbackRef.current) {

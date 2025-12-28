@@ -35,7 +35,18 @@ const transactionSchema = new mongoose.Schema({
             'fishing_bait',      // Bait cost for fishing
             'fishing_catch',     // Coins earned from fishing
             'blackjack_bet',     // PvE blackjack bet
-            'blackjack_win'      // PvE blackjack payout
+            'blackjack_win',     // PvE blackjack payout
+            // ========== GACHA/PEBBLE TYPES ==========
+            'gacha_roll',        // Pebbles spent on gacha roll
+            'pebble_deposit',    // SOL to Pebbles conversion
+            'pebble_withdrawal', // Pebbles to SOL conversion
+            'pebble_rake',       // Rake from pebble withdrawal
+            'pebble_refund',     // Failed roll refund
+            // ========== INVENTORY TYPES ==========
+            'cosmetic_burn',     // Cosmetic burned for gold (manual)
+            'inventory_upgrade', // Gold spent on inventory slot upgrade
+            'gold_sink_reroll',  // Gold spent on quality reroll (future)
+            'gold_sink_holo'     // Gold spent on holo blessing (future)
         ],
         index: true
     },
@@ -58,7 +69,7 @@ const transactionSchema = new mongoose.Schema({
     currency: {
         type: String,
         default: 'coins',
-        enum: ['coins', 'CPw3']  // Future: on-chain token
+        enum: ['coins', 'pebbles', 'SOL', 'CPw3']  // Added pebbles and SOL
     },
     
     // ========== BALANCE SNAPSHOTS ==========
@@ -75,7 +86,15 @@ const transactionSchema = new mongoose.Schema({
         cosmeticId: String,
         promoCode: String,
         fishId: String,
-        spotId: String
+        spotId: String,
+        // Gacha-related
+        gachaRollId: String,
+        cosmeticInstanceId: String,
+        cosmeticTemplateId: String,
+        // Pebble-related  
+        solTxSignature: String,
+        solAmount: Number,
+        pebbleAmount: Number
     },
     
     // ========== STATUS ==========

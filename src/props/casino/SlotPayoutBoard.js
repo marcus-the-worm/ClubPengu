@@ -1,6 +1,6 @@
 /**
- * SlotPayoutBoard - A board showing slot machine payouts and probabilities
- * Displays near the casino exit to inform players of winning mechanics
+ * SlotPayoutBoard - A board showing cosmetic gacha drop rates and rarities
+ * Displays near the casino exit to inform players of gacha mechanics
  * HORIZONTAL LAYOUT - wider board for better readability
  * SIZE: +75% from original (multiple increases)
  */
@@ -113,7 +113,7 @@ function drawPayoutBoard(ctx, W, H) {
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, W, H);
     
-    // Decorative border - thicker (+25%)
+    // Decorative border - thicker
     ctx.strokeStyle = '#ffd700';
     ctx.lineWidth = 8;
     ctx.strokeRect(15, 15, W - 30, H - 30);
@@ -123,102 +123,116 @@ function drawPayoutBoard(ctx, W, H) {
     ctx.lineWidth = 5;
     ctx.strokeRect(30, 30, W - 60, H - 60);
     
-    // Title - bigger font (+25%)
+    // Title
     ctx.fillStyle = '#ffd700';
-    ctx.font = 'bold 62px "Segoe UI", Arial';  // +25% from 50
+    ctx.font = 'bold 62px "Segoe UI", Arial';
     ctx.textAlign = 'center';
     ctx.shadowColor = '#ffd700';
     ctx.shadowBlur = 22;
-    ctx.fillText('🎰 SLOT PAYOUTS 🎰', W/2, 90);  // +25%
+    ctx.fillText('✨ COSMETIC GACHA ✨', W/2, 90);
     ctx.shadowBlur = 0;
     
-    // Subtitle - bigger (+25%)
+    // Subtitle
     ctx.fillStyle = '#a78bfa';
-    ctx.font = '30px "Segoe UI", Arial';  // +25% from 24
-    ctx.fillText('Match 3 symbols to win big! • Spin cost: 10g • RTP: 85%', W/2, 135);  // +25%
+    ctx.font = '30px "Segoe UI", Arial';
+    ctx.fillText('Roll for exclusive penguin cosmetics! • 25 🪨 Pebbles per roll • Duplicates = Gold!', W/2, 135);
     
-    // Symbol payouts (from best to worst) - arranged horizontally
-    const payouts = [
-        { emoji: '7️⃣', name: 'Seven', triple: 7770, double: 100, rarity: 'LEGENDARY', color: '#ffd700' },
-        { emoji: '💎', name: 'Diamond', triple: 1500, double: 30, rarity: 'EPIC', color: '#a855f7' },
-        { emoji: '⭐', name: 'Star', triple: 500, double: 20, rarity: 'RARE', color: '#3b82f6' },
-        { emoji: '🔔', name: 'Bell', triple: 200, double: 15, rarity: 'UNCOMMON', color: '#22c55e' },
-        { emoji: '🍇', name: 'Grape', triple: 100, double: 10, rarity: 'UNCOMMON', color: '#22c55e' },
-        { emoji: '🍊', name: 'Orange', triple: 60, double: 10, rarity: 'COMMON', color: '#9ca3af' },
-        { emoji: '🍋', name: 'Lemon', triple: 40, double: 5, rarity: 'COMMON', color: '#9ca3af' },
-        { emoji: '🍒', name: 'Cherry', triple: 30, double: 5, rarity: 'COMMON', color: '#9ca3af' }
+    // Rarity tiers - arranged horizontally (7 tiers)
+    const rarities = [
+        { emoji: '✨', name: 'Divine', rate: '0.02%', color: '#FFFFFF', dupGold: '2500g', bgAlpha: 0.25 },
+        { emoji: '🔴', name: 'Mythic', rate: '0.18%', color: '#EF4444', dupGold: '1000g', bgAlpha: 0.2 },
+        { emoji: '🟡', name: 'Legendary', rate: '0.8%', color: '#F59E0B', dupGold: '500g', bgAlpha: 0.15 },
+        { emoji: '🟣', name: 'Epic', rate: '4%', color: '#A855F7', dupGold: '150g', bgAlpha: 0.12 },
+        { emoji: '🔵', name: 'Rare', rate: '15%', color: '#3B82F6', dupGold: '50g', bgAlpha: 0.1 },
+        { emoji: '🟢', name: 'Uncommon', rate: '30%', color: '#22C55E', dupGold: '15g', bgAlpha: 0.08 },
+        { emoji: '⚪', name: 'Common', rate: '50%', color: '#9CA3AF', dupGold: '5g', bgAlpha: 0.05 }
     ];
     
-    // Calculate column positions - 8 symbols spread horizontally (+25%)
-    const startX = 90;  // +25% from 72
-    const columnWidth = (W - 180) / 8;  // +25%
-    const startY = 195;  // +25% from 156
+    // Calculate column positions
+    const startX = 90;
+    const columnWidth = (W - 180) / 7;
+    const startY = 195;
     
-    payouts.forEach((p, idx) => {
+    rarities.forEach((r, idx) => {
         const x = startX + columnWidth * idx + columnWidth / 2;
         
-        // Column background
-        ctx.fillStyle = p.rarity === 'LEGENDARY' 
-            ? 'rgba(255, 215, 0, 0.2)' 
-            : idx % 2 === 0 
-                ? 'rgba(255, 255, 255, 0.05)' 
-                : 'rgba(0, 0, 0, 0.1)';
-        ctx.fillRect(startX + columnWidth * idx, startY - 30, columnWidth - 6, 390);  // +25%
+        // Column background with rarity color
+        ctx.fillStyle = `rgba(${hexToRgb(r.color)}, ${r.bgAlpha})`;
+        ctx.fillRect(startX + columnWidth * idx, startY - 30, columnWidth - 6, 390);
         
-        // Rarity label at top (+25%)
+        // Rarity name at top
         ctx.textAlign = 'center';
-        ctx.fillStyle = p.color;
-        ctx.font = 'bold 20px "Segoe UI", Arial';  // +25% from 16
-        ctx.fillText(p.rarity, x, startY);
+        ctx.fillStyle = r.color;
+        ctx.font = 'bold 24px "Segoe UI", Arial';
+        ctx.shadowColor = r.color;
+        ctx.shadowBlur = idx < 3 ? 12 : 0;
+        ctx.fillText(r.name, x, startY);
+        ctx.shadowBlur = 0;
         
-        // Emoji - BIG (+25%)
-        ctx.font = '78px Arial';  // +25% from 62
+        // Emoji - BIG
+        ctx.font = '78px Arial';
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(p.emoji, x, startY + 90);  // +25%
+        ctx.fillText(r.emoji, x, startY + 90);
         
-        // Name (+25%)
-        ctx.font = 'bold 28px "Segoe UI", Arial';  // +25% from 22
-        ctx.fillStyle = '#e5e7eb';
-        ctx.fillText(p.name, x, startY + 142);  // +25%
+        // Drop Rate Label
+        ctx.font = '20px "Segoe UI", Arial';
+        ctx.fillStyle = '#a78bfa';
+        ctx.fillText('Drop Rate', x, startY + 130);
+        
+        // Drop Rate Value
+        ctx.font = 'bold 36px "Segoe UI", Arial';
+        ctx.fillStyle = r.color;
+        ctx.shadowColor = idx < 2 ? r.color : 'transparent';
+        ctx.shadowBlur = idx < 2 ? 15 : 0;
+        ctx.fillText(r.rate, x, startY + 175);
+        ctx.shadowBlur = 0;
         
         // Divider
         ctx.strokeStyle = '#4a3a6e';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(startX + columnWidth * idx + 15, startY + 165);  // +25%
-        ctx.lineTo(startX + columnWidth * (idx + 1) - 21, startY + 165);
+        ctx.moveTo(startX + columnWidth * idx + 15, startY + 200);
+        ctx.lineTo(startX + columnWidth * (idx + 1) - 21, startY + 200);
         ctx.stroke();
         
-        // Triple payout (×3) (+25%)
-        ctx.font = '21px "Segoe UI", Arial';  // +25% from 17
-        ctx.fillStyle = '#22c55e';
-        ctx.fillText('×3', x, startY + 202);  // +25%
+        // Duplicate Gold Label
+        ctx.font = '18px "Segoe UI", Arial';
+        ctx.fillStyle = '#a78bfa';
+        ctx.fillText('Dupe Gold', x, startY + 235);
         
-        ctx.font = 'bold 36px "Segoe UI", Arial';  // +25% from 29
+        // Duplicate Gold Value
+        ctx.font = 'bold 28px "Segoe UI", Arial';
         ctx.fillStyle = '#ffd700';
-        ctx.shadowColor = p.rarity === 'LEGENDARY' ? '#ffd700' : 'transparent';
-        ctx.shadowBlur = p.rarity === 'LEGENDARY' ? 15 : 0;
-        ctx.fillText(`${p.triple}g`, x, startY + 248);  // +25%
-        ctx.shadowBlur = 0;
+        ctx.fillText(r.dupGold, x, startY + 275);
         
-        // Double payout (×2) (+25%)
-        ctx.font = '21px "Segoe UI", Arial';  // +25% from 17
-        ctx.fillStyle = '#a78bfa';
-        ctx.fillText('×2', x, startY + 292);  // +25%
-        
-        ctx.font = '30px "Segoe UI", Arial';  // +25% from 24
-        ctx.fillStyle = '#a78bfa';
-        ctx.fillText(`${p.double}g`, x, startY + 330);  // +25%
+        // Special tags for rare items
+        if (idx === 0) {
+            ctx.font = 'bold 16px "Segoe UI", Arial';
+            ctx.fillStyle = '#F472B6';
+            ctx.fillText('1st Ed + Holo!', x, startY + 310);
+        } else if (idx < 3) {
+            ctx.font = 'bold 16px "Segoe UI", Arial';
+            ctx.fillStyle = '#60A5FA';
+            ctx.fillText('Holo Chance!', x, startY + 310);
+        }
     });
     
-    // Jackpot callout at bottom (+25%)
+    // Pity System callout at bottom
     ctx.fillStyle = '#ffd700';
     ctx.shadowColor = '#ffd700';
-    ctx.shadowBlur = 30;  // +25%
-    ctx.font = 'bold 39px "Segoe UI", Arial';  // +25% from 31
+    ctx.shadowBlur = 30;
+    ctx.font = 'bold 36px "Segoe UI", Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('💰 JACKPOT: 7,770 GOLD! 💰  •  The house always wins... eventually 😈', W/2, H - 45);  // +25%
+    ctx.fillText('🎁 PITY SYSTEM ACTIVE! • Guaranteed drops after bad luck • Holographic & First Edition variants!', W/2, H - 45);
     ctx.shadowBlur = 0;
+}
+
+// Helper to convert hex color to rgb for rgba
+function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result 
+        ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`
+        : '255, 255, 255';
 }
 
 export default createSlotPayoutBoard;

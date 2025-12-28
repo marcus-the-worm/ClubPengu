@@ -14,4 +14,12 @@ export { default as PromoCode } from './PromoCode.js';
 export { default as PromoRedemption } from './PromoRedemption.js';
 export { default as Igloo } from './Igloo.js';
 
+// Gacha System
+export { default as CosmeticTemplate } from './CosmeticTemplate.js';
+export { default as OwnedCosmetic } from './OwnedCosmetic.js';
+export { default as GachaRoll } from './GachaRoll.js';
+
+// Pebble System
+export { default as PebbleWithdrawal } from './PebbleWithdrawal.js';
+
 

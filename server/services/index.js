@@ -16,3 +16,5 @@ export { default as IglooService } from './IglooService.js';
 export { default as WagerSettlementService } from './WagerSettlementService.js';
 export { default as CustodialWalletService } from './CustodialWalletService.js';
 export { default as BlackjackService } from './BlackjackService.js';
+export { default as GachaService, ROLL_PRICE_PEBBLES, PEBBLES_PER_SOL } from './GachaService.js';
+export { default as PebbleService, MIN_DEPOSIT_PEBBLES, MIN_WITHDRAWAL_PEBBLES, WITHDRAWAL_RAKE_PERCENT } from './PebbleService.js';

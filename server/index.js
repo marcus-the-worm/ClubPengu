@@ -4,11 +4,18 @@
  * With MongoDB persistence and Phantom wallet authentication
  */
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Load .env from root directory (parent of server/)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import { connectDB, isDBConnected, disconnectDB } from './db/connection.js';
-import { User } from './db/models/index.js';
+import { User, OwnedCosmetic, Transaction } from './db/models/index.js';
 import { 
     StatsService, 
     InboxService, 
@@ -20,8 +27,12 @@ import {
     SlotService,
     FishingService,
     IglooService,
-    BlackjackService
+    BlackjackService,
+    GachaService,
+    PebbleService,
+    ROLL_PRICE_PEBBLES
 } from './services/index.js';
+import custodialWalletService from './services/CustodialWalletService.js';
 import { handleIglooMessage } from './handlers/iglooHandlers.js';
 import { handleTippingMessage } from './handlers/tippingHandlers.js';
 import rentScheduler from './schedulers/RentScheduler.js';
@@ -315,6 +326,23 @@ const matchService = new MatchService(statsService, userService, broadcastToRoom
 const slotService = new SlotService(userService, broadcastToRoom, sendToPlayer);
 const fishingService = new FishingService(userService, broadcastToRoom, sendToPlayer);
 const blackjackService = new BlackjackService(userService, broadcastToRoom, sendToPlayer);
+const gachaService = new GachaService(userService, broadcastToRoom, sendToPlayer, broadcastToAll);
+const pebbleService = new PebbleService(solanaPaymentService, custodialWalletService, sendToPlayer);
+
+// Link GachaService to SlotService for cosmetic gacha rolls
+slotService.setGachaService(gachaService);
+
+// Set up player lookup for pebble withdrawal notifications
+// This allows pebbleService to find online players by wallet address
+const getPlayerByWalletGlobal = (wallet) => {
+    for (const [id, p] of players) {
+        if (p.walletAddress === wallet) {
+            return { id, ...p };
+        }
+    }
+    return null;
+};
+pebbleService.setPlayerLookup(getPlayerByWalletGlobal);
 
 // Initialize DevBot for development testing
 if (IS_DEV) {
@@ -1044,15 +1072,15 @@ wss.on('connection', (ws, req) => {
         if (player) player.isAlive = true;
     });
     
-    // Auto-disconnect if player doesn't join a room within 30 seconds
-    // This cleans up stale HMR connections
+    // Auto-disconnect if player doesn't join a room within 5 minutes
+    // This gives time for penguin maker customization before entering world
     const roomJoinTimeout = setTimeout(() => {
         const player = players.get(playerId);
         if (player && !player.room) {
-            console.log(`[${ts()}] Auto-disconnecting idle player: ${playerId} (no room join)`);
+            console.log(`[${ts()}] Auto-disconnecting idle player: ${playerId} (no room join after 5min)`);
             ws.close(1000, 'Idle timeout');
         }
-    }, 30000);
+    }, 300000); // 5 minutes
     
     // Store timeout ref for cleanup
     ws._roomJoinTimeout = roomJoinTimeout;
@@ -1479,11 +1507,11 @@ async function handleMessage(playerId, message) {
                 user.lastActiveAt = new Date();
                 await user.save();
                 
-                // Send restored session response
+                // Send restored session response (use async to include gacha cosmetics)
                 sendToPlayer(playerId, {
                     type: 'auth_success',
                     token,
-                    user: user.getFullData(),
+                    user: await user.getFullDataAsync(),
                     isNewUser: false,
                     restored: true
                 });
@@ -1536,7 +1564,7 @@ async function handleMessage(playerId, message) {
                     // Check if this is first entry (username not locked yet)
                     const isFirstEntry = !user.lastUsernameChangeAt && !user.isEstablishedUser();
                     
-                    // Only save customization if it actually changed
+                    // Only save customization if it actually changed AND all items are owned
                     if (message.appearance) {
                         const currentCustom = user.customization || {};
                         const newCustom = message.appearance;
@@ -1549,8 +1577,62 @@ async function handleMessage(playerId, message) {
                             currentCustom.mount !== newCustom.mount;
                         
                         if (hasChanges) {
-                            user.updateCustomization(message.appearance);
+                            // Validate ownership of each cosmetic before applying
+                            const validatedCustom = { ...newCustom };
+                            let hadLockedItem = false;
+                            
+                            // Check skin color
+                            if (newCustom.skin && !await userService.ownsCosmetic(player.walletAddress, newCustom.skin, 'skin')) {
+                                console.log(`🔒 Blocked locked skin color: ${newCustom.skin}`);
+                                validatedCustom.skin = 'blue'; // Reset to default
+                                hadLockedItem = true;
+                            }
+                            // Check hat
+                            if (newCustom.hat && !await userService.ownsCosmetic(player.walletAddress, newCustom.hat, 'hat')) {
+                                console.log(`🔒 Blocked locked hat: ${newCustom.hat}`);
+                                validatedCustom.hat = 'none';
+                                hadLockedItem = true;
+                            }
+                            // Check eyes
+                            if (newCustom.eyes && !await userService.ownsCosmetic(player.walletAddress, newCustom.eyes, 'eyes')) {
+                                console.log(`🔒 Blocked locked eyes: ${newCustom.eyes}`);
+                                validatedCustom.eyes = 'normal';
+                                hadLockedItem = true;
+                            }
+                            // Check mouth
+                            if (newCustom.mouth && !await userService.ownsCosmetic(player.walletAddress, newCustom.mouth, 'mouth')) {
+                                console.log(`🔒 Blocked locked mouth: ${newCustom.mouth}`);
+                                validatedCustom.mouth = 'beak';
+                                hadLockedItem = true;
+                            }
+                            // Check bodyItem
+                            if (newCustom.bodyItem && !await userService.ownsCosmetic(player.walletAddress, newCustom.bodyItem, 'bodyItem')) {
+                                console.log(`🔒 Blocked locked bodyItem: ${newCustom.bodyItem}`);
+                                validatedCustom.bodyItem = 'none';
+                                hadLockedItem = true;
+                            }
+                            // Check mount
+                            if (newCustom.mount && !await userService.ownsCosmetic(player.walletAddress, newCustom.mount, 'mount')) {
+                                console.log(`🔒 Blocked locked mount: ${newCustom.mount}`);
+                                validatedCustom.mount = 'none';
+                                hadLockedItem = true;
+                            }
+                            
+                            // Apply validated customization
+                            user.updateCustomization(validatedCustom);
                             needsSave = true;
+                            
+                            // Update player appearance with validated values
+                            player.appearance = validatedCustom;
+                            
+                            // Notify player if items were locked
+                            if (hadLockedItem) {
+                                sendToPlayer(playerId, {
+                                    type: 'cosmetics_locked',
+                                    message: 'Some equipped items were locked. Visit the Casino to unlock cosmetics!',
+                                    validatedCustomization: validatedCustom
+                                });
+                            }
                         }
                     }
                     
@@ -1608,7 +1690,8 @@ async function handleMessage(playerId, message) {
             if (player.walletAddress) {
                 const updatedUser = await userService.getUser(player.walletAddress);
                 if (updatedUser) {
-                    userData = updatedUser.getFullData();
+                    // Use async version to include gacha-owned cosmetics
+                    userData = await updatedUser.getFullDataAsync();
                 }
             }
             
@@ -3189,7 +3272,7 @@ async function handleMessage(playerId, message) {
             const user = await userService.getUser(player.walletAddress);
             sendToPlayer(playerId, {
                 type: 'user_data',
-                user: user?.getFullData() || null,
+                user: user ? await user.getFullDataAsync() : null,
                 isGuest: false
             });
             break;
@@ -3263,7 +3346,7 @@ async function handleMessage(playerId, message) {
                 if (updatedUser) {
                     sendToPlayer(playerId, {
                         type: 'user_data',
-                        user: updatedUser.getFullData(),
+                        user: await updatedUser.getFullDataAsync(),
                         isGuest: false
                     });
                     
@@ -3315,8 +3398,8 @@ async function handleMessage(playerId, message) {
         
         // ==================== SLOT MACHINE ====================
         case 'slot_spin': {
-            // Player wants to spin a slot machine
-            const { machineId, guestCoins, isDemo } = message;
+            // Player wants to spin a slot machine (now cosmetic gacha using Pebbles)
+            const { machineId, isDemo } = message;
             
             if (!machineId) {
                 sendToPlayer(playerId, {
@@ -3334,23 +3417,26 @@ async function handleMessage(playerId, message) {
                 machineId,
                 player.name,
                 player.position,
-                guestCoins || 0,
-                isDemo || false // Demo mode for guests without coins
+                0, // No longer using guestCoins - Pebbles system now
+                isDemo || false // Demo mode for unauthenticated users
             );
             
             if (spinResult.error) {
                 sendToPlayer(playerId, {
                     type: 'slot_error',
                     error: spinResult.error,
-                    message: spinResult.message
+                    message: spinResult.message,
+                    pebbleBalance: spinResult.pebbleBalance,
+                    required: spinResult.required
                 });
             } else {
-                // Send spin started confirmation
+                // Send spin started confirmation with Pebble balance
                 sendToPlayer(playerId, {
                     type: 'slot_spin_started',
                     machineId: spinResult.machineId,
-                    newBalance: spinResult.newBalance,
-                    spinCost: spinResult.spinCost
+                    newPebbleBalance: spinResult.newPebbleBalance,
+                    spinCost: spinResult.spinCost,
+                    isDemo: spinResult.isDemo
                 });
                 
                 // Broadcast to room that player started spinning
@@ -3363,12 +3449,13 @@ async function handleMessage(playerId, message) {
                     isDemo: spinResult.isDemo
                 }, playerId);
                 
-                // Send updated coins
-                sendToPlayer(playerId, {
-                    type: 'coins_update',
-                    coins: spinResult.newBalance,
-                    isAuthenticated: true
-                });
+                // Send updated Pebbles balance
+                if (spinResult.newPebbleBalance !== undefined) {
+                    sendToPlayer(playerId, {
+                        type: 'pebbles_update',
+                        pebbles: spinResult.newPebbleBalance
+                    });
+                }
             }
             break;
         }
@@ -3871,6 +3958,766 @@ async function handleMessage(playerId, message) {
             break;
         }
         
+        // ==================== GACHA (Cosmetic Slot Machine) ====================
+        case 'gacha_roll': {
+            // Player wants to roll for a cosmetic item
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'gacha_error',
+                    error: 'NOT_AUTHENTICATED',
+                    message: 'Must be authenticated to roll gacha'
+                });
+                break;
+            }
+            
+            try {
+                const result = await gachaService.roll(
+                    player.walletAddress,
+                    'OG Collection',
+                    player.name
+                );
+                
+                if (result.success) {
+                    // Send successful roll result
+                    sendToPlayer(playerId, {
+                        type: 'gacha_result',
+                        ...result
+                    });
+                    
+                    // Send updated pebble balance
+                    const user = await userService.getUser(player.walletAddress);
+                    if (user) {
+                        sendToPlayer(playerId, {
+                            type: 'pebbles_update',
+                            pebbles: user.pebbles
+                        });
+                    }
+                } else {
+                    sendToPlayer(playerId, {
+                        type: 'gacha_error',
+                        error: result.error,
+                        message: result.message || 'Roll failed',
+                        pebbleBalance: result.pebbleBalance,
+                        required: result.required
+                    });
+                }
+            } catch (error) {
+                console.error('🎰 Gacha roll error:', error);
+                sendToPlayer(playerId, {
+                    type: 'gacha_error',
+                    error: 'SERVER_ERROR',
+                    message: 'Failed to process gacha roll'
+                });
+            }
+            break;
+        }
+        
+        case 'gacha_info': {
+            // Get gacha drop rates and pricing info
+            try {
+                const rates = GachaService.getRates();
+                sendToPlayer(playerId, {
+                    type: 'gacha_info',
+                    rates
+                });
+            } catch (error) {
+                console.error('🎰 Gacha info error:', error);
+            }
+            break;
+        }
+        
+        case 'gacha_can_roll': {
+            // Check if player can afford a roll
+            if (!player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'gacha_can_roll',
+                    canRoll: false,
+                    balance: 0,
+                    required: ROLL_PRICE_PEBBLES
+                });
+                break;
+            }
+            
+            try {
+                const result = await gachaService.canRoll(player.walletAddress);
+                sendToPlayer(playerId, {
+                    type: 'gacha_can_roll',
+                    ...result
+                });
+            } catch (error) {
+                console.error('🎰 Gacha can_roll error:', error);
+            }
+            break;
+        }
+        
+        case 'gacha_owned': {
+            // Get player's owned cosmetics
+            if (!player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'gacha_owned',
+                    cosmetics: []
+                });
+                break;
+            }
+            
+            try {
+                const cosmetics = await gachaService.getOwnedCosmetics(player.walletAddress);
+                sendToPlayer(playerId, {
+                    type: 'gacha_owned',
+                    cosmetics
+                });
+            } catch (error) {
+                console.error('🎰 Gacha owned error:', error);
+                sendToPlayer(playerId, {
+                    type: 'gacha_owned',
+                    cosmetics: [],
+                    error: 'Failed to fetch cosmetics'
+                });
+            }
+            break;
+        }
+        
+        case 'gacha_history': {
+            // Get player's roll history
+            if (!player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'gacha_history',
+                    rolls: []
+                });
+                break;
+            }
+            
+            try {
+                const limit = Math.min(message.limit || 50, 100);
+                const rolls = await gachaService.getRollHistory(player.walletAddress, limit);
+                sendToPlayer(playerId, {
+                    type: 'gacha_history',
+                    rolls
+                });
+            } catch (error) {
+                console.error('🎰 Gacha history error:', error);
+            }
+            break;
+        }
+        
+        // ==================== PEBBLES (Premium Currency) ====================
+        case 'pebbles_deposit': {
+            // Player deposited SOL and wants Pebbles
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'NOT_AUTHENTICATED',
+                    message: 'Must be authenticated to deposit'
+                });
+                break;
+            }
+            
+            // Client sends either amountSol (preferred) or amountLamports
+            const { txSignature, amountSol, amountLamports } = message;
+            
+            if (!txSignature || (!amountSol && !amountLamports)) {
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'INVALID_REQUEST',
+                    message: 'Missing transaction signature or amount'
+                });
+                break;
+            }
+            
+            // Convert to SOL if lamports provided
+            const solAmount = amountSol || (Number(amountLamports) / 1_000_000_000);
+            
+            try {
+                const result = await pebbleService.depositPebbles(
+                    player.walletAddress,
+                    txSignature,
+                    solAmount,
+                    playerId
+                );
+                
+                if (result.success) {
+                    sendToPlayer(playerId, {
+                        type: 'pebbles_deposited',
+                        pebbles: result.newBalance,
+                        pebblesAwarded: result.pebblesReceived,
+                        solDeposited: result.solAmount
+                    });
+                } else {
+                    sendToPlayer(playerId, {
+                        type: 'pebbles_error',
+                        error: result.error,
+                        message: result.message || 'Deposit failed'
+                    });
+                }
+            } catch (error) {
+                console.error('🪨 Pebble deposit error:', error);
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'SERVER_ERROR',
+                    message: 'Failed to process deposit'
+                });
+            }
+            break;
+        }
+        
+        case 'pebbles_withdraw': {
+            // Player wants to withdraw Pebbles to SOL
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'NOT_AUTHENTICATED',
+                    message: 'Must be authenticated to withdraw'
+                });
+                break;
+            }
+            
+            const { pebbleAmount } = message;
+            
+            if (!pebbleAmount || pebbleAmount <= 0) {
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'INVALID_AMOUNT',
+                    message: 'Invalid withdrawal amount'
+                });
+                break;
+            }
+            
+            try {
+                const result = await pebbleService.withdrawPebbles(
+                    player.walletAddress,
+                    pebbleAmount,
+                    playerId
+                );
+                
+                if (result.success) {
+                    // Could be instant (completed) or queued (pending)
+                    if (result.status === 'completed') {
+                        sendToPlayer(playerId, {
+                            type: 'pebbles_withdrawn',
+                            status: 'completed',
+                            pebbles: result.newBalance,
+                            pebbleAmount: result.pebbleAmount,
+                            rakeAmount: result.rakeAmount,
+                            solReceived: result.solReceived,
+                            txSignature: result.txSignature
+                        });
+                    } else if (result.status === 'queued') {
+                        sendToPlayer(playerId, {
+                            type: 'pebbles_withdrawn',
+                            status: 'queued',
+                            pebbles: result.newBalance,
+                            pebbleAmount: result.pebbleAmount,
+                            rakeAmount: result.rakeAmount,
+                            solToReceive: result.solToReceive,
+                            withdrawalId: result.withdrawalId,
+                            queuePosition: result.queuePosition,
+                            message: result.message
+                        });
+                    }
+                } else {
+                    sendToPlayer(playerId, {
+                        type: 'pebbles_error',
+                        error: result.error,
+                        message: result.message || 'Withdrawal failed'
+                    });
+                }
+            } catch (error) {
+                console.error('🪨 Pebble withdrawal error:', error);
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'SERVER_ERROR',
+                    message: 'Failed to process withdrawal'
+                });
+            }
+            break;
+        }
+        
+        case 'pebbles_cancel_withdrawal': {
+            // Cancel a pending withdrawal and refund pebbles
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'NOT_AUTHENTICATED',
+                    message: 'Must be authenticated'
+                });
+                break;
+            }
+            
+            const { withdrawalId } = message;
+            if (!withdrawalId) {
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'MISSING_ID',
+                    message: 'Withdrawal ID required'
+                });
+                break;
+            }
+            
+            try {
+                const result = await pebbleService.cancelWithdrawal(player.walletAddress, withdrawalId);
+                
+                if (result.success) {
+                    sendToPlayer(playerId, {
+                        type: 'pebbles_withdrawal_cancelled',
+                        withdrawalId,
+                        refundedPebbles: result.refundedPebbles,
+                        pebbles: result.newBalance
+                    });
+                } else {
+                    sendToPlayer(playerId, {
+                        type: 'pebbles_error',
+                        error: result.error,
+                        message: result.message
+                    });
+                }
+            } catch (error) {
+                console.error('🪨 Cancel withdrawal error:', error);
+                sendToPlayer(playerId, {
+                    type: 'pebbles_error',
+                    error: 'SERVER_ERROR',
+                    message: 'Failed to cancel withdrawal'
+                });
+            }
+            break;
+        }
+        
+        case 'pebbles_withdrawals': {
+            // Get user's withdrawal history
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'pebbles_withdrawals',
+                    withdrawals: []
+                });
+                break;
+            }
+            
+            try {
+                const withdrawals = await pebbleService.getUserWithdrawals(player.walletAddress);
+                sendToPlayer(playerId, {
+                    type: 'pebbles_withdrawals',
+                    withdrawals
+                });
+            } catch (error) {
+                console.error('🪨 Get withdrawals error:', error);
+                sendToPlayer(playerId, {
+                    type: 'pebbles_withdrawals',
+                    withdrawals: [],
+                    error: 'Failed to fetch history'
+                });
+            }
+            break;
+        }
+        
+        case 'pebbles_balance': {
+            // Get current pebble balance
+            if (!player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'pebbles_balance',
+                    pebbles: 0
+                });
+                break;
+            }
+            
+            try {
+                const user = await userService.getUser(player.walletAddress);
+                sendToPlayer(playerId, {
+                    type: 'pebbles_balance',
+                    pebbles: user?.pebbles || 0,
+                    stats: user?.pebbleStats || null
+                });
+            } catch (error) {
+                console.error('🪨 Pebble balance error:', error);
+            }
+            break;
+        }
+        
+        case 'pebbles_info': {
+            // Get pebble exchange rates and limits
+            sendToPlayer(playerId, {
+                type: 'pebbles_info',
+                info: PebbleService.getExchangeInfo()
+            });
+            break;
+        }
+        
+        // ==================== INVENTORY (Cosmetic Management) ====================
+        case 'inventory_get': {
+            // Get user's full inventory with pagination and filters
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'inventory_data',
+                    items: [],
+                    total: 0,
+                    maxSlots: 150
+                });
+                break;
+            }
+            
+            const { page = 1, limit = 50, category, rarity, sortBy } = message;
+            
+            try {
+                const inventory = await OwnedCosmetic.getFullInventory(player.walletAddress, {
+                    page,
+                    limit: Math.min(limit, 100), // Cap at 100 per page
+                    category,
+                    rarity,
+                    sortBy
+                });
+                
+                const user = await userService.getUser(player.walletAddress);
+                
+                sendToPlayer(playerId, {
+                    type: 'inventory_data',
+                    items: inventory.items,
+                    total: inventory.total,
+                    page: inventory.page,
+                    hasMore: inventory.hasMore,
+                    maxSlots: user?.maxInventorySlots || 150,
+                    upgradeInfo: user?.getInventoryUpgradeInfo() || null
+                });
+            } catch (error) {
+                console.error('📦 Inventory get error:', error);
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'SERVER_ERROR',
+                    message: 'Failed to fetch inventory'
+                });
+            }
+            break;
+        }
+        
+        case 'inventory_stats': {
+            // Get inventory statistics
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, { type: 'inventory_stats', stats: null });
+                break;
+            }
+            
+            try {
+                const stats = await OwnedCosmetic.getInventoryStats(player.walletAddress);
+                const user = await userService.getUser(player.walletAddress);
+                
+                sendToPlayer(playerId, {
+                    type: 'inventory_stats',
+                    stats,
+                    currentSlots: stats.totalItems,
+                    maxSlots: user?.maxInventorySlots || 150,
+                    upgradeInfo: user?.getInventoryUpgradeInfo() || null
+                });
+            } catch (error) {
+                console.error('📦 Inventory stats error:', error);
+            }
+            break;
+        }
+        
+        case 'inventory_burn': {
+            // Burn a cosmetic for gold
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'NOT_AUTHENTICATED',
+                    message: 'Must be authenticated to burn items'
+                });
+                break;
+            }
+            
+            const { instanceId } = message;
+            
+            if (!instanceId) {
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'MISSING_INSTANCE_ID',
+                    message: 'Item instance ID required'
+                });
+                break;
+            }
+            
+            try {
+                const result = await OwnedCosmetic.burnForGold(instanceId, player.walletAddress);
+                
+                if (result.success) {
+                    // Award gold to user
+                    const goldResult = await userService.addCoins(
+                        player.walletAddress,
+                        result.goldAwarded,
+                        'cosmetic_burn',
+                        { 
+                            instanceId,
+                            templateId: result.item.templateId,
+                            name: result.item.name,
+                            rarity: result.item.rarity,
+                            quality: result.item.quality,
+                            isHolographic: result.item.isHolographic,
+                            isFirstEdition: result.item.isFirstEdition,
+                            serialNumber: result.item.serialNumber
+                        },
+                        `Burned ${result.item.name} #${result.item.serialNumber} for gold`
+                    );
+                    
+                    // Log transaction
+                    await Transaction.record({
+                        type: 'cosmetic_burn',
+                        toWallet: player.walletAddress,
+                        amount: result.goldAwarded,
+                        currency: 'coins',
+                        relatedData: {
+                            cosmeticInstanceId: instanceId,
+                            cosmeticTemplateId: result.item.templateId
+                        },
+                        reason: `Burned ${result.item.quality}${result.item.isHolographic ? ' Holo' : ''} ${result.item.name}${result.item.isFirstEdition ? ' (FE)' : ''} #${result.item.serialNumber}`
+                    });
+                    
+                    // Get updated inventory count
+                    const user = await userService.getUser(player.walletAddress);
+                    const inventoryCount = await user.getInventoryCount();
+                    
+                    sendToPlayer(playerId, {
+                        type: 'inventory_burned',
+                        success: true,
+                        goldAwarded: result.goldAwarded,
+                        newCoins: goldResult.newBalance,
+                        burnedItem: result.item,
+                        inventoryCount,
+                        maxSlots: user?.maxInventorySlots || 150
+                    });
+                    
+                    // Update coins in HUD
+                    sendToPlayer(playerId, {
+                        type: 'coins_update',
+                        coins: goldResult.newBalance,
+                        isAuthenticated: true
+                    });
+                } else {
+                    sendToPlayer(playerId, {
+                        type: 'inventory_error',
+                        error: result.error,
+                        message: result.message || 'Failed to burn item'
+                    });
+                }
+            } catch (error) {
+                console.error('📦 Inventory burn error:', error);
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'SERVER_ERROR',
+                    message: 'Failed to burn item'
+                });
+            }
+            break;
+        }
+        
+        case 'inventory_upgrade': {
+            // Upgrade inventory slots (costs SOL, paid to rake wallet)
+            const INVENTORY_UPGRADE_SOL = 1; // 1 SOL per upgrade
+            const INVENTORY_UPGRADE_SLOTS = 200; // +200 slots per upgrade
+            
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'NOT_AUTHENTICATED',
+                    message: 'Must be authenticated to upgrade'
+                });
+                break;
+            }
+            
+            const { txSignature, solAmount } = data;
+            
+            if (!txSignature) {
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'MISSING_TX',
+                    message: 'Transaction signature required'
+                });
+                break;
+            }
+            
+            if (solAmount !== INVENTORY_UPGRADE_SOL) {
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'INVALID_AMOUNT',
+                    message: `Expected ${INVENTORY_UPGRADE_SOL} SOL, got ${solAmount}`
+                });
+                break;
+            }
+            
+            try {
+                // Verify the transaction on-chain (same pattern as pebble deposits)
+                const txStatus = await solanaPaymentService.connection.getSignatureStatus(txSignature, { searchTransactionHistory: true });
+                
+                if (!txStatus || !txStatus.value) {
+                    sendToPlayer(playerId, {
+                        type: 'inventory_error',
+                        error: 'TX_NOT_FOUND',
+                        message: 'Transaction not found on-chain'
+                    });
+                    break;
+                }
+                
+                if (txStatus.value.err) {
+                    sendToPlayer(playerId, {
+                        type: 'inventory_error',
+                        error: 'TX_FAILED',
+                        message: 'Transaction failed on-chain'
+                    });
+                    break;
+                }
+                
+                if (txStatus.value.confirmationStatus !== 'confirmed' && txStatus.value.confirmationStatus !== 'finalized') {
+                    sendToPlayer(playerId, {
+                        type: 'inventory_error',
+                        error: 'TX_PENDING',
+                        message: 'Transaction still pending. Please wait and try again.'
+                    });
+                    break;
+                }
+                
+                // Transaction verified! Apply the upgrade
+                const user = await userService.getUser(player.walletAddress);
+                if (!user) {
+                    sendToPlayer(playerId, {
+                        type: 'inventory_error',
+                        error: 'USER_NOT_FOUND'
+                    });
+                    break;
+                }
+                
+                // Calculate new slots
+                const oldSlots = user.maxInventorySlots || 150;
+                const newSlots = oldSlots + INVENTORY_UPGRADE_SLOTS;
+                const upgradeLevel = Math.floor((newSlots - 150) / INVENTORY_UPGRADE_SLOTS);
+                
+                // Apply upgrade
+                user.maxInventorySlots = newSlots;
+                user.inventoryUpgrades = upgradeLevel;
+                await user.save();
+                
+                // Log transaction
+                await Transaction.record({
+                    type: 'inventory_upgrade',
+                    fromWallet: player.walletAddress,
+                    amount: INVENTORY_UPGRADE_SOL,
+                    currency: 'SOL',
+                    relatedData: {
+                        txSignature,
+                        oldSlots,
+                        newSlots,
+                        upgradeLevel
+                    },
+                    reason: `Upgraded inventory to ${newSlots} slots (${INVENTORY_UPGRADE_SOL} SOL)`
+                });
+                
+                console.log(`📦 ${player.name} upgraded inventory: ${oldSlots} → ${newSlots} slots (tx: ${txSignature.slice(0, 16)}...)`);
+                
+                sendToPlayer(playerId, {
+                    type: 'inventory_upgraded',
+                    success: true,
+                    newMaxSlots: newSlots,
+                    upgradeLevel,
+                    solSpent: INVENTORY_UPGRADE_SOL,
+                    txSignature
+                });
+                
+            } catch (error) {
+                console.error('📦 Inventory upgrade error:', error);
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'SERVER_ERROR',
+                    message: 'Failed to upgrade inventory'
+                });
+            }
+            break;
+        }
+        
+        case 'inventory_bulk_burn': {
+            // Burn multiple items at once
+            if (!player.isAuthenticated || !player.walletAddress) {
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'NOT_AUTHENTICATED'
+                });
+                break;
+            }
+            
+            const { instanceIds } = message;
+            
+            if (!instanceIds || !Array.isArray(instanceIds) || instanceIds.length === 0) {
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'INVALID_REQUEST',
+                    message: 'No items specified'
+                });
+                break;
+            }
+            
+            // Limit bulk burn to 50 items at once
+            const idsToProcess = instanceIds.slice(0, 50);
+            
+            try {
+                let totalGold = 0;
+                const burnedItems = [];
+                
+                for (const instanceId of idsToProcess) {
+                    const result = await OwnedCosmetic.burnForGold(instanceId, player.walletAddress);
+                    if (result.success) {
+                        totalGold += result.goldAwarded;
+                        burnedItems.push(result.item);
+                    }
+                }
+                
+                if (totalGold > 0) {
+                    // Award total gold
+                    const goldResult = await userService.addCoins(
+                        player.walletAddress,
+                        totalGold,
+                        'cosmetic_burn',
+                        { count: burnedItems.length },
+                        `Bulk burned ${burnedItems.length} items for gold`
+                    );
+                    
+                    // Log transaction
+                    await Transaction.record({
+                        type: 'cosmetic_burn',
+                        toWallet: player.walletAddress,
+                        amount: totalGold,
+                        currency: 'coins',
+                        reason: `Bulk burned ${burnedItems.length} cosmetics`
+                    });
+                    
+                    const user = await userService.getUser(player.walletAddress);
+                    const inventoryCount = await user.getInventoryCount();
+                    
+                    sendToPlayer(playerId, {
+                        type: 'inventory_bulk_burned',
+                        success: true,
+                        totalGold,
+                        itemsBurned: burnedItems.length,
+                        newCoins: goldResult.newBalance,
+                        inventoryCount,
+                        maxSlots: user?.maxInventorySlots || 150
+                    });
+                    
+                    sendToPlayer(playerId, {
+                        type: 'coins_update',
+                        coins: goldResult.newBalance,
+                        isAuthenticated: true
+                    });
+                } else {
+                    sendToPlayer(playerId, {
+                        type: 'inventory_error',
+                        error: 'NO_ITEMS_BURNED',
+                        message: 'No valid items to burn'
+                    });
+                }
+            } catch (error) {
+                console.error('📦 Bulk burn error:', error);
+                sendToPlayer(playerId, {
+                    type: 'inventory_error',
+                    error: 'SERVER_ERROR',
+                    message: 'Failed to burn items'
+                });
+            }
+            break;
+        }
+        
         // ==================== MINIGAME REWARDS ====================
         case 'minigame_reward': {
             // Server-authoritative single-player minigame rewards
@@ -4027,6 +4874,21 @@ setInterval(() => {
     const authenticated = Array.from(players.values()).filter(p => p.isAuthenticated).length;
     console.log(`📊 Players: ${players.size} (${authenticated} auth) | IPs: ${uniqueIPs} | DB: ${isDBConnected() ? '✓' : '✗'} | Rooms: ${Array.from(rooms.entries()).map(([id, set]) => `${id}:${set.size}`).join(', ') || 'none'}`);
 }, 60000);
+
+// Process pending pebble withdrawals (every 30 seconds)
+// This auto-fills queued withdrawals when the custodial wallet has funds
+setInterval(async () => {
+    if (!isDBConnected()) return;
+    
+    try {
+        const result = await pebbleService.processWithdrawalQueue(3); // Process up to 3 at a time
+        if (result.processed > 0) {
+            console.log(`🪨 Withdrawal queue: processed ${result.processed}, failed ${result.failed}`);
+        }
+    } catch (error) {
+        console.error('🪨 Withdrawal queue error:', error.message);
+    }
+}, 30000);
 
 // ==================== STARTUP ====================
 async function start() {

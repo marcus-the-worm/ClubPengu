@@ -4515,12 +4515,12 @@ const VoxelWorld = ({
         }
         
         const playerPos = posRef.current;
-        const playerCoins = userData?.coins || GameManager.getInstance().getCoins();
+        const playerPebbles = userData?.pebbles || 0; // Slot gacha uses Pebbles, not coins
         
         const interaction = slotMachineSystemRef.current.checkInteraction(
             playerPos.x,
             playerPos.z,
-            playerCoins,
+            playerPebbles,
             isAuthenticated
         );
         
@@ -5851,17 +5851,34 @@ const VoxelWorld = ({
                 }
             },
             onSlotResult: (data) => {
-                // Complete machine display
+                // Complete machine display with cosmetic result
                 if (slotMachineSystemRef.current) {
+                    // Build cosmetic result object for display
+                    const cosmeticResult = data.isDemo ? { 
+                        rarity: data.demoRarity || 'common',
+                        isDemo: true 
+                    } : {
+                        rarity: data.rarity,
+                        name: data.name,
+                        templateId: data.templateId,
+                        quality: data.quality,
+                        qualityDisplay: data.qualityDisplay,
+                        isHolographic: data.isHolographic,
+                        isFirstEdition: data.isFirstEdition,
+                        serialNumber: data.serialNumber,
+                        isDuplicate: data.isDuplicate,
+                        goldAwarded: data.goldAwarded
+                    };
+                    
                     slotMachineSystemRef.current.completeSpin(
                         data.machineId,
                         data.reels,
-                        data.payout,
+                        cosmeticResult,
                         data.isDemo
                     );
                 }
                 
-                // Trigger jackpot celebration if it's a jackpot!
+                // Trigger jackpot celebration if it's a jackpot (Legendary or better)!
                 if (data.isJackpot && jackpotCelebrationRef.current) {
                     jackpotCelebrationRef.current.triggerJackpot();
                 }
@@ -5877,12 +5894,25 @@ const VoxelWorld = ({
                 }
             },
             onSlotComplete: (data) => {
-                // Another player completed spinning - handled by onSlotResult for their machine
+                // Another player completed spinning - show their cosmetic result to spectators
                 if (slotMachineSystemRef.current && data.playerId !== playerId) {
+                    // Build cosmetic result object for spectator display
+                    const cosmeticResult = data.isDemo ? {
+                        rarity: data.demoRarity || 'common',
+                        isDemo: true
+                    } : {
+                        rarity: data.rarity,
+                        name: data.name,
+                        quality: data.quality,
+                        isHolographic: data.isHolographic,
+                        isFirstEdition: data.isFirstEdition,
+                        isDuplicate: data.isDuplicate
+                    };
+                    
                     slotMachineSystemRef.current.completeSpin(
                         data.machineId,
                         data.reels,
-                        data.payout,
+                        cosmeticResult,
                         data.isDemo
                     );
                 }

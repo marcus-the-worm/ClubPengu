@@ -43,8 +43,30 @@ const userSchema = new mongoose.Schema({
         default: 100,  // Starting coins
         min: 0
     },
+    
+    // ========== PEBBLES (Premium Currency for Gacha) ==========
+    pebbles: {
+        type: Number,
+        default: 0,  // New users start with 0 pebbles
+        min: 0
+    },
+    pebbleStats: {
+        totalDeposited: { type: Number, default: 0 },    // Lifetime pebbles bought
+        totalWithdrawn: { type: Number, default: 0 },    // Lifetime pebbles cashed out
+        totalSpent: { type: Number, default: 0 },        // Lifetime pebbles spent (gacha, etc.)
+        totalRakePaid: { type: Number, default: 0 },     // 5% rake on withdrawals
+        lastDepositAt: Date,
+        lastWithdrawalAt: Date
+    },
 
+    // ========== INVENTORY SYSTEM ==========
+    inventorySlots: { type: Number, default: 150 },       // Base inventory size
+    inventoryUpgrades: { type: Number, default: 0 },      // Number of upgrades purchased
+    maxInventorySlots: { type: Number, default: 150 },    // Computed: 150 + (upgrades * 50)
+    
     // ========== UNLOCKS (Anti-Cheat Critical) ==========
+    // Note: unlockedCosmetics/Mounts are for PROMO items only
+    // Gacha items are tracked in OwnedCosmetic collection
     unlockedCosmetics: {
         type: [String],
         default: ['none']
@@ -141,6 +163,28 @@ const userSchema = new mongoose.Schema({
             igloo9: { type: Number, default: 0 },
             igloo10: { type: Number, default: 0 },
             totalIglooTime: { type: Number, default: 0 }
+        },
+        // ========== GACHA STATS ==========
+        gacha: {
+            totalRolls: { type: Number, default: 0 },
+            totalPebblesSpent: { type: Number, default: 0 },
+            rarestRarity: { type: String, default: null },
+            divineCount: { type: Number, default: 0 },
+            mythicCount: { type: Number, default: 0 },
+            legendaryCount: { type: Number, default: 0 },
+            epicCount: { type: Number, default: 0 },
+            rareCount: { type: Number, default: 0 },
+            holoCount: { type: Number, default: 0 },
+            firstEditionCount: { type: Number, default: 0 },
+            goldFromDupes: { type: Number, default: 0 },
+            firstRollAt: Date,
+            lastRollAt: Date,
+            // Pity counters - track consecutive rolls without hitting rarity
+            pity: {
+                rollsSinceRare: { type: Number, default: 0 },
+                rollsSinceEpic: { type: Number, default: 0 },
+                rollsSinceLegendary: { type: Number, default: 0 }
+            }
         }
     },
 
@@ -546,6 +590,7 @@ userSchema.methods.isEstablishedUser = function() {
 
 /**
  * Get full user data (for authenticated user only)
+ * This is synchronous - for gacha items, use getFullDataAsync
  */
 userSchema.methods.getFullData = function() {
     const isEstablished = this.isEstablishedUser();
@@ -556,6 +601,7 @@ userSchema.methods.getFullData = function() {
         characterType: this.characterType,
         customization: this.customization,
         coins: this.coins,
+        pebbles: this.pebbles,
         unlockedCosmetics: this.unlockedCosmetics,
         unlockedMounts: this.unlockedMounts,
         unlockedCharacters: this.unlockedCharacters,
@@ -563,6 +609,8 @@ userSchema.methods.getFullData = function() {
         inventory: this.inventory,
         stats: this.stats,
         gameStats: this.gameStats,
+        pebbleStats: this.pebbleStats,
+        gachaStats: this.gachaStats,
         settings: this.settings,
         lastRoom: this.lastRoom,
         lastPosition: this.lastPosition,
@@ -571,6 +619,64 @@ userSchema.methods.getFullData = function() {
         canChangeUsername: this.canChangeUsername(),
         isEstablishedUser: isEstablished  // Tells client if user has entered world before
     };
+};
+
+/**
+ * Get full user data including gacha-owned cosmetic IDs
+ * Call this when you need to include owned gacha items
+ */
+userSchema.methods.getFullDataAsync = async function() {
+    const baseData = this.getFullData();
+    
+    // Fetch gacha-owned cosmetic template IDs
+    try {
+        const OwnedCosmetic = mongoose.model('OwnedCosmetic');
+        const ownedGacha = await OwnedCosmetic.find(
+            { ownerId: this.walletAddress, convertedToGold: false },
+            'templateId'
+        ).lean();
+        
+        // Get unique template IDs
+        const gachaOwnedIds = [...new Set(ownedGacha.map(c => c.templateId))];
+        
+        return {
+            ...baseData,
+            gachaOwnedCosmetics: gachaOwnedIds
+        };
+    } catch (error) {
+        console.error('Error fetching gacha-owned cosmetics:', error);
+        return {
+            ...baseData,
+            gachaOwnedCosmetics: []
+        };
+    }
+};
+
+/**
+ * Add pebbles with validation
+ */
+userSchema.methods.addPebbles = function(amount, reason = 'unknown') {
+    if (amount < 0 && this.pebbles + amount < 0) {
+        return { success: false, error: 'INSUFFICIENT_PEBBLES' };
+    }
+    
+    this.pebbles += amount;
+    
+    if (amount > 0) {
+        this.pebbleStats.totalDeposited += amount;
+        this.pebbleStats.lastDepositAt = new Date();
+    } else {
+        this.pebbleStats.totalSpent += Math.abs(amount);
+    }
+    
+    return { success: true, newBalance: this.pebbles };
+};
+
+/**
+ * Check if user has enough pebbles
+ */
+userSchema.methods.hasPebbles = function(amount) {
+    return this.pebbles >= amount;
 };
 
 /**
@@ -665,6 +771,92 @@ userSchema.methods.updateCustomization = function(customization) {
     if (customization.mount) this.customization.mount = customization.mount;
     if (customization.characterType) this.characterType = customization.characterType;
     return true;
+};
+
+// ==================== INVENTORY METHODS ====================
+
+/**
+ * Get current inventory count (non-burned items)
+ */
+userSchema.methods.getInventoryCount = async function() {
+    const OwnedCosmetic = mongoose.model('OwnedCosmetic');
+    return await OwnedCosmetic.countDocuments({ 
+        ownerId: this.walletAddress, 
+        convertedToGold: false 
+    });
+};
+
+/**
+ * Check if user has space for more items
+ */
+userSchema.methods.hasInventorySpace = async function() {
+    const count = await this.getInventoryCount();
+    return count < this.maxInventorySlots;
+};
+
+/**
+ * Get remaining inventory slots
+ */
+userSchema.methods.getRemainingSlots = async function() {
+    const count = await this.getInventoryCount();
+    return Math.max(0, this.maxInventorySlots - count);
+};
+
+/**
+ * Upgrade inventory slots (costs gold)
+ * @returns {object} - { success, newMaxSlots, goldSpent, error }
+ */
+userSchema.methods.upgradeInventory = async function() {
+    const UPGRADE_COST = 5000;      // Gold per upgrade
+    const SLOTS_PER_UPGRADE = 50;   // Slots gained per upgrade
+    const MAX_UPGRADES = 10;        // Max 150 + (10 * 50) = 650 slots
+    
+    if (this.inventoryUpgrades >= MAX_UPGRADES) {
+        return { success: false, error: 'MAX_UPGRADES_REACHED', message: 'Already at maximum inventory size (650 slots)' };
+    }
+    
+    if (this.coins < UPGRADE_COST) {
+        return { success: false, error: 'INSUFFICIENT_GOLD', message: `Need ${UPGRADE_COST} gold (have ${this.coins})` };
+    }
+    
+    // Deduct gold
+    this.coins -= UPGRADE_COST;
+    this.stats.economy.totalCoinsSpent += UPGRADE_COST;
+    
+    // Add slots
+    this.inventoryUpgrades += 1;
+    this.maxInventorySlots = 150 + (this.inventoryUpgrades * SLOTS_PER_UPGRADE);
+    
+    await this.save();
+    
+    return { 
+        success: true, 
+        newMaxSlots: this.maxInventorySlots, 
+        upgradeLevel: this.inventoryUpgrades,
+        goldSpent: UPGRADE_COST,
+        newCoins: this.coins
+    };
+};
+
+/**
+ * Get inventory upgrade info
+ */
+userSchema.methods.getInventoryUpgradeInfo = function() {
+    const UPGRADE_COST = 5000;
+    const SLOTS_PER_UPGRADE = 50;
+    const MAX_UPGRADES = 10;
+    
+    return {
+        currentSlots: this.maxInventorySlots,
+        upgradeLevel: this.inventoryUpgrades,
+        maxUpgradeLevel: MAX_UPGRADES,
+        canUpgrade: this.inventoryUpgrades < MAX_UPGRADES,
+        upgradeCost: UPGRADE_COST,
+        slotsPerUpgrade: SLOTS_PER_UPGRADE,
+        nextSlots: this.inventoryUpgrades < MAX_UPGRADES 
+            ? this.maxInventorySlots + SLOTS_PER_UPGRADE 
+            : this.maxInventorySlots
+    };
 };
 
 const User = mongoose.model('User', userSchema);

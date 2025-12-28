@@ -251,7 +251,7 @@ x403 Protocol - Learn more: https://github.com/ByrgerBib/webx403`;
 
             return {
                 token,
-                user: user.getFullData(),
+                user: await user.getFullDataAsync(),
                 isNewUser
             };
         } catch (error) {

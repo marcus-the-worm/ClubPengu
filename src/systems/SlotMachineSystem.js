@@ -1,26 +1,37 @@
 /**
- * SlotMachineSystem - Client-side slot machine interaction and spectator display
+ * SlotMachineSystem - Cosmetic Gacha Slot Machines
  * 
  * Features:
- * - One spectator bubble per slot MACHINE (not per player)
- * - Bubble appears above the slot machine when in use
- * - Fast, smooth spinning animations
- * - Jackpot celebration effects
+ * - Displays cosmetic gacha rolls with rarity animations
+ * - Uses Pebbles as currency (not gold coins)
+ * - Spectator bubbles above machines when in use
+ * - Jackpot celebrations for Legendary+ drops
  */
 
-const SPIN_COST = 10;
+const SPIN_COST = 25; // Pebbles per roll
 const INTERACTION_RADIUS = 3;
 const BUBBLE_HEIGHT_ABOVE_MACHINE = 7;
-const RESULT_DISPLAY_TIME = 3000;
+const RESULT_DISPLAY_TIME = 4000;
 const MAX_CONCURRENT_SPINS = 2;
 
-// Symbols for display
-const SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '🔔', '⭐', '💎', '7️⃣'];
+// Rarity symbols for display
+const RARITY_SYMBOLS = {
+    common:    { emoji: '⚪', color: '#9CA3AF', name: 'Common', bgColor: 'rgba(156, 163, 175, 0.3)' },
+    uncommon:  { emoji: '🟢', color: '#22C55E', name: 'Uncommon', bgColor: 'rgba(34, 197, 94, 0.3)' },
+    rare:      { emoji: '🔵', color: '#3B82F6', name: 'Rare', bgColor: 'rgba(59, 130, 246, 0.3)' },
+    epic:      { emoji: '🟣', color: '#A855F7', name: 'Epic', bgColor: 'rgba(168, 85, 247, 0.3)' },
+    legendary: { emoji: '🟡', color: '#F59E0B', name: 'Legendary', bgColor: 'rgba(245, 158, 11, 0.3)' },
+    mythic:    { emoji: '🔴', color: '#EF4444', name: 'Mythic', bgColor: 'rgba(239, 68, 68, 0.3)' },
+    divine:    { emoji: '✨', color: '#FFFFFF', name: 'Divine', bgColor: 'rgba(255, 255, 255, 0.4)' }
+};
 
-// Performance optimization settings
-const UPDATE_THROTTLE_MS = 50; // Only update every 50ms (20fps for animations)
-const PARTICLE_COUNT = 25; // Reduced from 50
-const CULL_DISTANCE = 60; // Don't animate machines further than this
+// Spinning symbols - rarity emojis
+const SYMBOLS = ['⚪', '🟢', '🔵', '🟣', '🟡', '🔴', '✨'];
+
+// Performance settings
+const UPDATE_THROTTLE_MS = 50;
+const PARTICLE_COUNT = 25;
+const CULL_DISTANCE = 60;
 
 class SlotMachineSystem {
     constructor(THREE, scene) {
@@ -31,22 +42,17 @@ class SlotMachineSystem {
         this.nearbyMachine = null;
         this.localSpinningMachines = new Set();
         
-        // Performance tracking
         this.lastUpdateTime = 0;
         this.playerPosition = { x: 0, z: 0 };
         this.frameCount = 0;
     }
     
-    /**
-     * Update player position for distance-based culling
-     */
     setPlayerPosition(x, z) {
         this.playerPosition.x = x;
         this.playerPosition.z = z;
     }
     
     initForCasino(roomWidth, roomDepth, scene) {
-        // Update scene reference to prevent stale reference after room transitions
         if (scene) {
             this.scene = scene;
         }
@@ -74,7 +80,7 @@ class SlotMachineSystem {
         });
     }
     
-    checkInteraction(playerX, playerZ, playerCoins, isAuthenticated) {
+    checkInteraction(playerX, playerZ, playerPebbles, isAuthenticated) {
         let nearestMachine = null;
         let nearestDist = Infinity;
         
@@ -96,13 +102,13 @@ class SlotMachineSystem {
         const machineInUse = display && display.state !== 'idle';
         const atMaxSpins = this.localSpinningMachines.size >= MAX_CONCURRENT_SPINS;
         
-        let prompt = `Press E to Spin - Cost: ${SPIN_COST}g`;
+        let prompt = `Press E to Roll - ${SPIN_COST} 🪨 Pebbles`;
         let canSpin = true;
         let reason = null;
         let isDemo = false;
         
         if (machineInUse) {
-            prompt = `${display.playerName || 'Someone'} is playing...`;
+            prompt = `${display.playerName || 'Someone'} is rolling...`;
             canSpin = false;
             reason = 'MACHINE_IN_USE';
         } else if (atMaxSpins) {
@@ -113,10 +119,10 @@ class SlotMachineSystem {
             prompt = '🎰 FREE DEMO! Press E';
             canSpin = true;
             isDemo = true;
-        } else if (playerCoins < SPIN_COST) {
-            prompt = `Need ${SPIN_COST}g (you have ${playerCoins}g)`;
+        } else if ((playerPebbles || 0) < SPIN_COST) {
+            prompt = `Need ${SPIN_COST}🪨 (you have ${playerPebbles || 0}🪨)`;
             canSpin = false;
-            reason = 'INSUFFICIENT_FUNDS';
+            reason = 'INSUFFICIENT_PEBBLES';
         }
         
         return { machine: nearestMachine, prompt, canSpin, reason, cost: isDemo ? 0 : SPIN_COST, isDemo };
@@ -144,28 +150,24 @@ class SlotMachineSystem {
             this.machineDisplays.set(machineId, display);
         }
         
-        // Clear any existing timeout
         if (display.timeout) {
             clearTimeout(display.timeout);
             display.timeout = null;
         }
         
-        // INSTANT display - show immediately
         display.playerName = playerName;
         display.isDemo = isDemo;
         display.state = 'spinning';
         display.reels = [null, null, null];
         display.revealedReels = 0;
-        display.payout = null;
+        display.cosmeticResult = null;
         display.spinStartTime = Date.now();
         display.sprite.visible = true;
         display.isJackpot = false;
-        
-        console.log('🎰 Display ready, visible:', display.sprite.visible, 'pos:', display.sprite.position.toArray());
         display.jackpotParticles = [];
         
+        console.log('🎰 Display ready, visible:', display.sprite.visible);
         this.drawMachineDisplay(machineId);
-        // No safety timeout - server handles timing
     }
     
     handleRemoteSpinStart(machineId, playerName, isDemo = false) {
@@ -179,7 +181,6 @@ class SlotMachineSystem {
             this.machineDisplays.set(machineId, display);
         }
         
-        // Clear any existing timeout
         if (display.timeout) {
             clearTimeout(display.timeout);
             display.timeout = null;
@@ -190,28 +191,26 @@ class SlotMachineSystem {
         display.state = 'spinning';
         display.reels = [null, null, null];
         display.revealedReels = 0;
-        display.payout = null;
+        display.cosmeticResult = null;
         display.spinStartTime = Date.now();
         display.sprite.visible = true;
         display.isJackpot = false;
         display.jackpotParticles = [];
         
         this.drawMachineDisplay(machineId);
-        // No safety timeout - server handles timing
     }
     
     createMachineDisplay(machine) {
         const THREE = this.THREE;
         
-        // Validate scene exists
         if (!this.scene) {
-            console.warn('🎰 SlotMachineSystem: No scene reference, cannot create display');
+            console.warn('🎰 SlotMachineSystem: No scene reference');
             return null;
         }
         
         const canvas = document.createElement('canvas');
         canvas.width = 420;
-        canvas.height = 300;
+        canvas.height = 340; // Slightly taller for cosmetic info
         const ctx = canvas.getContext('2d');
         
         const texture = new THREE.CanvasTexture(canvas);
@@ -224,7 +223,7 @@ class SlotMachineSystem {
         });
         
         const sprite = new THREE.Sprite(material);
-        sprite.scale.set(7, 5, 1);
+        sprite.scale.set(7, 5.5, 1);
         sprite.renderOrder = 1000;
         sprite.visible = false;
         sprite.position.set(machine.x, BUBBLE_HEIGHT_ABOVE_MACHINE, machine.z);
@@ -241,7 +240,7 @@ class SlotMachineSystem {
             state: 'idle',
             reels: [null, null, null],
             revealedReels: 0,
-            payout: null,
+            cosmeticResult: null,
             spinStartTime: 0,
             isJackpot: false,
             jackpotParticles: [],
@@ -249,87 +248,82 @@ class SlotMachineSystem {
         };
     }
     
-    revealReel(machineId, reelIndex, symbol) {
+    revealReel(machineId, reelIndex, symbol, rarity) {
         let display = this.machineDisplays.get(machineId);
         
-        // If display doesn't exist, create it (handles WebGL context restore)
         if (!display) {
             const machine = this.slotMachines.find(m => m.id === machineId);
             if (!machine) return;
             
             display = this.createMachineDisplay(machine);
-            if (!display) return; // Failed to create display
+            if (!display) return;
             display.state = 'spinning';
             display.sprite.visible = true;
             this.machineDisplays.set(machineId, display);
         }
         
-        display.reels[reelIndex] = symbol;
+        // Store the symbol data with rarity info
+        display.reels[reelIndex] = symbol || RARITY_SYMBOLS[rarity] || RARITY_SYMBOLS.common;
         display.revealedReels = Math.max(display.revealedReels, reelIndex + 1);
         this.drawMachineDisplay(machineId);
     }
     
-    completeSpin(machineId, reels, payout, isDemo = false) {
+    completeSpin(machineId, reels, cosmeticResult, isDemo = false) {
         let display = this.machineDisplays.get(machineId);
         
-        // If display doesn't exist, create it (handles WebGL context restore)
         if (!display) {
             const machine = this.slotMachines.find(m => m.id === machineId);
-            if (!machine) return; // Unknown machine, ignore
+            if (!machine) return;
             
             display = this.createMachineDisplay(machine);
-            if (!display) return; // Failed to create display
+            if (!display) return;
             this.machineDisplays.set(machineId, display);
         }
         
-        // Clear safety timeout
         if (display.timeout) {
             clearTimeout(display.timeout);
             display.timeout = null;
         }
         
-        display.reels = reels;
+        display.reels = reels || display.reels;
         display.revealedReels = 3;
-        display.payout = payout;
+        display.cosmeticResult = cosmeticResult;
         display.isDemo = isDemo;
         display.state = 'result';
         display.sprite.visible = true;
         
-        // Check for jackpot - triple 7s specifically, or any huge win (1000+ coins)
-        const isTripleSevens = reels && reels.length === 3 && 
-            reels.every(r => r && (r.id === 'seven' || r.emoji === '7️⃣'));
-        const isHugeWin = payout && payout.coins >= 500;
-        const isJackpot = isTripleSevens || isHugeWin;
+        // Jackpot for Legendary or better
+        const isJackpot = cosmeticResult && 
+            ['legendary', 'mythic', 'divine'].includes(cosmeticResult.rarity);
         display.isJackpot = isJackpot;
         
         if (isJackpot) {
-            console.log('🎰💰 JACKPOT on bubble!', reels?.map(r => r?.emoji).join(' '));
-        }
-        
-        if (isJackpot) {
+            console.log('🎰✨ JACKPOT!', cosmeticResult.rarity, cosmeticResult.name);
             this.startJackpotCelebration(machineId);
         }
         
         this.drawMachineDisplay(machineId);
         this.localSpinningMachines.delete(machineId);
         
+        // Hide after delay
         setTimeout(() => {
             if (display.state === 'result') {
                 display.state = 'idle';
                 display.sprite.visible = false;
                 display.isJackpot = false;
                 display.jackpotParticles = [];
+                display.cosmeticResult = null;
             }
-        }, isJackpot ? 5000 : RESULT_DISPLAY_TIME);
+        }, isJackpot ? 6000 : RESULT_DISPLAY_TIME);
     }
     
     startJackpotCelebration(machineId) {
         const display = this.machineDisplays.get(machineId);
         if (!display) return;
         
-        // Create particle data for canvas animation (reduced count for performance)
         display.jackpotParticles = [];
-        const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#FFE66D', '#FF9F1C'];
+        const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#FFE66D', '#FF9F1C', '#A855F7'];
+        
         for (let i = 0; i < PARTICLE_COUNT; i++) {
             display.jackpotParticles.push({
                 x: Math.random() * display.canvas.width,
@@ -340,7 +334,7 @@ class SlotMachineSystem {
                 color: colors[i % colors.length],
                 rotation: Math.random() * Math.PI * 2,
                 rotationSpeed: (Math.random() - 0.5) * 0.2,
-                type: i % 2 === 0 ? 'star' : 'coin'
+                type: i % 3 === 0 ? 'star' : i % 3 === 1 ? 'gem' : 'sparkle'
             });
         }
     }
@@ -358,18 +352,19 @@ class SlotMachineSystem {
         const display = this.machineDisplays.get(machineId);
         if (!display) return;
         
-        const { ctx, canvas, texture, playerName, isDemo, state, reels, revealedReels, payout, isJackpot, jackpotParticles } = display;
+        const { ctx, canvas, texture, playerName, isDemo, state, reels, revealedReels, cosmeticResult, isJackpot, jackpotParticles } = display;
         const W = canvas.width;
         const H = canvas.height;
         
         ctx.clearRect(0, 0, W, H);
         
-        // Background
+        // Background with rarity-based color
         const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-        if (isJackpot) {
-            bgGrad.addColorStop(0, 'rgba(80, 40, 120, 0.98)');
-            bgGrad.addColorStop(0.5, 'rgba(120, 60, 160, 0.98)');
-            bgGrad.addColorStop(1, 'rgba(60, 30, 100, 0.98)');
+        if (isJackpot && cosmeticResult) {
+            const rarityColor = RARITY_SYMBOLS[cosmeticResult.rarity]?.color || '#FFD700';
+            bgGrad.addColorStop(0, `rgba(80, 40, 120, 0.98)`);
+            bgGrad.addColorStop(0.5, `rgba(120, 60, 160, 0.98)`);
+            bgGrad.addColorStop(1, `rgba(60, 30, 100, 0.98)`);
         } else {
             bgGrad.addColorStop(0, 'rgba(40, 20, 80, 0.98)');
             bgGrad.addColorStop(1, 'rgba(20, 10, 50, 0.98)');
@@ -378,8 +373,8 @@ class SlotMachineSystem {
         this.roundRect(ctx, 4, 4, W - 8, H - 8, 16);
         ctx.fill();
         
-        // Border with glow
-        const borderColor = isJackpot ? '#FFD700' : (isDemo ? '#22C55E' : '#8B5CF6');
+        // Border
+        const borderColor = isJackpot ? '#FFD700' : (isDemo ? '#22C55E' : '#A855F7');
         ctx.shadowColor = borderColor;
         ctx.shadowBlur = isJackpot ? 30 : 15;
         ctx.strokeStyle = borderColor;
@@ -390,23 +385,28 @@ class SlotMachineSystem {
         
         // Header
         ctx.fillStyle = borderColor;
-        ctx.font = 'bold 22px "Segoe UI", Arial';
+        ctx.font = 'bold 20px "Segoe UI", Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
         if (isJackpot) {
-            ctx.fillText(`🎉 ${playerName} 🎉`, W / 2, 32);
+            ctx.fillText(`✨ ${playerName} ✨`, W / 2, 28);
         } else if (isDemo) {
-            ctx.fillText(`🎁 ${playerName} [DEMO]`, W / 2, 32);
+            ctx.fillText(`🎁 ${playerName} [DEMO]`, W / 2, 28);
         } else {
-            ctx.fillText(`🎰 ${playerName}`, W / 2, 32);
+            ctx.fillText(`🎰 ${playerName}`, W / 2, 28);
         }
+        
+        // Title
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 14px "Segoe UI", Arial';
+        ctx.fillText('COSMETIC GACHA', W / 2, 48);
         
         // Reel container
         const reelContainerX = 25;
-        const reelContainerY = 55;
+        const reelContainerY = 60;
         const reelContainerW = W - 50;
-        const reelContainerH = 140;
+        const reelContainerH = 110;
         
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         this.roundRect(ctx, reelContainerX, reelContainerY, reelContainerW, reelContainerH, 12);
@@ -414,7 +414,7 @@ class SlotMachineSystem {
         
         // Reels
         const reelW = 100;
-        const reelH = 120;
+        const reelH = 90;
         const reelGap = 20;
         const totalReelW = reelW * 3 + reelGap * 2;
         const reelStartX = (W - totalReelW) / 2;
@@ -432,13 +432,22 @@ class SlotMachineSystem {
             this.roundRect(ctx, rx, reelY, reelW, reelH, 10);
             ctx.fill();
             
-            // Reel border
-            ctx.strokeStyle = isJackpot && state === 'result' ? '#FFD700' : '#3a2a5e';
-            ctx.lineWidth = isJackpot && state === 'result' ? 3 : 2;
+            // Reel border with rarity color on result
+            let reelBorderColor = '#3a2a5e';
+            if (state === 'result' && reels[r]) {
+                const rarity = Object.keys(RARITY_SYMBOLS).find(k => 
+                    RARITY_SYMBOLS[k].emoji === reels[r].emoji
+                );
+                if (rarity) {
+                    reelBorderColor = RARITY_SYMBOLS[rarity].color;
+                }
+            }
+            ctx.strokeStyle = reelBorderColor;
+            ctx.lineWidth = state === 'result' ? 3 : 2;
             this.roundRect(ctx, rx, reelY, reelW, reelH, 10);
             ctx.stroke();
             
-            ctx.font = '64px Arial';
+            ctx.font = '52px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             
@@ -446,18 +455,18 @@ class SlotMachineSystem {
             const centerY = reelY + reelH / 2;
             
             if (r < revealedReels && reels[r]) {
-                // Revealed symbol
+                // Revealed symbol with glow
                 if (isJackpot && state === 'result') {
-                    ctx.shadowColor = '#FFD700';
+                    ctx.shadowColor = RARITY_SYMBOLS[cosmeticResult?.rarity]?.color || '#FFD700';
                     ctx.shadowBlur = 20;
                 }
                 ctx.fillStyle = '#FFFFFF';
                 ctx.fillText(reels[r].emoji, centerX, centerY);
                 ctx.shadowBlur = 0;
             } else if (state === 'spinning') {
-                // OPTIMIZED spinning animation - fewer symbols, simpler math
-                const t = this.frameCount; // Use frame count instead of Date.now() for consistency
-                const speed = 3 - r; // Stagger speed per reel
+                // Spinning animation
+                const t = this.frameCount;
+                const speed = 3 - r;
                 const offset = (t * speed) % SYMBOLS.length;
                 
                 ctx.save();
@@ -465,10 +474,9 @@ class SlotMachineSystem {
                 this.roundRect(ctx, rx + 2, reelY + 2, reelW - 4, reelH - 4, 8);
                 ctx.clip();
                 
-                // Only draw 3 symbols instead of 5 for better performance
                 for (let s = -1; s <= 1; s++) {
                     const idx = Math.floor((offset + s + SYMBOLS.length * 10) % SYMBOLS.length);
-                    const yPos = centerY + s * 50 + ((t * speed * 12) % 50);
+                    const yPos = centerY + s * 40 + ((t * speed * 12) % 40);
                     const alpha = s === 0 ? 0.9 : 0.5;
                     ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
                     ctx.fillText(SYMBOLS[idx], centerX, yPos);
@@ -487,56 +495,79 @@ class SlotMachineSystem {
         ctx.stroke();
         ctx.setLineDash([]);
         
-        // Status area
-        const statusY = reelContainerY + reelContainerH + 15;
+        // Result area
+        const statusY = reelContainerY + reelContainerH + 10;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
-        if (state === 'result' && payout) {
-            if (isJackpot) {
-                // JACKPOT animation
-                const pulse = 1 + Math.sin(Date.now() / 100) * 0.15;
-                ctx.save();
-                ctx.translate(W / 2, statusY + 20);
-                ctx.scale(pulse, pulse);
-                ctx.fillStyle = '#FFD700';
-                ctx.shadowColor = '#FFD700';
-                ctx.shadowBlur = 30;
-                ctx.font = 'bold 32px "Segoe UI", Arial';
-                ctx.fillText(`💰 JACKPOT ${payout.coins}g! 💰`, 0, 0);
-                ctx.restore();
-                ctx.shadowBlur = 0;
-            } else if (isDemo && payout.hypotheticalWin > 0) {
-                ctx.fillStyle = '#FF6B6B';
-                ctx.font = 'bold 18px "Segoe UI", Arial';
-                ctx.fillText(`Would've won ${payout.hypotheticalWin}g!`, W / 2, statusY + 10);
+        if (state === 'result' && cosmeticResult) {
+            const rarityData = RARITY_SYMBOLS[cosmeticResult.rarity] || RARITY_SYMBOLS.common;
+            
+            if (isDemo) {
+                // Demo mode - no real win
+                ctx.fillStyle = '#22C55E';
+                ctx.font = 'bold 16px "Segoe UI", Arial';
+                ctx.fillText('Demo Roll Complete!', W / 2, statusY + 15);
                 ctx.fillStyle = '#FFD700';
                 ctx.font = 'bold 14px "Segoe UI", Arial';
-                ctx.fillText('🔑 Login to win real gold!', W / 2, statusY + 35);
-            } else if (payout.coins > 0) {
-                ctx.fillStyle = '#FFD700';
-                ctx.shadowColor = '#FFD700';
-                ctx.shadowBlur = 15;
-                ctx.font = 'bold 26px "Segoe UI", Arial';
-                ctx.fillText(`🎉 WIN ${payout.coins}g! 🎉`, W / 2, statusY + 20);
-                ctx.shadowBlur = 0;
-            } else if (isDemo) {
+                ctx.fillText('🪨 Get Pebbles to win cosmetics!', W / 2, statusY + 38);
                 ctx.fillStyle = '#888';
+                ctx.font = '12px "Segoe UI", Arial';
+                ctx.fillText('Click + button next to Pebbles', W / 2, statusY + 58);
+            } else if (cosmeticResult.isDuplicate) {
+                // Duplicate - converted to gold
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 18px "Segoe UI", Arial';
+                ctx.fillText(`${rarityData.emoji} Duplicate!`, W / 2, statusY + 15);
+                ctx.fillStyle = '#FCD34D';
                 ctx.font = '16px "Segoe UI", Arial';
-                ctx.fillText('No win this time', W / 2, statusY + 10);
-                ctx.fillStyle = '#FFD700';
-                ctx.font = 'bold 13px "Segoe UI", Arial';
-                ctx.fillText('🔑 Login to win for real!', W / 2, statusY + 32);
+                ctx.fillText(`+${cosmeticResult.goldAwarded}g Gold`, W / 2, statusY + 38);
             } else {
-                ctx.fillStyle = '#888';
-                ctx.font = '18px "Segoe UI", Arial';
-                ctx.fillText('No win - Try again!', W / 2, statusY + 20);
+                // New cosmetic win!
+                if (isJackpot) {
+                    const pulse = 1 + Math.sin(Date.now() / 100) * 0.1;
+                    ctx.save();
+                    ctx.translate(W / 2, statusY + 20);
+                    ctx.scale(pulse, pulse);
+                    ctx.fillStyle = rarityData.color;
+                    ctx.shadowColor = rarityData.color;
+                    ctx.shadowBlur = 20;
+                    ctx.font = 'bold 22px "Segoe UI", Arial';
+                    ctx.fillText(`${rarityData.emoji} ${rarityData.name.toUpperCase()}!`, 0, 0);
+                    ctx.restore();
+                    ctx.shadowBlur = 0;
+                } else {
+                    ctx.fillStyle = rarityData.color;
+                    ctx.font = 'bold 18px "Segoe UI", Arial';
+                    ctx.fillText(`${rarityData.emoji} ${rarityData.name}!`, W / 2, statusY + 15);
+                }
+                
+                // Item name
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = 'bold 14px "Segoe UI", Arial';
+                const itemName = cosmeticResult.name || cosmeticResult.templateId || 'New Item';
+                ctx.fillText(itemName, W / 2, statusY + (isJackpot ? 45 : 38));
+                
+                // Quality & attributes
+                let attrY = statusY + (isJackpot ? 65 : 55);
+                const attrs = [];
+                if (cosmeticResult.quality && cosmeticResult.quality !== 'standard') {
+                    attrs.push(cosmeticResult.qualityDisplay?.prefix || `(${cosmeticResult.quality})`);
+                }
+                if (cosmeticResult.isHolographic) attrs.push('✨HOLO');
+                if (cosmeticResult.isFirstEdition) attrs.push('⭐1st Ed');
+                
+                if (attrs.length > 0) {
+                    ctx.fillStyle = '#F472B6';
+                    ctx.font = '12px "Segoe UI", Arial';
+                    ctx.fillText(attrs.join(' • '), W / 2, attrY);
+                }
             }
         } else if (state === 'spinning') {
             const dots = '.'.repeat((Math.floor(Date.now() / 200) % 4));
-            ctx.fillStyle = '#88FF88';
-            ctx.font = 'bold 22px "Segoe UI", Arial';
-            ctx.fillText(`Spinning${dots}`, W / 2, statusY + 20);
+            ctx.fillStyle = '#A855F7';
+            ctx.font = 'bold 20px "Segoe UI", Arial';
+            ctx.fillText(`Rolling${dots}`, W / 2, statusY + 25);
         }
         
         // Draw jackpot particles
@@ -548,44 +579,42 @@ class SlotMachineSystem {
                 ctx.fillStyle = p.color;
                 
                 if (p.type === 'star') {
-                    this.drawStar(ctx, 0, 0, 5, p.size, p.size / 2);
+                    this.drawStar(ctx, 0, 0, p.size);
+                } else if (p.type === 'gem') {
+                    this.drawGem(ctx, 0, 0, p.size);
                 } else {
                     ctx.beginPath();
                     ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 ctx.restore();
-                
-                // Update particle
-                p.x += p.vx;
-                p.y += p.vy;
-                p.rotation += p.rotationSpeed;
-                p.vy += 0.1; // Gravity
             }
         }
         
         texture.needsUpdate = true;
     }
     
-    drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius) {
-        let rot = Math.PI / 2 * 3;
-        let x = cx;
-        let y = cy;
-        const step = Math.PI / spikes;
-        
+    drawStar(ctx, x, y, size) {
         ctx.beginPath();
-        ctx.moveTo(cx, cy - outerRadius);
-        for (let i = 0; i < spikes; i++) {
-            x = cx + Math.cos(rot) * outerRadius;
-            y = cy + Math.sin(rot) * outerRadius;
-            ctx.lineTo(x, y);
-            rot += step;
-            x = cx + Math.cos(rot) * innerRadius;
-            y = cy + Math.sin(rot) * innerRadius;
-            ctx.lineTo(x, y);
-            rot += step;
+        for (let i = 0; i < 5; i++) {
+            const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+            const r = i % 2 === 0 ? size : size / 2;
+            if (i === 0) {
+                ctx.moveTo(x + r * Math.cos(angle), y + r * Math.sin(angle));
+            } else {
+                ctx.lineTo(x + r * Math.cos(angle), y + r * Math.sin(angle));
+            }
         }
-        ctx.lineTo(cx, cy - outerRadius);
+        ctx.closePath();
+        ctx.fill();
+    }
+    
+    drawGem(ctx, x, y, size) {
+        ctx.beginPath();
+        ctx.moveTo(x, y - size);
+        ctx.lineTo(x + size * 0.7, y);
+        ctx.lineTo(x, y + size * 0.5);
+        ctx.lineTo(x - size * 0.7, y);
         ctx.closePath();
         ctx.fill();
     }
@@ -604,70 +633,77 @@ class SlotMachineSystem {
         ctx.closePath();
     }
     
-    update(time, delta) {
-        // Throttle updates for performance (20fps for slot animations is plenty smooth)
-        const now = Date.now();
-        if (now - this.lastUpdateTime < UPDATE_THROTTLE_MS) {
-            return;
-        }
-        this.lastUpdateTime = now;
+    update(time, delta, playerX, playerZ) {
         this.frameCount++;
+        this.playerPosition.x = playerX;
+        this.playerPosition.z = playerZ;
         
-        const px = this.playerPosition.x;
-        const pz = this.playerPosition.z;
-        
+        // Update active displays - NO throttle for animations!
         for (const [machineId, display] of this.machineDisplays) {
-            // Skip idle displays
-            if (display.state === 'idle') continue;
+            if (!display.sprite.visible) continue;
             
-            // Distance-based culling - skip distant machines (except for local player spins)
-            const isLocalSpin = this.localSpinningMachines.has(machineId);
-            if (!isLocalSpin) {
-                const dx = display.machineX - px;
-                const dz = display.machineZ - pz;
-                const distSq = dx * dx + dz * dz;
-                if (distSq > CULL_DISTANCE * CULL_DISTANCE) {
-                    // Too far - hide and skip update
+            // Distance culling (throttled check)
+            if (time - this.lastUpdateTime >= UPDATE_THROTTLE_MS) {
+                const dx = display.machineX - playerX;
+                const dz = display.machineZ - playerZ;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                
+                if (dist > CULL_DISTANCE) {
                     display.sprite.visible = false;
                     continue;
-                } else {
-                    display.sprite.visible = true;
                 }
             }
             
-            // Only update spinning or jackpot result displays
-            if (display.state === 'spinning' || (display.state === 'result' && display.isJackpot)) {
+            // Update spinning animation EVERY FRAME (smooth animation)
+            if (display.state === 'spinning') {
+                this.drawMachineDisplay(machineId);
+            }
+            
+            // Update jackpot particles EVERY FRAME
+            if (display.isJackpot && display.jackpotParticles.length > 0) {
+                for (const p of display.jackpotParticles) {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.rotation += p.rotationSpeed;
+                    
+                    // Reset particles that fall off
+                    if (p.y > display.canvas.height + 20) {
+                        p.x = Math.random() * display.canvas.width;
+                        p.y = -20;
+                        p.vy = 2 + Math.random() * 3;
+                    }
+                }
                 this.drawMachineDisplay(machineId);
             }
         }
-    }
-    
-    isMachineDisplayActive(machineId) {
-        const display = this.machineDisplays.get(machineId);
-        return display && display.state !== 'idle' && display.sprite.visible;
-    }
-    
-    isLocalSpinning() {
-        return this.localSpinningMachines.size > 0;
-    }
-    
-    getLocalSpinCount() {
-        return this.localSpinningMachines.size;
+        
+        // Update throttle timer for distance culling
+        if (time - this.lastUpdateTime >= UPDATE_THROTTLE_MS) {
+            this.lastUpdateTime = time;
+        }
     }
     
     cleanup() {
-        for (const [machineId, display] of this.machineDisplays) {
-            if (display.timeout) clearTimeout(display.timeout);
+        for (const [, display] of this.machineDisplays) {
             if (display.sprite && display.sprite.parent) {
                 display.sprite.parent.remove(display.sprite);
             }
-            if (display.material) display.material.dispose();
-            if (display.texture) display.texture.dispose();
+            if (display.material) {
+                display.material.dispose();
+            }
+            if (display.texture) {
+                display.texture.dispose();
+            }
         }
         this.machineDisplays.clear();
         this.localSpinningMachines.clear();
     }
+    
+    dispose() {
+        this.cleanup();
+    }
 }
 
+// Export for use in components
+export { SlotMachineSystem, SPIN_COST, RARITY_SYMBOLS };
 export default SlotMachineSystem;
-export { SPIN_COST, INTERACTION_RADIUS, SYMBOLS };

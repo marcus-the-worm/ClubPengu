@@ -70,7 +70,7 @@ export { default as LocalizedParticleSystem, PRESETS as LOCALIZED_PARTICLE_PRESE
 export { default as CameraController } from './CameraController';
 
 // Slot machine system (casino slots interaction and spectator bubbles)
-export { default as SlotMachineSystem, SPIN_COST as SLOT_SPIN_COST, SYMBOLS as SLOT_SYMBOLS } from './SlotMachineSystem';
+export { default as SlotMachineSystem, SPIN_COST as SLOT_SPIN_COST, RARITY_SYMBOLS as SLOT_RARITY_SYMBOLS } from './SlotMachineSystem';
 
 // Jackpot celebration system (disco ball, confetti, lasers)
 export { default as JackpotCelebration } from './JackpotCelebration';

@@ -86,7 +86,202 @@ const txTypeDisplay = {
     token_entry_fee: { label: 'Entry Fee (Token)', color: 'text-cyan-400', icon: '🎟️' },
     token_rent: { label: 'Igloo Rent (Token)', color: 'text-blue-400', icon: '🏠' },
     token_rent_renewal: { label: 'Rent Renewal (Token)', color: 'text-blue-400', icon: '🔄' },
-    token_transfer: { label: 'Token Transfer', color: 'text-gray-400', icon: '💸' }
+    token_transfer: { label: 'Token Transfer', color: 'text-gray-400', icon: '💸' },
+    // Pebble transactions
+    pebble_deposit: { label: 'Pebbles Purchased', color: 'text-purple-400', icon: '🪨' },
+    pebble_withdrawal: { label: 'Pebbles Withdrawn', color: 'text-orange-400', icon: '💸' },
+    pebble_rake: { label: 'Withdrawal Fee', color: 'text-red-400', icon: '🏦' },
+    // Gacha transactions
+    gacha_roll: { label: 'Gacha Roll', color: 'text-pink-400', icon: '🎰' },
+    gacha_dupe_gold: { label: 'Duplicate Gold', color: 'text-yellow-400', icon: '✨' }
+};
+
+// Transaction filter categories
+const txCategories = {
+    all: { label: 'All', icon: '📋' },
+    pebbles: { label: 'Pebbles', icon: '🪨', types: ['pebble_deposit', 'pebble_withdrawal', 'pebble_rake'] },
+    gacha: { label: 'Gacha', icon: '🎰', types: ['gacha_roll', 'gacha_dupe_gold', 'slot_spin', 'slot_payout'] },
+    wagers: { label: 'Wagers', icon: '🎲', types: ['wager_escrow', 'wager_payout', 'wager_refund', 'token_wager'] },
+    tokens: { label: 'Tokens', icon: '💎', types: ['token_wager', 'token_entry_fee', 'token_rent', 'token_rent_renewal', 'token_transfer'] },
+    rewards: { label: 'Rewards', icon: '🎁', types: ['chat_bonus', 'promo_bonus', 'starting_bonus', 'fishing_catch'] },
+    spending: { label: 'Spending', icon: '💸', types: ['purchase', 'puffle_adopt', 'fishing_bait', 'blackjack_bet'] }
+};
+
+// TransactionsTab with filters
+const TransactionsTab = ({ transactions }) => {
+    const [filter, setFilter] = useState('all');
+    const [direction, setDirection] = useState('all'); // 'all', 'in', 'out'
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    // Filter transactions
+    const filteredTx = transactions.filter(tx => {
+        // Category filter
+        if (filter !== 'all') {
+            const category = txCategories[filter];
+            if (!category.types?.includes(tx.type)) return false;
+        }
+        
+        // Direction filter
+        if (direction === 'in' && tx.direction !== 'in') return false;
+        if (direction === 'out' && tx.direction !== 'out') return false;
+        
+        // Search filter
+        if (searchTerm) {
+            const search = searchTerm.toLowerCase();
+            const typeInfo = txTypeDisplay[tx.type] || { label: tx.type };
+            if (!typeInfo.label.toLowerCase().includes(search) &&
+                !tx.reason?.toLowerCase().includes(search) &&
+                !tx.signature?.toLowerCase().includes(search)) {
+                return false;
+            }
+        }
+        
+        return true;
+    });
+    
+    // Summary stats
+    const totalIn = filteredTx.filter(tx => tx.direction === 'in').reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    const totalOut = filteredTx.filter(tx => tx.direction === 'out').reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    
+    return (
+        <div className="space-y-3">
+            {/* Filters */}
+            <div className="bg-black/30 rounded-xl p-3 border border-white/10 space-y-3">
+                {/* Category Pills */}
+                <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(txCategories).map(([key, cat]) => (
+                        <button
+                            key={key}
+                            onClick={() => setFilter(key)}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1 ${
+                                filter === key
+                                    ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-500/50'
+                                    : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80 border border-transparent'
+                            }`}
+                        >
+                            <span>{cat.icon}</span>
+                            <span>{cat.label}</span>
+                        </button>
+                    ))}
+                </div>
+                
+                {/* Direction + Search Row */}
+                <div className="flex gap-2 items-center">
+                    {/* Direction Toggle */}
+                    <div className="flex bg-black/30 rounded-lg p-0.5">
+                        {[
+                            { id: 'all', label: 'All' },
+                            { id: 'in', label: '↓ In', color: 'text-green-400' },
+                            { id: 'out', label: '↑ Out', color: 'text-red-400' }
+                        ].map(d => (
+                            <button
+                                key={d.id}
+                                onClick={() => setDirection(d.id)}
+                                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                    direction === d.id
+                                        ? `bg-white/10 ${d.color || 'text-white'}`
+                                        : 'text-white/50 hover:text-white/70'
+                                }`}
+                            >
+                                {d.label}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    {/* Search */}
+                    <input
+                        type="text"
+                        placeholder="Search..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-cyan-500/50"
+                    />
+                </div>
+                
+                {/* Summary */}
+                <div className="flex items-center justify-between text-xs border-t border-white/10 pt-2">
+                    <span className="text-white/50">{filteredTx.length} transactions</span>
+                    <div className="flex gap-3">
+                        <span className="text-green-400">+{totalIn.toLocaleString()}</span>
+                        <span className="text-red-400">-{totalOut.toLocaleString()}</span>
+                        <span className={totalIn - totalOut >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            = {(totalIn - totalOut).toLocaleString()}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            {/* Transaction List */}
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                {filteredTx.length === 0 ? (
+                    <div className="text-center py-8 text-white/50">
+                        <span className="text-3xl block mb-2">🔍</span>
+                        No transactions match filters
+                    </div>
+                ) : (
+                    filteredTx.map((tx) => {
+                        const typeInfo = txTypeDisplay[tx.type] || { label: tx.type, color: 'text-white', icon: '📝' };
+                        const isIncoming = tx.direction === 'in';
+                        const isTokenTx = tx.signature || tx.type?.startsWith('token_');
+                        const solscanTxLink = tx.signature ? getSolscanLink(tx.signature, 'tx') : null;
+                        
+                        return (
+                            <div 
+                                key={tx.id}
+                                className={`bg-black/30 rounded-xl p-3 border transition-colors ${
+                                    isTokenTx 
+                                        ? 'border-purple-500/30 hover:border-purple-500/50' 
+                                        : 'border-white/10 hover:border-white/20'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xl">{typeInfo.icon}</span>
+                                        <div>
+                                            <p className={`font-medium text-sm ${typeInfo.color}`}>
+                                                {typeInfo.label}
+                                            </p>
+                                            <p className="text-white/50 text-xs">
+                                                {formatDate(tx.timestamp)}
+                                                {tx.reason && ` • ${tx.reason}`}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`font-bold ${isIncoming ? 'text-green-400' : 'text-red-400'}`}>
+                                            {isIncoming ? '+' : '-'}{tx.amount} {tx.currency === 'coins' ? '💰' : tx.currency === 'pebbles' ? '🪨' : `💎 ${tx.currency}`}
+                                        </p>
+                                        {tx.tokenAddress && (
+                                            <a
+                                                href={getSolscanLink(tx.tokenAddress, 'account')}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-purple-400/60 text-xs hover:text-purple-300"
+                                            >
+                                                {tx.tokenAddress.slice(0, 4)}...{tx.tokenAddress.slice(-4)}
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                {solscanTxLink && (
+                                    <a
+                                        href={solscanTxLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="mt-2 flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300"
+                                    >
+                                        🔗 View on Solscan
+                                        <span className="text-purple-400/50">({tx.signature.slice(0, 8)}...)</span>
+                                    </a>
+                                )}
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+        </div>
+    );
 };
 
 const StatsModal = ({ isOpen, onClose }) => {
@@ -249,6 +444,10 @@ const StatsModal = ({ isOpen, onClose }) => {
                                             <p className="text-yellow-400/60 text-xs mb-1">Coins Balance</p>
                                             <p className="text-yellow-400 font-bold text-xl">💰 {stats.coins || 0}</p>
                                         </div>
+                                        <div className="bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl p-3 border border-purple-500/30">
+                                            <p className="text-purple-400/60 text-xs mb-1">Pebbles Balance</p>
+                                            <p className="text-purple-400 font-bold text-xl">🪨 {stats.pebbles || 0}</p>
+                                        </div>
                                         <div className="bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-xl p-3 border border-green-500/30">
                                             <p className="text-green-400/60 text-xs mb-1">Win Rate</p>
                                             <p className="text-green-400 font-bold text-xl">🏆 {winRate}%</p>
@@ -256,10 +455,6 @@ const StatsModal = ({ isOpen, onClose }) => {
                                         <div className="bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-xl p-3 border border-cyan-500/30">
                                             <p className="text-cyan-400/60 text-xs mb-1">Total Games</p>
                                             <p className="text-cyan-400 font-bold text-xl">🎮 {stats.totalGames || 0}</p>
-                                        </div>
-                                        <div className="bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl p-3 border border-purple-500/30">
-                                            <p className="text-purple-400/60 text-xs mb-1">Tokens Won</p>
-                                            <p className="text-purple-400 font-bold text-xl">💎 {totalTokensWon}</p>
                                         </div>
                                     </div>
                                     
@@ -416,75 +611,7 @@ const StatsModal = ({ isOpen, onClose }) => {
                             
                             {/* Transactions Tab */}
                             {activeTab === 'transactions' && (
-                                <div className="space-y-2">
-                                    {transactions.length === 0 ? (
-                                        <div className="text-center py-12 text-white/50">
-                                            <span className="text-4xl block mb-2">💰</span>
-                                            No transactions yet
-                                        </div>
-                                    ) : (
-                                        transactions.map((tx) => {
-                                            const typeInfo = txTypeDisplay[tx.type] || { label: tx.type, color: 'text-white', icon: '📝' };
-                                            const isIncoming = tx.direction === 'in';
-                                            const isTokenTx = tx.signature || tx.type?.startsWith('token_');
-                                            const solscanTxLink = tx.signature ? getSolscanLink(tx.signature, 'tx') : null;
-                                            
-                                            return (
-                                                <div 
-                                                    key={tx.id}
-                                                    className={`bg-black/30 rounded-xl p-3 border transition-colors ${
-                                                        isTokenTx 
-                                                            ? 'border-purple-500/30 hover:border-purple-500/50' 
-                                                            : 'border-white/10 hover:border-white/20'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xl">{typeInfo.icon}</span>
-                                                            <div>
-                                                                <p className={`font-medium text-sm ${typeInfo.color}`}>
-                                                                    {typeInfo.label}
-                                                                </p>
-                                                                <p className="text-white/50 text-xs">
-                                                                    {formatDate(tx.timestamp)}
-                                                                    {tx.reason && ` • ${tx.reason}`}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <p className={`font-bold ${isIncoming ? 'text-green-400' : 'text-red-400'}`}>
-                                                                {isIncoming ? '+' : '-'}{tx.amount} {tx.currency === 'coins' ? '💰' : `💎 ${tx.currency}`}
-                                                            </p>
-                                                            {tx.tokenAddress && (
-                                                                <a
-                                                                    href={getSolscanLink(tx.tokenAddress, 'account')}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-purple-400/60 text-xs hover:text-purple-300"
-                                                                >
-                                                                    {tx.tokenAddress.slice(0, 4)}...{tx.tokenAddress.slice(-4)}
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {/* Solscan Link for token transactions */}
-                                                    {solscanTxLink && (
-                                                        <a
-                                                            href={solscanTxLink}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="mt-2 flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300"
-                                                        >
-                                                            🔗 View on Solscan
-                                                            <span className="text-purple-400/50">({tx.signature.slice(0, 8)}...)</span>
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
+                                <TransactionsTab transactions={transactions} />
                             )}
                         </>
                     )}

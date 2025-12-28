@@ -16,6 +16,7 @@ import {
     Keypair, 
     PublicKey, 
     Transaction,
+    SystemProgram,
     sendAndConfirmTransaction 
 } from '@solana/web3.js';
 import { 
@@ -92,7 +93,7 @@ class CustodialWalletService {
     constructor() {
         this.connection = null;
         this.initialized = false;
-        this.rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
+        this.rpcUrl = null; // Set in initialize() after dotenv loads
         
         console.log('🔐 CustodialWalletService created (not yet initialized)');
     }
@@ -121,13 +122,21 @@ class CustodialWalletService {
 
     /**
      * Initialize the custodial wallet
-     * Call this once at server startup
+     * Call this once at server startup (after dotenv is loaded!)
      */
     async initialize() {
         if (this.initialized) {
             console.log('🔐 CustodialWalletService already initialized');
             return { success: true };
         }
+
+        // Read RPC URL here (after dotenv has loaded)
+        this.rpcUrl = process.env.SOLANA_RPC_URL;
+        if (!this.rpcUrl) {
+            console.error('🚨 SOLANA_RPC_URL not set in environment! Custodial wallet disabled.');
+            return { success: false, error: 'NO_RPC_URL' };
+        }
+        console.log(`   RPC: ${this.rpcUrl.slice(0, 40)}...`);
 
         try {
             // Load private key from environment
@@ -176,10 +185,11 @@ class CustodialWalletService {
             
             this.initialized = true;
             
-            // Log initialization (NEVER log the private key or full public key in production)
+            // Log initialization
             const maskedPubkey = _publicKey.slice(0, 4) + '...' + _publicKey.slice(-4);
             console.log(`🔐 CustodialWalletService initialized`);
             console.log(`   Wallet: ${maskedPubkey}`);
+            console.log(`   Full Public Key: ${_publicKey}`);  // Safe to log - public keys are public!
             console.log(`   SOL Balance: ${balance / 1e9} SOL`);
             console.log(`   Max single payout: ${SECURITY_CONFIG.MAX_SINGLE_PAYOUT_RAW.toString()}`);
             console.log(`   Max hourly payouts: ${SECURITY_CONFIG.MAX_HOURLY_PAYOUTS}`);
@@ -448,6 +458,121 @@ class CustodialWalletService {
         }
     }
 
+    /**
+     * Get native SOL balance of the custodial wallet (in lamports)
+     */
+    async getBalance() {
+        if (!this.isReady()) {
+            return 0;
+        }
+
+        try {
+            return await this.connection.getBalance(_keypair.publicKey);
+        } catch (error) {
+            console.error('Failed to get custodial wallet balance:', error.message);
+            return 0;
+        }
+    }
+    
+    /**
+     * Send native SOL from custodial wallet to a recipient
+     * Used for: Pebble withdrawals, SOL refunds
+     * 
+     * @param {string} recipientWallet - Recipient's wallet address
+     * @param {bigint} lamports - Amount to send in lamports
+     * @param {string} memo - Transaction memo for logging
+     * @returns {Promise<{success: boolean, txId?: string, error?: string}>}
+     */
+    async sendNativeSOL(recipientWallet, lamports, memo = '') {
+        if (!this.isReady()) {
+            return { success: false, error: 'SERVICE_NOT_READY' };
+        }
+        
+        const lamportsBigInt = BigInt(lamports);
+        
+        if (lamportsBigInt <= 0n) {
+            return { success: false, error: 'INVALID_AMOUNT' };
+        }
+        
+        try {
+            const recipientPubkey = new PublicKey(recipientWallet);
+            
+            // Check we have enough balance (including ~5000 lamports for tx fee)
+            const balance = await this.connection.getBalance(_keypair.publicKey);
+            const totalNeeded = lamportsBigInt + 5000n; // Small buffer for tx fee
+            
+            console.log(`   💰 Custodial SOL balance: ${(balance / 1e9).toFixed(4)} SOL`);
+            console.log(`   💰 Sending: ${(Number(lamportsBigInt) / 1e9).toFixed(4)} SOL to ${recipientWallet.slice(0, 8)}...`);
+            
+            if (BigInt(balance) < totalNeeded) {
+                console.error(`   ❌ Insufficient SOL: have ${balance}, need ${totalNeeded}`);
+                return { success: false, error: 'INSUFFICIENT_SOL_BALANCE' };
+            }
+            
+            // Build simple SOL transfer transaction
+            const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed');
+            
+            const transaction = new Transaction();
+            transaction.recentBlockhash = blockhash;
+            transaction.feePayer = _keypair.publicKey;
+            
+            // Native SOL transfer instruction
+            transaction.add(
+                SystemProgram.transfer({
+                    fromPubkey: _keypair.publicKey,
+                    toPubkey: recipientPubkey,
+                    lamports: lamportsBigInt
+                })
+            );
+            
+            // Sign with custodial keypair
+            transaction.sign(_keypair);
+            
+            // Send and confirm
+            const signature = await this.connection.sendRawTransaction(
+                transaction.serialize(),
+                { 
+                    skipPreflight: false,
+                    preflightCommitment: 'confirmed'
+                }
+            );
+            
+            console.log(`   📤 Tx sent: ${signature.slice(0, 16)}...`);
+            
+            // Wait for confirmation
+            const confirmation = await this.connection.confirmTransaction({
+                signature,
+                blockhash,
+                lastValidBlockHeight
+            }, 'confirmed');
+            
+            if (confirmation.value?.err) {
+                console.error(`   ❌ Tx failed:`, confirmation.value.err);
+                return { success: false, error: 'TRANSACTION_FAILED', details: confirmation.value.err };
+            }
+            
+            console.log(`   ✅ Tx confirmed: ${signature}`);
+            this._audit('NATIVE_SOL_PAYOUT', { 
+                recipient: recipientWallet.slice(0, 8) + '...',
+                lamports: lamportsBigInt.toString(),
+                txId: signature,
+                memo
+            });
+            
+            return { success: true, txId: signature };
+            
+        } catch (error) {
+            console.error(`   ❌ Native SOL transfer error:`, error.message);
+            this._audit('NATIVE_SOL_PAYOUT_FAILED', { 
+                recipient: recipientWallet?.slice(0, 8),
+                lamports: lamports.toString(),
+                error: error.message,
+                memo
+            });
+            return { success: false, error: 'TRANSFER_FAILED', message: error.message };
+        }
+    }
+    
     /**
      * Get the token balance of the custodial wallet
      */

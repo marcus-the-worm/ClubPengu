@@ -4,6 +4,9 @@ import InboxButton from './InboxButton';
 import TokenomicsModal from './TokenomicsModal';
 import WalletButton from './WalletButton';
 import StatsModal from './StatsModal';
+import PebblesPurchaseModal from './PebblesPurchaseModal';
+import InventoryModal from './InventoryModal';
+import { useMultiplayer } from '../multiplayer';
 
 /**
  * GameHUD - Heads Up Display showing coins, stats, and quick actions
@@ -14,6 +17,12 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
     const [showStatsModal, setShowStatsModal] = useState(false);  // Full stats modal
     const [recentReward, setRecentReward] = useState(null);
     const [showTokenomics, setShowTokenomics] = useState(false);
+    const [showPebblesPurchase, setShowPebblesPurchase] = useState(false);
+    const [showInventory, setShowInventory] = useState(false);
+    
+    // Get pebbles from multiplayer context
+    const { userData, isAuthenticated } = useMultiplayer();
+    const pebbles = userData?.pebbles || 0;
     
     // Detect portrait mode for responsive layout
     const [isPortrait, setIsPortrait] = useState(() => 
@@ -75,6 +84,28 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                         <span className="text-[10px]">💰</span>
                         <span className="text-yellow-300 font-bold retro-text text-[10px]">{coins}</span>
                     </div>
+                    
+                    {/* Pebbles - Premium Currency (Always visible + button) */}
+                    {isAuthenticated && (
+                        <button 
+                            onClick={() => setShowPebblesPurchase(true)}
+                            className="bg-black/70 backdrop-blur-md rounded-lg px-1.5 py-1 flex items-center gap-1 border border-purple-400/50 active:border-purple-400 active:bg-purple-900/30 transition-colors touch-manipulation"
+                        >
+                            <span className="text-[10px]">🪨</span>
+                            <span className="text-purple-300 font-bold retro-text text-[10px]">{pebbles}</span>
+                            <span className="text-green-400 font-bold text-xs bg-green-500/30 rounded px-1 ml-0.5">+</span>
+                        </button>
+                    )}
+                    
+                    {/* Inventory Button (Mobile) */}
+                    {isAuthenticated && (
+                        <button 
+                            onClick={() => setShowInventory(true)}
+                            className="bg-black/70 backdrop-blur-md rounded-lg px-1.5 py-1 flex items-center gap-1 border border-amber-400/50 active:border-amber-400 active:bg-amber-900/30 transition-colors touch-manipulation"
+                        >
+                            <span className="text-[10px]">📦</span>
+                        </button>
+                    )}
                 </div>
                 
                 {/* Portrait: Vertical sidebar on right */}
@@ -174,6 +205,18 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                 <StatsModal
                     isOpen={showStatsModal}
                     onClose={() => setShowStatsModal(false)}
+                />
+                
+                {/* Pebbles Purchase Modal */}
+                <PebblesPurchaseModal
+                    isOpen={showPebblesPurchase}
+                    onClose={() => setShowPebblesPurchase(false)}
+                />
+                
+                {/* Inventory Modal (Portrait) */}
+                <InventoryModal
+                    isOpen={showInventory}
+                    onClose={() => setShowInventory(false)}
                 />
             </>
         );
@@ -277,6 +320,31 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                     <span className="text-lg">💰</span>
                     <span className="text-yellow-300 font-bold retro-text text-sm">{coins}</span>
                 </div>
+                
+                {/* Pebbles Display - Premium Currency */}
+                {isAuthenticated && (
+                    <button 
+                        onClick={() => setShowPebblesPurchase(true)}
+                        className="bg-black/70 backdrop-blur-md rounded-lg px-3 py-2 flex items-center gap-2 border border-purple-400/30 hover:border-purple-400/60 hover:bg-black/80 transition-all group"
+                        title="Buy Pebbles for Gacha Rolls"
+                    >
+                        <span className="text-lg">🪨</span>
+                        <span className="text-purple-300 font-bold retro-text text-sm">{pebbles}</span>
+                        <span className="text-green-400 font-bold text-lg ml-1 opacity-60 group-hover:opacity-100 transition-opacity">+</span>
+                    </button>
+                )}
+                
+                {/* Inventory Button */}
+                {isAuthenticated && (
+                    <button 
+                        onClick={() => setShowInventory(true)}
+                        className="bg-black/70 backdrop-blur-md rounded-lg px-3 py-2 flex items-center gap-2 border border-amber-400/30 hover:border-amber-400/60 hover:bg-black/80 transition-all"
+                        title="Open Inventory"
+                    >
+                        <span className="text-lg">📦</span>
+                        <span className="text-amber-300 font-bold retro-text text-sm hidden sm:inline">Inventory</span>
+                    </button>
+                )}
             </div>
             
             {/* Coin Reward Animation */}
@@ -298,6 +366,18 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
             <StatsModal
                 isOpen={showStatsModal}
                 onClose={() => setShowStatsModal(false)}
+            />
+            
+            {/* Pebbles Purchase Modal */}
+            <PebblesPurchaseModal
+                isOpen={showPebblesPurchase}
+                onClose={() => setShowPebblesPurchase(false)}
+            />
+            
+            {/* Inventory Modal */}
+            <InventoryModal
+                isOpen={showInventory}
+                onClose={() => setShowInventory(false)}
             />
         </>
     );
