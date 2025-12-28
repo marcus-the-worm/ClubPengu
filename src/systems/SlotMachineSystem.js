@@ -514,15 +514,8 @@ class SlotMachineSystem {
                 ctx.fillStyle = '#888';
                 ctx.font = '12px "Segoe UI", Arial';
                 ctx.fillText('Click + button next to Pebbles', W / 2, statusY + 58);
-            } else if (cosmeticResult.isDuplicate) {
-                // Duplicate - converted to gold
-                ctx.fillStyle = '#FFD700';
-                ctx.font = 'bold 18px "Segoe UI", Arial';
-                ctx.fillText(`${rarityData.emoji} Duplicate!`, W / 2, statusY + 15);
-                ctx.fillStyle = '#FCD34D';
-                ctx.font = '16px "Segoe UI", Arial';
-                ctx.fillText(`+${cosmeticResult.goldAwarded}g Gold`, W / 2, statusY + 38);
             } else {
+                // Duplicates are now kept - render all wins the same way
                 // New cosmetic win!
                 if (isJackpot) {
                     const pulse = 1 + Math.sin(Date.now() / 100) * 0.1;

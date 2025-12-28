@@ -563,7 +563,7 @@ class SlotService {
             features: [
                 'Win exclusive penguin cosmetics!',
                 'Holographic & First Edition variants',
-                'Duplicates convert to gold',
+                'Collect multiple copies of items',
                 'Pity system ensures rare drops'
             ]
         };
