@@ -6,6 +6,7 @@
 import PromoCode from '../db/models/PromoCode.js';
 import PromoRedemption from '../db/models/PromoRedemption.js';
 import CosmeticTemplate from '../db/models/CosmeticTemplate.js';
+import OwnedCosmetic from '../db/models/OwnedCosmetic.js';
 import { User, Transaction } from '../db/models/index.js';
 import { isDBConnected } from '../db/connection.js';
 
@@ -85,6 +86,7 @@ class PromoCodeService {
 
             // 4. Check if already redeemed
             const hasRedeemed = await PromoRedemption.hasRedeemed(walletAddress, promoCode._id);
+            const isReRedemption = hasRedeemed && promoCode.allowReRedemption;
             
             // 5. Check wallet-specific restrictions
             const canRedeem = promoCode.canWalletRedeem(walletAddress, user, hasRedeemed);
@@ -98,12 +100,12 @@ class PromoCodeService {
                 };
             }
 
-            // 6. Apply the unlocks
+            // 6. Apply the unlocks (creates OwnedCosmetic records, skips existing)
             const unlockedItems = await this._applyUnlocks(user, promoCode);
 
-            // 7. Award coins if any
+            // 7. Award coins if any (but NOT on re-redemption)
             let transactionId = null;
-            if (promoCode.unlocks.coins > 0) {
+            if (promoCode.unlocks.coins > 0 && !isReRedemption) {
                 const coinResult = await this._awardCoins(
                     walletAddress, 
                     promoCode.unlocks.coins, 
@@ -116,50 +118,67 @@ class PromoCodeService {
                 unlockedItems.newBalance = coinResult.newBalance;
             }
 
-            // 8. Track redeemed code on user
-            if (!user.redeemedPromoCodes) {
-                user.redeemedPromoCodes = [];
+            // 8-10: Only track redemption if this is a first-time redemption
+            if (!isReRedemption) {
+                // 8. Track redeemed code on user
+                if (!user.redeemedPromoCodes) {
+                    user.redeemedPromoCodes = [];
+                }
+                user.redeemedPromoCodes.push({
+                    code: normalizedCode,
+                    promoCodeId: promoCode._id,
+                    redeemedAt: new Date()
+                });
+                user.stats.unlocks.totalPromoCodesRedeemed++;
+                await user.save();
+
+                // 9. Increment redemption count on promo code
+                promoCode.redemptionCount++;
+                await promoCode.save();
+
+                // 10. Record successful redemption
+                await PromoRedemption.recordRedemption({
+                    walletAddress,
+                    username: user.username,
+                    promoCodeId: promoCode._id,
+                    code: normalizedCode,
+                    codeName: promoCode.name,
+                    unlockedItems: {
+                        mounts: promoCode.unlocks.mounts,
+                        cosmetics: promoCode.unlocks.cosmetics,
+                        characters: promoCode.unlocks.characters,
+                        coins: promoCode.unlocks.coins
+                    },
+                    ipAddress: context.ipAddress,
+                    sessionId: context.sessionId,
+                    playerId: context.playerId,
+                    status: 'success',
+                    transactionId
+                });
             }
-            user.redeemedPromoCodes.push({
-                code: normalizedCode,
-                promoCodeId: promoCode._id,
-                redeemedAt: new Date()
-            });
-            user.stats.unlocks.totalPromoCodesRedeemed++;
-            await user.save();
 
-            // 9. Increment redemption count on promo code
-            promoCode.redemptionCount++;
-            await promoCode.save();
-
-            // 10. Record successful redemption
-            await PromoRedemption.recordRedemption({
-                walletAddress,
-                username: user.username,
-                promoCodeId: promoCode._id,
-                code: normalizedCode,
-                codeName: promoCode.name,
-                unlockedItems: {
-                    mounts: promoCode.unlocks.mounts,
-                    cosmetics: promoCode.unlocks.cosmetics,
-                    characters: promoCode.unlocks.characters,
-                    coins: promoCode.unlocks.coins
-                },
-                ipAddress: context.ipAddress,
-                sessionId: context.sessionId,
-                playerId: context.playerId,
-                status: 'success',
-                transactionId
-            });
-
-            console.log(`🎟️ Promo code redeemed: ${user.username} used ${normalizedCode} - ${promoCode.getUnlocksSummary()}`);
+            // Build appropriate message
+            let message;
+            if (isReRedemption) {
+                if (unlockedItems.ownedCosmeticsCreated > 0) {
+                    message = `Synced ${unlockedItems.ownedCosmeticsCreated} missing cosmetics from "${promoCode.name}"!`;
+                    console.log(`🔄 Promo code re-redeemed: ${user.username} synced ${normalizedCode} - ${unlockedItems.ownedCosmeticsCreated} new records`);
+                } else {
+                    message = `All cosmetics from "${promoCode.name}" already unlocked!`;
+                    console.log(`✅ Promo code re-redeemed: ${user.username} already has all items from ${normalizedCode}`);
+                }
+            } else {
+                message = `Successfully redeemed "${promoCode.name}"!`;
+                console.log(`🎟️ Promo code redeemed: ${user.username} used ${normalizedCode} - ${promoCode.getUnlocksSummary()}`);
+            }
 
             return {
                 success: true,
                 code: normalizedCode,
                 codeName: promoCode.name,
                 unlocked: unlockedItems,
-                message: `Successfully redeemed "${promoCode.name}"!`
+                isReRedemption,
+                message
             };
 
         } catch (error) {
@@ -173,7 +192,7 @@ class PromoCodeService {
     }
 
     /**
-     * Apply unlocks to user
+     * Apply unlocks to user - Creates OwnedCosmetic records marked as non-tradable
      */
     async _applyUnlocks(user, promoCode) {
         const unlocked = {
@@ -181,7 +200,52 @@ class PromoCodeService {
             cosmetics: [],  // Array of { id, category } for auto-equip
             characters: [],
             skinColor: promoCode.unlocks.skinColor || null,
-            skinColors: []  // Track skin colors separately
+            skinColors: [],  // Track skin colors separately
+            ownedCosmeticsCreated: 0
+        };
+
+        const walletAddress = user.walletAddress;
+
+        // Helper to create OwnedCosmetic record for promo items (non-tradable)
+        const createPromoOwnedCosmetic = async (template) => {
+            try {
+                // Check if user already owns this template (any instance)
+                const existingOwned = await OwnedCosmetic.findOne({
+                    ownerId: walletAddress,
+                    templateId: template.templateId,
+                    convertedToGold: false
+                });
+                
+                if (existingOwned) {
+                    // Already owns this item, skip
+                    return null;
+                }
+
+                // Get next serial number atomically
+                const { serialNumber, isFirstEdition } = await OwnedCosmetic.getNextSerialAtomic(template.templateId);
+
+                // Create the owned cosmetic record
+                const ownedCosmetic = new OwnedCosmetic({
+                    instanceId: OwnedCosmetic.generateInstanceId(),
+                    templateId: template.templateId,
+                    ownerId: walletAddress,
+                    serialNumber,
+                    quality: 'standard',  // Promo items are standard quality
+                    isHolographic: false,
+                    isFirstEdition,
+                    mintedBy: walletAddress,
+                    acquisitionMethod: 'promo_code',
+                    tradable: false  // PROMO ITEMS CANNOT BE TRADED/SOLD
+                });
+
+                await ownedCosmetic.save();
+                unlocked.ownedCosmeticsCreated++;
+                
+                return ownedCosmetic;
+            } catch (err) {
+                console.error(`Error creating promo OwnedCosmetic for ${template.templateId}:`, err.message);
+                return null;
+            }
         };
 
         // Unlock mounts
@@ -193,17 +257,29 @@ class PromoCodeService {
             }
         }
 
-        // Unlock cosmetics (with category info for auto-equip)
+        // Unlock specific cosmetics (with category info for auto-equip)
         for (const cosmetic of promoCode.unlocks.cosmetics) {
-            const cosmeticId = cosmetic.id || cosmetic; // Handle both object and string format
+            const cosmeticId = cosmetic.id || cosmetic;
+            const category = cosmetic.category || 'unknown';
+            
+            // Find the template
+            const template = await CosmeticTemplate.findOne({ assetKey: cosmeticId });
+            
+            if (template) {
+                // Create OwnedCosmetic record
+                const created = await createPromoOwnedCosmetic(template);
+                if (created) {
+                    unlocked.cosmetics.push({
+                        id: cosmeticId,
+                        category: category
+                    });
+                }
+            }
+            
+            // Also add to legacy unlockedCosmetics array for backward compatibility
             if (!user.unlockedCosmetics.includes(cosmeticId)) {
                 user.unlockedCosmetics.push(cosmeticId);
                 user.stats.unlocks.totalCosmeticsOwned++;
-                // Return with category for client auto-equip
-                unlocked.cosmetics.push({
-                    id: cosmeticId,
-                    category: cosmetic.category || 'unknown'
-                });
             }
         }
 
@@ -216,7 +292,7 @@ class PromoCodeService {
             }
         }
 
-        // Unlock by rarity - query all cosmetics at specified rarities
+        // Unlock by rarity - query all cosmetics at specified rarities and create OwnedCosmetic records
         if (promoCode.unlocks.unlockByRarity && promoCode.unlocks.unlockByRarity.length > 0) {
             try {
                 const rarityCosmetics = await CosmeticTemplate.find({
@@ -227,44 +303,46 @@ class PromoCodeService {
                 console.log(`🎟️ Unlocking ${rarityCosmetics.length} cosmetics by rarity (${promoCode.unlocks.unlockByRarity.join(', ')})`);
 
                 for (const template of rarityCosmetics) {
-                    // Determine the unlock key based on category
-                    let unlockKey;
-                    let category = template.category;
+                    const category = template.category;
                     
-                    if (category === 'skin') {
-                        // Skin colors use 'skin_<color>' format in gachaOwnedCosmetics
-                        unlockKey = template.templateId; // e.g., 'skin_red'
-                        
-                        // Initialize gachaOwnedCosmetics if needed
-                        if (!user.gachaOwnedCosmetics) {
-                            user.gachaOwnedCosmetics = [];
-                        }
-                        
-                        if (!user.gachaOwnedCosmetics.includes(unlockKey)) {
-                            user.gachaOwnedCosmetics.push(unlockKey);
-                            unlocked.skinColors.push(template.assetKey);
-                        }
-                    } else if (category === 'mount') {
-                        // Mounts go to unlockedMounts
-                        unlockKey = template.assetKey;
+                    if (category === 'mount') {
+                        // Mounts go to unlockedMounts array (no OwnedCosmetic for mounts)
+                        const unlockKey = template.assetKey;
                         if (!user.unlockedMounts.includes(unlockKey)) {
                             user.unlockedMounts.push(unlockKey);
                             user.stats.unlocks.totalMountsOwned++;
                             unlocked.mounts.push(unlockKey);
                         }
                     } else {
-                        // Regular cosmetics (hat, eyes, mouth, bodyItem)
-                        unlockKey = template.assetKey;
-                        if (!user.unlockedCosmetics.includes(unlockKey)) {
-                            user.unlockedCosmetics.push(unlockKey);
-                            user.stats.unlocks.totalCosmeticsOwned++;
-                            unlocked.cosmetics.push({
-                                id: unlockKey,
-                                category: category
-                            });
+                        // All other categories (hat, eyes, mouth, bodyItem, skin) - create OwnedCosmetic
+                        const created = await createPromoOwnedCosmetic(template);
+                        
+                        if (created) {
+                            if (category === 'skin') {
+                                unlocked.skinColors.push(template.assetKey);
+                                // Also add to gachaOwnedCosmetics for client-side checking
+                                if (!user.gachaOwnedCosmetics) {
+                                    user.gachaOwnedCosmetics = [];
+                                }
+                                if (!user.gachaOwnedCosmetics.includes(template.templateId)) {
+                                    user.gachaOwnedCosmetics.push(template.templateId);
+                                }
+                            } else {
+                                unlocked.cosmetics.push({
+                                    id: template.assetKey,
+                                    category: category
+                                });
+                                // Also add to unlockedCosmetics for backward compatibility
+                                if (!user.unlockedCosmetics.includes(template.assetKey)) {
+                                    user.unlockedCosmetics.push(template.assetKey);
+                                    user.stats.unlocks.totalCosmeticsOwned++;
+                                }
+                            }
                         }
                     }
                 }
+                
+                console.log(`✅ Created ${unlocked.ownedCosmeticsCreated} OwnedCosmetic records (non-tradable)`);
             } catch (err) {
                 console.error('Error unlocking by rarity:', err);
             }

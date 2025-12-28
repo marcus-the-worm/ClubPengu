@@ -75,6 +75,14 @@ const ownedCosmeticSchema = new mongoose.Schema({
     convertedAt: Date,
     goldReceived: Number,  // Amount of gold received when converted
     
+    // ========== TRADABILITY ==========
+    // Promo code items and certain achievements are NOT tradable
+    tradable: {
+        type: Boolean,
+        default: true,
+        index: true
+    },
+    
 }, { timestamps: true });
 
 // ==================== INDEXES ====================
@@ -267,14 +275,16 @@ ownedCosmeticSchema.statics.getFullInventory = async function(walletAddress, opt
             isHolographic: item.isHolographic,
             isFirstEdition: item.isFirstEdition,
             mintedAt: item.mintedAt,
+            tradable: item.tradable !== false, // Promo items are not tradable
+            acquisitionMethod: item.acquisitionMethod || 'gacha_roll',
             // Template data
             name: template?.name || 'Unknown',
             category: template?.category || 'unknown',
             rarity: template?.rarity || 'common',
             assetKey: template?.assetKey || item.templateId,
             duplicateGoldBase: template?.duplicateGoldBase || 25,
-            // Calculated burn value
-            burnValue: calculateBurnValue(template?.duplicateGoldBase || 25, item)
+            // Calculated burn value (0 for non-tradable items)
+            burnValue: item.tradable === false ? 0 : calculateBurnValue(template?.duplicateGoldBase || 25, item)
         };
     });
     
@@ -363,6 +373,11 @@ ownedCosmeticSchema.statics.burnForGold = async function(instanceId, walletAddre
     
     if (!item) {
         return { success: false, error: 'ITEM_NOT_FOUND', message: 'Item not found or already burned' };
+    }
+    
+    // Non-tradable items (promo codes, etc.) cannot be burned
+    if (item.tradable === false) {
+        return { success: false, error: 'NOT_TRADABLE', message: 'This item cannot be burned (promo/achievement item)' };
     }
     
     // Get template for base gold value

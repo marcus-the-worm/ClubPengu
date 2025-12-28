@@ -80,6 +80,12 @@ const promoCodeSchema = new mongoose.Schema({
         type: Boolean,
         default: true  // Each wallet can only redeem once
     },
+    // Allow re-redemption to create missing OwnedCosmetic records
+    // Useful for bug fixes where users redeemed before records were created
+    allowReRedemption: {
+        type: Boolean,
+        default: false
+    },
     
     // ========== AVAILABILITY ==========
     isActive: {
@@ -154,7 +160,8 @@ promoCodeSchema.methods.isValid = function() {
  */
 promoCodeSchema.methods.canWalletRedeem = function(walletAddress, user, hasRedeemed) {
     // Check if already redeemed by this wallet
-    if (this.singleUsePerWallet && hasRedeemed) {
+    // Skip this check if allowReRedemption is enabled (for bug fix scenarios)
+    if (this.singleUsePerWallet && hasRedeemed && !this.allowReRedemption) {
         return { canRedeem: false, error: 'ALREADY_REDEEMED' };
     }
     

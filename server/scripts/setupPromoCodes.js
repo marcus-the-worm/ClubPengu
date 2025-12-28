@@ -133,6 +133,7 @@ const PROMO_CODES = [
             coins: 0,
             unlockByRarity: ['common', 'uncommon', 'rare']
         },
+        allowReRedemption: true,  // Allow re-redemption to create missing OwnedCosmetic records
         notes: 'Internal use only - Dev team and marketing team'
     }
 ];
@@ -159,9 +160,11 @@ async function setupPromoCodes() {
                     existing.name = codeData.name;
                     existing.description = codeData.description;
                     existing.unlocks = codeData.unlocks;
+                    existing.allowReRedemption = codeData.allowReRedemption || false;
+                    existing.notes = codeData.notes || existing.notes;
                     await existing.save();
                     
-                    console.log(`📝 Updated: ${codeData.code} - ${codeData.name}`);
+                    console.log(`📝 Updated: ${codeData.code} - ${codeData.name}${codeData.allowReRedemption ? ' (re-redemption enabled)' : ''}`);
                     updated++;
                 } else {
                     // Create new promo code
@@ -171,13 +174,15 @@ async function setupPromoCodes() {
                         description: codeData.description,
                         unlocks: codeData.unlocks,
                         singleUsePerWallet: true,
+                        allowReRedemption: codeData.allowReRedemption || false,
                         isActive: true,
                         maxRedemptions: null,
-                        redemptionCount: 0
+                        redemptionCount: 0,
+                        notes: codeData.notes
                     });
                     await promoCode.save();
                     
-                    console.log(`✅ Created: ${codeData.code} - ${codeData.name}`);
+                    console.log(`✅ Created: ${codeData.code} - ${codeData.name}${codeData.allowReRedemption ? ' (re-redemption enabled)' : ''}`);
                     created++;
                 }
                 

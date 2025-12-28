@@ -272,7 +272,7 @@ const InventoryModal = ({ isOpen, onClose }) => {
     // Calculate total burn value for selected items
     const selectedBurnValue = useMemo(() => {
         return items
-            .filter(item => selectedIds.has(item.instanceId))
+            .filter(item => selectedIds.has(item.instanceId) && item.tradable !== false)
             .reduce((sum, item) => sum + (item.burnValue || 0), 0);
     }, [items, selectedIds]);
     
@@ -596,6 +596,22 @@ const isValuableItem = (item) => {
 const BurnSection = ({ item, rarity, confirmBurn, setConfirmBurn, burning, onBurn }) => {
     const [finalConfirm, setFinalConfirm] = React.useState(false);
     const isValuable = isValuableItem(item);
+    const isNotTradable = item.tradable === false;
+    
+    // If item is not tradable (promo/achievement), show message instead of burn button
+    if (isNotTradable) {
+        return (
+            <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                <div className="flex items-center gap-2 text-purple-300 text-sm">
+                    <span className="text-lg">🎁</span>
+                    <div>
+                        <div className="font-semibold">Promo Item</div>
+                        <div className="text-xs text-purple-200/70">This item was unlocked via promo code and cannot be burned or traded.</div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
     
     // Reset final confirm when item changes or confirmBurn resets
     React.useEffect(() => {
