@@ -383,7 +383,7 @@ const CHANGELOG_DATA: ChangelogVersion[] = [
       { type: "feature", text: "3D voxel game engine built on Three.js" },
       { type: "feature", text: "VoxelPenguinDesigner.jsx - full character customization (474 lines)" },
       { type: "feature", text: "VoxelWorld.jsx - main game world renderer (2,212 lines)" },
-      { type: "feature", text: "24+ penguin skin colors from classic blue to rainbow" },
+      { type: "feature", text: "108 penguin skin colors from classic blue to cosmic divine variants" },
       { type: "feature", text: "17+ hats: crown, viking helm, propeller cap, wizard hat, etc." },
       { type: "feature", text: "17+ eye styles: cool shades, angry, hearts, stars, etc." },
       { type: "feature", text: "12+ mouth options: beak, smile, tongue out, beard, etc." },

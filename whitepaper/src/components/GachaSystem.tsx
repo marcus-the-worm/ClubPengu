@@ -16,8 +16,8 @@ const RARITY_DATA = [
     borderColor: "border-slate-500/30",
     emoji: "⚪",
     dupeGold: "25",
-    items: 79,
-    examples: ["Basic Hats", "Simple Eyes", "Common Clothing"],
+    items: 94,
+    examples: ["Basic Hats", "Simple Eyes", "Common Clothing", "Basic Colors"],
   },
   { 
     name: "Uncommon", 
@@ -28,8 +28,8 @@ const RARITY_DATA = [
     borderColor: "border-green-500/30",
     emoji: "🟢",
     dupeGold: "50",
-    items: 29,
-    examples: ["Viking Helmet", "Gold Chain", "Sunglasses"],
+    items: 52,
+    examples: ["Viking Helmet", "Gold Chain", "Metallic Colors", "Nature Tones"],
   },
   { 
     name: "Rare", 
@@ -40,8 +40,8 @@ const RARITY_DATA = [
     borderColor: "border-blue-500/30",
     emoji: "🔵",
     dupeGold: "150",
-    items: 25,
-    examples: ["Crown", "Laser Eyes", "Wizard Robe"],
+    items: 54,
+    examples: ["Crown", "Laser Eyes", "Neon Colors", "Jewel Tones"],
   },
   { 
     name: "Epic", 
@@ -52,8 +52,8 @@ const RARITY_DATA = [
     borderColor: "border-purple-500/30",
     emoji: "🟣",
     dupeGold: "500",
-    items: 14,
-    examples: ["Angel Wings", "Cigarette", "Skateboard"],
+    items: 25,
+    examples: ["Angel Wings", "Rainbow Skin", "Aurora", "Ice"],
   },
   { 
     name: "Legendary", 
@@ -64,8 +64,8 @@ const RARITY_DATA = [
     borderColor: "border-yellow-500/30",
     emoji: "🟡",
     dupeGold: "2,500",
-    items: 15,
-    examples: ["Fire Eyes", "Wizard Hat", "Hoverboard"],
+    items: 21,
+    examples: ["Fire Eyes", "Wizard Hat", "Holographic Skin", "Chromatic"],
   },
   { 
     name: "Mythic", 
@@ -76,8 +76,8 @@ const RARITY_DATA = [
     borderColor: "border-red-500/30",
     emoji: "🔴",
     dupeGold: "10,000",
-    items: 10,
-    examples: ["Void Crown", "Dragon Wings", "Phoenix Mount"],
+    items: 14,
+    examples: ["Void Crown", "Dragon Wings", "Void Black", "Ethereal Skin"],
   },
   { 
     name: "Divine", 
@@ -88,8 +88,8 @@ const RARITY_DATA = [
     borderColor: "border-cyan-400/50",
     emoji: "✨",
     dupeGold: "50,000",
-    items: 5,
-    examples: ["Cosmic Crown", "Omniscient Gaze", "Cosmic Serpent"],
+    items: 7,
+    examples: ["Cosmic Crown", "Omniscient Gaze", "Celestial Skin", "Transcendent"],
     special: true,
   },
 ];
@@ -112,8 +112,8 @@ const CATEGORY_DATA = [
   { name: "Eyes", icon: "👀", gacha: 37, promo: 3, examples: ["Laser Eyes", "Fire Eyes", "Galaxy Eyes", "Omniscient Gaze"] },
   { name: "Mouths", icon: "👄", gacha: 32, promo: 0, examples: ["Cigarette", "Gold Grill", "Fire Breath", "Dragon Maw"] },
   { name: "Body Items", icon: "👕", gacha: 39, promo: 4, examples: ["Angel Wings", "Jetpack", "Dragon Wings", "Celestial Aura"] },
-  { name: "Skins", icon: "🎨", gacha: 14, promo: 0, examples: ["Lime", "Cyan", "Magenta", "Lavender"] },
-  { name: "Mounts", icon: "🐴", gacha: 0, promo: 2, examples: ["Pengu Mount", "Minecraft Boat"] },
+  { name: "Skins", icon: "🎨", gacha: 108, promo: 0, examples: ["Neon Colors", "Jewel Tones", "Rainbow", "Celestial", "Void Black"] },
+  { name: "Mounts", icon: "🐴", gacha: 9, promo: 2, examples: ["Skateboard", "Hoverboard", "Phoenix", "Cosmic Serpent"] },
 ];
 
 const ECONOMICS_DATA = {
@@ -272,7 +272,7 @@ export default function GachaSystemSection() {
               🎰 {ECONOMICS_DATA.rollPriceSol} per Spin
             </span>
             <span className="px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 text-sm font-medium">
-              168 Unique Cosmetics
+              267 Unique Cosmetics
             </span>
             <span className="px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-sm font-medium">
               ✨ 7 Rarity Tiers
@@ -523,7 +523,7 @@ export default function GachaSystemSection() {
           <CollapsibleSection
             title="Cosmetics Inventory"
             icon={<Gift className="w-5 h-5" />}
-            badgeText="168 Items"
+            badgeText="267 Items"
           >
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
               {CATEGORY_DATA.map((cat) => (
@@ -553,7 +553,7 @@ export default function GachaSystemSection() {
               <h4 className="font-bold text-white mb-4">Pool Distribution by Rarity</h4>
               <div className="space-y-3">
                 {RARITY_DATA.map((r) => {
-                  const percent = (r.items / 168) * 100;
+                  const percent = (r.items / 267) * 100;
                   return (
                     <div key={r.name} className="flex items-center gap-4">
                       <span className={`w-20 font-medium ${r.color}`}>{r.name}</span>
