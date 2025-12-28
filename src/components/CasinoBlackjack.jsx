@@ -814,8 +814,9 @@ class BlackjackGame {
         let result;
         if (pScore > 21) result = 'BUST';
         else if (dScore > 21) result = 'WIN';
-        else if (isPlayerBJ && !isDealerBJ) result = 'BLACKJACK';
-        else if (isPlayerBJ && isDealerBJ) result = 'PUSH';
+        else if (isPlayerBJ && isDealerBJ) result = 'PUSH';  // Both blackjack = push
+        else if (isPlayerBJ) result = 'BLACKJACK';  // Player blackjack wins 3:2
+        else if (isDealerBJ) result = 'LOSE';  // Dealer blackjack beats non-blackjack 21
         else if (pScore > dScore) result = 'WIN';
         else if (pScore < dScore) result = 'LOSE';
         else result = 'PUSH';
