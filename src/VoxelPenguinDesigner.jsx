@@ -194,12 +194,38 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     // All other colors require unlocking via gacha
     const BASE_SKIN_COLORS = ['blue'];
     
-    // PREMIUM SKIN COLORS (gacha drops) - All other colors are premium
+    // PREMIUM SKIN COLORS (gacha drops) - All 100+ colors except blue require unlock
     const PREMIUM_SKIN_COLORS = [
-        // Former base colors (now premium)
-        'white', 'black', 'red', 'green', 'orange', 'pink', 'gold', 'purple', 'brown',
-        // Original premium colors
-        'darkBlue', 'grey', 'teal', 'lime', 'cyan', 'magenta', 'lavender', 'coral', 'mint', 'navy', 'maroon', 'olive', 'silver', 'sky'
+        // COMMON - Former free colors + basics
+        'red', 'green', 'yellow', 'pink', 'purple', 'orange', 'black', 'white', 'cyan',
+        'grey', 'brown', 'beige', 'tan', 'cream', 'ivory',
+        
+        // UNCOMMON - Nice variations
+        'gold', 'silver', 'bronze', 'copper', 'platinum',
+        'teal', 'lime', 'coral', 'salmon', 'olive', 'forest', 'moss', 'sage', 'seafoam',
+        'sky', 'azure', 'cerulean', 'aqua', 'turquoise',
+        'tangerine', 'peach', 'apricot', 'amber', 'honey', 'mustard', 'rust',
+        'periwinkle', 'lilac', 'mauve', 'plum',
+        
+        // RARE - Distinctive colors
+        'lavender', 'mint', 'blush', 'rose', 'bubblegum', 'cotton', 'powder', 'baby', 'lemon', 'canary',
+        'navy', 'maroon', 'burgundy', 'wine', 'crimson', 'scarlet', 'cherry', 'ruby',
+        'darkBlue', 'midnight', 'indigo', 'violet', 'magenta', 'fuchsia',
+        'sapphire', 'emerald', 'amethyst', 'topaz', 'jade',
+        'hotPink', 'electricBlue', 'neonGreen', 'neonOrange', 'neonPink', 'neonYellow',
+        
+        // EPIC - Special colors (animated)
+        'rainbow', 'galaxy', 'aurora', 'sunset', 'ocean', 'lava', 'ice', 'prismatic',
+        'roseGold', 'champagne', 'neonCyan', 'neonPurple', 'neonRed',
+        
+        // LEGENDARY - Animated + glow
+        'chromatic', 'holographic', 'starlight', 'nebula', 'plasma', 'inferno', 'arctic',
+        
+        // MYTHIC - Ultra rare
+        'voidblack', 'ethereal', 'singularity', 'supernova', 'phantom',
+        
+        // DIVINE - Extremely rare
+        'celestial', 'cosmic', 'transcendent'
     ];
     
     // Get gacha-owned cosmetics from server data

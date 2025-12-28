@@ -1153,6 +1153,36 @@ wss.on('connection', (ws, req) => {
                 });
             }
             
+            // Handle challenge disconnect - cancel all pending challenges
+            const challengeResult = await challengeService.handleDisconnect(playerId, player.walletAddress);
+            if (challengeResult.affectedPlayers?.length > 0) {
+                // Notify affected players that challenges were cancelled
+                for (const affected of challengeResult.affectedPlayers) {
+                    if (players.has(affected.playerId)) {
+                        // Send inbox update to refresh their challenges
+                        const messages = inboxService.getMessages(affected.playerId);
+                        const outgoingChallenges = affected.walletAddress 
+                            ? challengeService.getOutgoingChallengesFor(affected.playerId, affected.walletAddress)
+                            : [];
+                        
+                        sendToPlayer(affected.playerId, {
+                            type: 'inbox_update',
+                            messages,
+                            unreadCount: inboxService.getUnreadCount(affected.playerId),
+                            outgoingChallenges
+                        });
+                        
+                        // Also notify them specifically that challenge was cancelled
+                        sendToPlayer(affected.playerId, {
+                            type: 'challenge_cancelled',
+                            challengeId: affected.challengeId,
+                            reason: affected.reason,
+                            message: `Challenge cancelled: ${affected.otherName} disconnected`
+                        });
+                    }
+                }
+            }
+            
             // Update user connection state in DB
             if (player.walletAddress) {
                 await authService.logout(player.walletAddress, player.authToken);
@@ -4879,6 +4909,33 @@ setInterval(async () => {
                         refunded: voidResult.wagerAmount
                     }
                 });
+            }
+            
+            // Handle challenge disconnect - cancel all pending challenges
+            const challengeResult = await challengeService.handleDisconnect(playerId, player.walletAddress);
+            if (challengeResult.affectedPlayers?.length > 0) {
+                for (const affected of challengeResult.affectedPlayers) {
+                    if (players.has(affected.playerId)) {
+                        const messages = inboxService.getMessages(affected.playerId);
+                        const outgoingChallenges = affected.walletAddress 
+                            ? challengeService.getOutgoingChallengesFor(affected.playerId, affected.walletAddress)
+                            : [];
+                        
+                        sendToPlayer(affected.playerId, {
+                            type: 'inbox_update',
+                            messages,
+                            unreadCount: inboxService.getUnreadCount(affected.playerId),
+                            outgoingChallenges
+                        });
+                        
+                        sendToPlayer(affected.playerId, {
+                            type: 'challenge_cancelled',
+                            challengeId: affected.challengeId,
+                            reason: affected.reason,
+                            message: `Challenge cancelled: ${affected.otherName} disconnected`
+                        });
+                    }
+                }
             }
             
             if (player.walletAddress) {

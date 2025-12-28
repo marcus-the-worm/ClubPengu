@@ -37,41 +37,158 @@ const PROMO_EXCLUSIVE_IDS = [
 // ========== FREE ITEMS (not gacha, always available) ==========
 const FREE_ITEMS = ['none', 'normal', 'beak'];
 
-// ========== 10 BASE SKIN COLORS (free selection) ==========
-const FREE_SKIN_COLORS = [
-    'blue', 'red', 'green', 'yellow', 'pink', 
-    'purple', 'orange', 'black', 'white', 'cyan'
-];
+// ========== FREE SKIN COLORS (only blue is free now) ==========
+const FREE_SKIN_COLORS = ['blue'];
 
 // ========== SKIN COLORS (for gacha drops) ==========
+// Adding 100+ colors! Safe because skin colors are just hex values applied to mesh
+// Organized by rarity tiers
 const GACHA_SKIN_COLORS = {
-    // Uncommon
-    gold: { rarity: 'uncommon', name: 'Gold', duplicateGold: 50 },
-    silver: { rarity: 'uncommon', name: 'Silver', duplicateGold: 50 },
-    bronze: { rarity: 'uncommon', name: 'Bronze', duplicateGold: 50 },
-    teal: { rarity: 'uncommon', name: 'Teal', duplicateGold: 50 },
-    lime: { rarity: 'uncommon', name: 'Lime', duplicateGold: 50 },
-    coral: { rarity: 'uncommon', name: 'Coral', duplicateGold: 50 },
+    // ============ COMMON (former free colors + basic variations) ============
+    // Original free colors (moved to common gacha)
+    red: { rarity: 'common', name: 'Red', duplicateGold: 25, hexColor: '#CC2222' },
+    green: { rarity: 'common', name: 'Green', duplicateGold: 25, hexColor: '#228B22' },
+    yellow: { rarity: 'common', name: 'Yellow', duplicateGold: 25, hexColor: '#DAA520' },
+    pink: { rarity: 'common', name: 'Pink', duplicateGold: 25, hexColor: '#FF69B4' },
+    purple: { rarity: 'common', name: 'Purple', duplicateGold: 25, hexColor: '#6B2D8B' },
+    orange: { rarity: 'common', name: 'Orange', duplicateGold: 25, hexColor: '#FF6600' },
+    black: { rarity: 'common', name: 'Black', duplicateGold: 25, hexColor: '#1A1A1A' },
+    white: { rarity: 'common', name: 'White', duplicateGold: 25, hexColor: '#F5F5F5' },
+    cyan: { rarity: 'common', name: 'Cyan', duplicateGold: 25, hexColor: '#00CED1' },
     
-    // Rare
-    lavender: { rarity: 'rare', name: 'Lavender', duplicateGold: 150 },
-    mint: { rarity: 'rare', name: 'Mint', duplicateGold: 150 },
-    peach: { rarity: 'rare', name: 'Peach', duplicateGold: 150 },
-    navy: { rarity: 'rare', name: 'Navy', duplicateGold: 150 },
-    maroon: { rarity: 'rare', name: 'Maroon', duplicateGold: 150 },
+    // Basic color variations
+    grey: { rarity: 'common', name: 'Grey', duplicateGold: 25, hexColor: '#666666' },
+    brown: { rarity: 'common', name: 'Brown', duplicateGold: 25, hexColor: '#5D4037' },
+    beige: { rarity: 'common', name: 'Beige', duplicateGold: 25, hexColor: '#D4B896' },
+    tan: { rarity: 'common', name: 'Tan', duplicateGold: 25, hexColor: '#C4A57B' },
+    cream: { rarity: 'common', name: 'Cream', duplicateGold: 25, hexColor: '#FFF8DC' },
+    ivory: { rarity: 'common', name: 'Ivory', duplicateGold: 25, hexColor: '#FFFFF0' },
     
-    // Epic (animated/special)
-    rainbow: { rarity: 'epic', name: 'Rainbow', duplicateGold: 500, isAnimated: true },
-    galaxy: { rarity: 'epic', name: 'Galaxy', duplicateGold: 500, isAnimated: true },
+    // ============ UNCOMMON (nice color variations) ============
+    // Metallic tones
+    gold: { rarity: 'uncommon', name: 'Gold', duplicateGold: 50, hexColor: '#DAA520' },
+    silver: { rarity: 'uncommon', name: 'Silver', duplicateGold: 50, hexColor: '#A0A0A0' },
+    bronze: { rarity: 'uncommon', name: 'Bronze', duplicateGold: 50, hexColor: '#CD7F32' },
+    copper: { rarity: 'uncommon', name: 'Copper', duplicateGold: 50, hexColor: '#B87333' },
+    platinum: { rarity: 'uncommon', name: 'Platinum', duplicateGold: 50, hexColor: '#E5E4E2' },
     
-    // Legendary
-    chromatic: { rarity: 'legendary', name: 'Chromatic', duplicateGold: 2500, isAnimated: true, hasGlow: true },
+    // Nature tones
+    teal: { rarity: 'uncommon', name: 'Teal', duplicateGold: 50, hexColor: '#008080' },
+    lime: { rarity: 'uncommon', name: 'Lime', duplicateGold: 50, hexColor: '#32CD32' },
+    coral: { rarity: 'uncommon', name: 'Coral', duplicateGold: 50, hexColor: '#E57373' },
+    salmon: { rarity: 'uncommon', name: 'Salmon', duplicateGold: 50, hexColor: '#FA8072' },
+    olive: { rarity: 'uncommon', name: 'Olive', duplicateGold: 50, hexColor: '#6B6B00' },
+    forest: { rarity: 'uncommon', name: 'Forest', duplicateGold: 50, hexColor: '#228B22' },
+    moss: { rarity: 'uncommon', name: 'Moss', duplicateGold: 50, hexColor: '#8A9A5B' },
+    sage: { rarity: 'uncommon', name: 'Sage', duplicateGold: 50, hexColor: '#87AE73' },
+    seafoam: { rarity: 'uncommon', name: 'Seafoam', duplicateGold: 50, hexColor: '#71EEB8' },
     
-    // Mythic
-    voidblack: { rarity: 'mythic', name: 'Void Black', duplicateGold: 10000, isAnimated: true, hasGlow: true },
+    // Sky/Water tones
+    sky: { rarity: 'uncommon', name: 'Sky', duplicateGold: 50, hexColor: '#6BB3D9' },
+    azure: { rarity: 'uncommon', name: 'Azure', duplicateGold: 50, hexColor: '#007FFF' },
+    cerulean: { rarity: 'uncommon', name: 'Cerulean', duplicateGold: 50, hexColor: '#2A52BE' },
+    aqua: { rarity: 'uncommon', name: 'Aqua', duplicateGold: 50, hexColor: '#00FFFF' },
+    turquoise: { rarity: 'uncommon', name: 'Turquoise', duplicateGold: 50, hexColor: '#40E0D0' },
     
-    // Divine
-    celestial: { rarity: 'divine', name: 'Celestial', duplicateGold: 50000, isAnimated: true, hasGlow: true }
+    // Warm tones
+    tangerine: { rarity: 'uncommon', name: 'Tangerine', duplicateGold: 50, hexColor: '#FF9966' },
+    peach: { rarity: 'uncommon', name: 'Peach', duplicateGold: 50, hexColor: '#FFCBA4' },
+    apricot: { rarity: 'uncommon', name: 'Apricot', duplicateGold: 50, hexColor: '#FBCEB1' },
+    amber: { rarity: 'uncommon', name: 'Amber', duplicateGold: 50, hexColor: '#FFBF00' },
+    honey: { rarity: 'uncommon', name: 'Honey', duplicateGold: 50, hexColor: '#EB9605' },
+    mustard: { rarity: 'uncommon', name: 'Mustard', duplicateGold: 50, hexColor: '#FFDB58' },
+    rust: { rarity: 'uncommon', name: 'Rust', duplicateGold: 50, hexColor: '#B7410E' },
+    
+    // Cool tones
+    periwinkle: { rarity: 'uncommon', name: 'Periwinkle', duplicateGold: 50, hexColor: '#CCCCFF' },
+    lilac: { rarity: 'uncommon', name: 'Lilac', duplicateGold: 50, hexColor: '#C8A2C8' },
+    mauve: { rarity: 'uncommon', name: 'Mauve', duplicateGold: 50, hexColor: '#E0B0FF' },
+    plum: { rarity: 'uncommon', name: 'Plum', duplicateGold: 50, hexColor: '#8E4585' },
+    
+    // ============ RARE (distinctive colors) ============
+    // Pastel tones
+    lavender: { rarity: 'rare', name: 'Lavender', duplicateGold: 150, hexColor: '#B8A9C9' },
+    mint: { rarity: 'rare', name: 'Mint', duplicateGold: 150, hexColor: '#7FBF7F' },
+    blush: { rarity: 'rare', name: 'Blush', duplicateGold: 150, hexColor: '#DE5D83' },
+    rose: { rarity: 'rare', name: 'Rose', duplicateGold: 150, hexColor: '#FF007F' },
+    bubblegum: { rarity: 'rare', name: 'Bubblegum', duplicateGold: 150, hexColor: '#FFC1CC' },
+    cotton: { rarity: 'rare', name: 'Cotton Candy', duplicateGold: 150, hexColor: '#FFBCD9' },
+    powder: { rarity: 'rare', name: 'Powder Blue', duplicateGold: 150, hexColor: '#B0E0E6' },
+    baby: { rarity: 'rare', name: 'Baby Blue', duplicateGold: 150, hexColor: '#89CFF0' },
+    lemon: { rarity: 'rare', name: 'Lemon', duplicateGold: 150, hexColor: '#FFF44F' },
+    canary: { rarity: 'rare', name: 'Canary', duplicateGold: 150, hexColor: '#FFEF00' },
+    
+    // Dark/Deep tones
+    navy: { rarity: 'rare', name: 'Navy', duplicateGold: 150, hexColor: '#001F3F' },
+    maroon: { rarity: 'rare', name: 'Maroon', duplicateGold: 150, hexColor: '#6B2C2C' },
+    burgundy: { rarity: 'rare', name: 'Burgundy', duplicateGold: 150, hexColor: '#800020' },
+    wine: { rarity: 'rare', name: 'Wine', duplicateGold: 150, hexColor: '#722F37' },
+    crimson: { rarity: 'rare', name: 'Crimson', duplicateGold: 150, hexColor: '#DC143C' },
+    scarlet: { rarity: 'rare', name: 'Scarlet', duplicateGold: 150, hexColor: '#FF2400' },
+    cherry: { rarity: 'rare', name: 'Cherry', duplicateGold: 150, hexColor: '#DE3163' },
+    ruby: { rarity: 'rare', name: 'Ruby', duplicateGold: 150, hexColor: '#E0115F' },
+    darkBlue: { rarity: 'rare', name: 'Dark Blue', duplicateGold: 150, hexColor: '#003366' },
+    midnight: { rarity: 'rare', name: 'Midnight', duplicateGold: 150, hexColor: '#191970' },
+    indigo: { rarity: 'rare', name: 'Indigo', duplicateGold: 150, hexColor: '#4B0082' },
+    violet: { rarity: 'rare', name: 'Violet', duplicateGold: 150, hexColor: '#8F00FF' },
+    magenta: { rarity: 'rare', name: 'Magenta', duplicateGold: 150, hexColor: '#C71585' },
+    fuchsia: { rarity: 'rare', name: 'Fuchsia', duplicateGold: 150, hexColor: '#FF00FF' },
+    
+    // Jewel tones
+    sapphire: { rarity: 'rare', name: 'Sapphire', duplicateGold: 150, hexColor: '#0F52BA' },
+    emerald: { rarity: 'rare', name: 'Emerald', duplicateGold: 150, hexColor: '#50C878' },
+    amethyst: { rarity: 'rare', name: 'Amethyst', duplicateGold: 150, hexColor: '#9966CC' },
+    topaz: { rarity: 'rare', name: 'Topaz', duplicateGold: 150, hexColor: '#FFCC00' },
+    jade: { rarity: 'rare', name: 'Jade', duplicateGold: 150, hexColor: '#00A86B' },
+    
+    // Unique colors
+    hotPink: { rarity: 'rare', name: 'Hot Pink', duplicateGold: 150, hexColor: '#FF69B4' },
+    electricBlue: { rarity: 'rare', name: 'Electric Blue', duplicateGold: 150, hexColor: '#7DF9FF' },
+    neonGreen: { rarity: 'rare', name: 'Neon Green', duplicateGold: 150, hexColor: '#39FF14' },
+    neonOrange: { rarity: 'rare', name: 'Neon Orange', duplicateGold: 150, hexColor: '#FF6700' },
+    neonPink: { rarity: 'rare', name: 'Neon Pink', duplicateGold: 150, hexColor: '#FF6EC7' },
+    neonYellow: { rarity: 'rare', name: 'Neon Yellow', duplicateGold: 150, hexColor: '#CCFF00' },
+    
+    // ============ EPIC (special/vibrant colors) ============
+    // Animated rainbow-style effects
+    rainbow: { rarity: 'epic', name: 'Rainbow', duplicateGold: 500, isAnimated: true, hexColor: '#FF0000', description: 'Cycles through all colors' },
+    galaxy: { rarity: 'epic', name: 'Galaxy', duplicateGold: 500, isAnimated: true, hexColor: '#1A0533', description: 'Deep space purple with shimmer' },
+    aurora: { rarity: 'epic', name: 'Aurora', duplicateGold: 500, isAnimated: true, hexColor: '#00FF7F', description: 'Northern lights effect' },
+    sunset: { rarity: 'epic', name: 'Sunset', duplicateGold: 500, isAnimated: true, hexColor: '#FF4500', description: 'Warm gradient animation' },
+    ocean: { rarity: 'epic', name: 'Ocean', duplicateGold: 500, isAnimated: true, hexColor: '#006994', description: 'Deep sea wave effect' },
+    lava: { rarity: 'epic', name: 'Lava', duplicateGold: 500, isAnimated: true, hexColor: '#CF1020', description: 'Molten rock glow' },
+    ice: { rarity: 'epic', name: 'Ice', duplicateGold: 500, isAnimated: true, hasGlow: true, hexColor: '#B8DBF0', description: 'Frozen crystal shimmer' },
+    prismatic: { rarity: 'epic', name: 'Prismatic', duplicateGold: 500, isAnimated: true, hexColor: '#FFFFFF', description: 'Light refraction effect' },
+    
+    // Special metallics with glow
+    roseGold: { rarity: 'epic', name: 'Rose Gold', duplicateGold: 500, hasGlow: true, hexColor: '#B76E79' },
+    champagne: { rarity: 'epic', name: 'Champagne', duplicateGold: 500, hasGlow: true, hexColor: '#F7E7CE' },
+    
+    // Neon with glow
+    neonCyan: { rarity: 'epic', name: 'Neon Cyan', duplicateGold: 500, hasGlow: true, hexColor: '#00FFFF' },
+    neonPurple: { rarity: 'epic', name: 'Neon Purple', duplicateGold: 500, hasGlow: true, hexColor: '#9D00FF' },
+    neonRed: { rarity: 'epic', name: 'Neon Red', duplicateGold: 500, hasGlow: true, hexColor: '#FF0000' },
+    
+    // ============ LEGENDARY (animated + glow) ============
+    chromatic: { rarity: 'legendary', name: 'Chromatic', duplicateGold: 2500, isAnimated: true, hasGlow: true, hexColor: '#FFFFFF', description: 'Shifts through the entire color spectrum' },
+    holographic: { rarity: 'legendary', name: 'Holographic', duplicateGold: 2500, isAnimated: true, hasGlow: true, hexColor: '#E6E6FA', description: 'Iridescent hologram effect' },
+    starlight: { rarity: 'legendary', name: 'Starlight', duplicateGold: 2500, isAnimated: true, hasGlow: true, hexColor: '#FFFACD', description: 'Twinkling star particles' },
+    nebula: { rarity: 'legendary', name: 'Nebula', duplicateGold: 2500, isAnimated: true, hasGlow: true, hexColor: '#9932CC', description: 'Cosmic cloud swirls' },
+    plasma: { rarity: 'legendary', name: 'Plasma', duplicateGold: 2500, isAnimated: true, hasGlow: true, hexColor: '#8A2BE2', description: 'Electric energy field' },
+    inferno: { rarity: 'legendary', name: 'Inferno', duplicateGold: 2500, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#FF4500', description: 'Engulfed in flames' },
+    arctic: { rarity: 'legendary', name: 'Arctic', duplicateGold: 2500, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#E0FFFF', description: 'Frozen mist aura' },
+    
+    // ============ MYTHIC (ultra rare, dramatic effects) ============
+    voidblack: { rarity: 'mythic', name: 'Void Black', duplicateGold: 10000, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#0D0D0D', description: 'Pure darkness that absorbs light' },
+    ethereal: { rarity: 'mythic', name: 'Ethereal', duplicateGold: 10000, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#E8E8E8', description: 'Semi-transparent ghostly glow' },
+    singularity: { rarity: 'mythic', name: 'Singularity', duplicateGold: 10000, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#1A0A2E', description: 'Black hole event horizon effect' },
+    supernova: { rarity: 'mythic', name: 'Supernova', duplicateGold: 10000, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#FFD700', description: 'Exploding star brilliance' },
+    phantom: { rarity: 'mythic', name: 'Phantom', duplicateGold: 10000, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#8B008B', description: 'Phasing in and out of reality' },
+    
+    // ============ DIVINE (extremely rare, ultimate effects) ============
+    celestial: { rarity: 'divine', name: 'Celestial', duplicateGold: 50000, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#FFEFD5', description: 'Blessed by the stars themselves' },
+    cosmic: { rarity: 'divine', name: 'Cosmic', duplicateGold: 50000, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#0B0B45', description: 'The fabric of spacetime made visible' },
+    transcendent: { rarity: 'divine', name: 'Transcendent', duplicateGold: 50000, isAnimated: true, hasGlow: true, hasFx: true, hexColor: '#F8F8FF', description: 'Beyond mortal comprehension' }
 };
 
 // ========== HATS ==========

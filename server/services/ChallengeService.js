@@ -356,6 +356,98 @@ class ChallengeService {
     }
 
     /**
+     * Handle player disconnect - cancel all their pending challenges
+     * Cancels challenges where player is either challenger OR target
+     * @param {string} playerId - The disconnecting player's session ID
+     * @param {string} walletAddress - The disconnecting player's wallet (if authenticated)
+     * @returns {object} Result with cancelled challenge IDs
+     */
+    async handleDisconnect(playerId, walletAddress = null) {
+        const cancelledChallenges = [];
+        const affectedPlayers = new Set(); // Players to notify
+        
+        for (const [id, challenge] of this.challenges) {
+            if (challenge.status !== 'pending') continue;
+            
+            // Check if disconnecting player is the challenger
+            const isChallenger = challenge.challengerId === playerId || 
+                                 (walletAddress && challenge.challengerWallet === walletAddress);
+            
+            // Check if disconnecting player is the target
+            const isTarget = challenge.targetId === playerId || 
+                            (walletAddress && challenge.targetWallet === walletAddress);
+            
+            if (isChallenger || isTarget) {
+                challenge.status = 'cancelled_disconnect';
+                this.challenges.delete(id);
+                cancelledChallenges.push(id);
+                
+                // Track who needs notification
+                if (isChallenger) {
+                    // Notify target that challenger disconnected
+                    affectedPlayers.add({
+                        playerId: challenge.targetId,
+                        walletAddress: challenge.targetWallet,
+                        challengeId: id,
+                        reason: 'challenger_disconnected',
+                        otherName: challenge.challengerName
+                    });
+                    // Remove from target's inbox
+                    this.inboxService.deleteByChallengeId(challenge.targetId, id);
+                } else {
+                    // Notify challenger that target disconnected
+                    affectedPlayers.add({
+                        playerId: challenge.challengerId,
+                        walletAddress: challenge.challengerWallet,
+                        challengeId: id,
+                        reason: 'target_disconnected',
+                        otherName: challenge.targetName
+                    });
+                }
+                
+                // Refund token wager if challenger deposited
+                if (challenge.wagerToken?.tokenAddress && 
+                    challenge.challengerWallet && 
+                    this.custodialWalletService) {
+                    
+                    const refundResult = await this.custodialWalletService.processChallengeRefund({
+                        challengeId: id,
+                        walletAddress: challenge.challengerWallet,
+                        tokenAddress: challenge.wagerToken.tokenAddress,
+                        amountRaw: challenge.wagerToken.amountRaw,
+                        reason: 'disconnect'
+                    });
+                    
+                    if (refundResult.success) {
+                        console.log(`💸 Refunded disconnect challenge ${id}: ${challenge.wagerToken.tokenAmount} ${challenge.wagerToken.tokenSymbol}`);
+                    }
+                }
+                
+                // Update in database
+                if (isDBConnected()) {
+                    try {
+                        await Challenge.updateOne(
+                            { challengeId: id },
+                            { status: 'cancelled_disconnect', respondedAt: new Date() }
+                        );
+                    } catch (error) {
+                        console.error('Error updating cancelled challenge in DB:', error);
+                    }
+                }
+            }
+        }
+        
+        if (cancelledChallenges.length > 0) {
+            console.log(`🔌 Player disconnect cancelled ${cancelledChallenges.length} challenge(s)`);
+        }
+        
+        return { 
+            cancelledChallenges, 
+            affectedPlayers: Array.from(affectedPlayers)
+        };
+    }
+
+    /**
      * Clean up expired challenges and refund token deposits
      */
     async cleanupExpired() {

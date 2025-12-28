@@ -154,9 +154,9 @@ export function ChallengeProvider({ children }) {
                     break;
                     
                 case 'challenge_cancelled':
-                    // Our challenge was successfully cancelled
+                    // Challenge was cancelled (by us or due to disconnect)
                     setPendingChallenges(prev => prev.filter(c => c.id !== message.challengeId));
-                    showNotification('Challenge cancelled', 'info');
+                    showNotification(message.message || 'Challenge cancelled', 'info');
                     break;
                     
                 case 'challenge_declined':
