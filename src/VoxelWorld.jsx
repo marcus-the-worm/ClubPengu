@@ -35,8 +35,10 @@ import {
     AI_CONVERSATIONS,
     BUBBLE_HEIGHT_PENGUIN,
     BUBBLE_HEIGHT_MARCUS,
+    BUBBLE_HEIGHT_WHALE,
     NAME_HEIGHT_PENGUIN,
     NAME_HEIGHT_MARCUS,
+    NAME_HEIGHT_WHALE,
     ROOM_PORTALS,
     IGLOO_BANNER_STYLES,
     IGLOO_BANNER_CONTENT
@@ -3572,7 +3574,7 @@ const VoxelWorld = ({
                         const phase = meshData.nameSprite.userData.animationPhase || 0;
                         const floatOffset = Math.sin(time * 1.5 + phase) * 0.1;
                         const characterType = meshData.mesh.userData?.characterType || 'penguin';
-                        const baseHeight = characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                        const baseHeight = characterType === 'marcus' ? NAME_HEIGHT_MARCUS : characterType === 'whiteWhale' ? NAME_HEIGHT_WHALE : NAME_HEIGHT_PENGUIN;
                         meshData.nameSprite.position.y = baseHeight + floatOffset;
                     }
                     
@@ -3609,7 +3611,7 @@ const VoxelWorld = ({
                             if (meshData.bubble) {
                                 meshData.mesh.remove(meshData.bubble);
                             }
-                            const bubbleHeight = playerData.appearance?.characterType === 'marcus' ? BUBBLE_HEIGHT_MARCUS : BUBBLE_HEIGHT_PENGUIN;
+                            const bubbleHeight = playerData.appearance?.characterType === 'marcus' ? BUBBLE_HEIGHT_MARCUS : playerData.appearance?.characterType === 'whiteWhale' ? BUBBLE_HEIGHT_WHALE : BUBBLE_HEIGHT_PENGUIN;
                             meshData.bubble = createChatSprite(THREE, playerData.chatMessage, bubbleHeight);
                             meshData.mesh.add(meshData.bubble);
                             meshData.lastChatMessage = playerData.chatMessage;
@@ -3656,7 +3658,7 @@ const VoxelWorld = ({
                 if (localNameStyle === 'day1' || localNameStyle === 'whale') {
                     const phase = playerNameSpriteRef.current.userData.animationPhase || 0;
                     const floatOffset = Math.sin(time * 1.5 + phase) * 0.1;
-                    const baseHeight = penguinData?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                    const baseHeight = penguinData?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : penguinData?.characterType === 'whiteWhale' ? NAME_HEIGHT_WHALE : NAME_HEIGHT_PENGUIN;
                     playerNameSpriteRef.current.position.y = baseHeight + floatOffset;
                 }
                 
@@ -4222,8 +4224,8 @@ const VoxelWorld = ({
             playerRef.current.remove(bubbleSpriteRef.current);
         }
         
-        // Use taller bubble height for Marcus
-        const bubbleHeight = penguinData?.characterType === 'marcus' ? BUBBLE_HEIGHT_MARCUS : BUBBLE_HEIGHT_PENGUIN;
+        // Use taller bubble height for special characters
+        const bubbleHeight = penguinData?.characterType === 'marcus' ? BUBBLE_HEIGHT_MARCUS : penguinData?.characterType === 'whiteWhale' ? BUBBLE_HEIGHT_WHALE : BUBBLE_HEIGHT_PENGUIN;
         const sprite = createChatSprite(window.THREE, activeBubble, bubbleHeight);
         playerRef.current.add(sprite);
         bubbleSpriteRef.current = sprite;
@@ -5696,7 +5698,7 @@ const VoxelWorld = ({
                             const customization = JSON.parse(localStorage.getItem('penguin_customization') || '{}');
                             characterType = customization.characterType || 'penguin';
                         } catch { /* use default */ }
-                        const nameHeight = characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                        const nameHeight = characterType === 'marcus' ? NAME_HEIGHT_MARCUS : characterType === 'whiteWhale' ? NAME_HEIGHT_WHALE : NAME_HEIGHT_PENGUIN;
                         nameSprite.position.set(0, nameHeight, 0);
                         playerRef.current.add(nameSprite);
                         playerNameSpriteRef.current = nameSprite;
@@ -5764,7 +5766,7 @@ const VoxelWorld = ({
                 
                 const nameSprite = createNameSprite(playerName, nametagStyle);
                 if (nameSprite) {
-                    const nameHeight = penguinData?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                    const nameHeight = penguinData?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : penguinData?.characterType === 'whiteWhale' ? NAME_HEIGHT_WHALE : NAME_HEIGHT_PENGUIN;
                     nameSprite.position.set(0, nameHeight, 0);
                     playerRef.current.add(nameSprite);
                     playerNameSpriteRef.current = nameSprite;
@@ -6025,7 +6027,7 @@ const VoxelWorld = ({
             const playerNametagStyle = playerData.appearance?.nametagStyle || 'day1';
             const nameSprite = createNameSprite(playerData.name || 'Player', playerNametagStyle);
             if (nameSprite) {
-                const nameHeight = playerData.appearance?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+                const nameHeight = playerData.appearance?.characterType === 'marcus' ? NAME_HEIGHT_MARCUS : playerData.appearance?.characterType === 'whiteWhale' ? NAME_HEIGHT_WHALE : NAME_HEIGHT_PENGUIN;
                 nameSprite.position.set(0, nameHeight, 0);
                 mesh.add(nameSprite);
             }

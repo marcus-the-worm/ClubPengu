@@ -119,6 +119,18 @@ const PROMO_CODES = [
             coins: 0
         }
     },
+    {
+        code: 'WWHALE',
+        name: '🐋 White Whale Character',
+        description: 'Unlocks the majestic White Whale character type',
+        unlocks: {
+            mounts: [],
+            cosmetics: [],
+            characters: ['whiteWhale'],
+            skinColor: null,
+            coins: 0
+        }
+    },
     
     // ========== INTERNAL TEAM CODES ==========
     {

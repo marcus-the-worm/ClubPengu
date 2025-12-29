@@ -23,6 +23,18 @@ const CHANGE_TYPES = {
 // ==================== CHANGELOG DATA (1:1 with whitepaper) ====================
 const CHANGELOG = [
     {
+        version: '1.0.1',
+        date: 'December 29, 2025',
+        title: '🐋 White Whale Character',
+        description: 'New secret playable character - the majestic White Whale!',
+        highlight: true,
+        changes: [
+            { type: 'feature', text: 'White Whale character - whale-headed creature with penguin body (WhiteWhaleCharacter.js - 230 lines)' },
+            { type: 'feature', text: 'WWHALE promo code unlocks the White Whale character' },
+            { type: 'improvement', text: 'Character height system extended for new character types' },
+        ],
+    },
+    {
         version: '1.0.0',
         date: 'December 27, 2025',
         title: '🚀 Rebranding - New Token Coming Soon!',

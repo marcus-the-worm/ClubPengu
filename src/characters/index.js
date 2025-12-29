@@ -15,6 +15,7 @@
 
 import characterRegistry from './CharacterRegistry';
 import MarcusGenerators, { MARCUS_PALETTE } from './MarcusCharacter';
+import WhiteWhaleGenerators, { WHITE_WHALE_PALETTE } from './WhiteWhaleCharacter';
 
 // Register all characters (unlocks determined by server)
 characterRegistry.registerCharacter('penguin', {
@@ -40,6 +41,22 @@ characterRegistry.registerCharacter('marcus', {
     }
 });
 
+characterRegistry.registerCharacter('whiteWhale', {
+    name: 'White Whale',
+    description: 'A majestic whale-headed creature from the deep',
+    generators: WhiteWhaleGenerators,
+    palette: WHITE_WHALE_PALETTE,
+    isSecret: true,
+    previewScale: 0.85,
+    customizationOptions: {
+        disableSkinColor: true,
+        disableHats: true,
+        disableEyes: true,
+        disableMouth: true,
+        disableBodyItems: false,
+    }
+});
+
 // Export everything
-export { characterRegistry, MarcusGenerators, MARCUS_PALETTE };
+export { characterRegistry, MarcusGenerators, MARCUS_PALETTE, WhiteWhaleGenerators, WHITE_WHALE_PALETTE };
 export default characterRegistry;

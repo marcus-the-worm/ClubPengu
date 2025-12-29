@@ -6,7 +6,7 @@
 import { VOXEL_SIZE, PALETTE } from '../constants';
 import { ASSETS } from '../assets/index';
 import { generateBaseBody, generateFlippers, generateFoot, generateHead } from '../generators';
-import { MarcusGenerators, MARCUS_PALETTE } from '../characters';
+import { MarcusGenerators, MARCUS_PALETTE, WhiteWhaleGenerators, WHITE_WHALE_PALETTE } from '../characters';
 
 /**
  * Creates a PenguinBuilder factory with cached materials and geometry
@@ -609,6 +609,47 @@ export function createPenguinBuilder(THREE) {
     };
     
     /**
+     * Build White Whale (special character) mesh
+     * Whale head on penguin body
+     */
+    const buildWhiteWhaleMesh = (data) => {
+        const group = new THREE.Group();
+        const pivots = WhiteWhaleGenerators.pivots();
+        
+        // Whale head
+        const headVoxels = WhiteWhaleGenerators.head();
+        const head = buildPartMerged(headVoxels, WHITE_WHALE_PALETTE);
+        head.name = 'head';
+        
+        // Whale-colored penguin body
+        const bodyVoxels = WhiteWhaleGenerators.body();
+        const body = buildPartMerged(bodyVoxels, { ...PALETTE, ...WHITE_WHALE_PALETTE });
+        body.name = 'body';
+        
+        // Whale-colored flippers (using penguin flipper shape)
+        const flipperLVoxels = WhiteWhaleGenerators.flipperLeft();
+        const flipperL = buildPartMerged(flipperLVoxels, { ...PALETTE, ...WHITE_WHALE_PALETTE }, pivots.flipperLeft);
+        flipperL.name = 'flipper_l';
+        
+        const flipperRVoxels = WhiteWhaleGenerators.flipperRight();
+        const flipperR = buildPartMerged(flipperRVoxels, { ...PALETTE, ...WHITE_WHALE_PALETTE }, pivots.flipperRight);
+        flipperR.name = 'flipper_r';
+        
+        // Orange penguin feet (for contrast)
+        const feetVoxels = WhiteWhaleGenerators.feet();
+        const footL = buildPartMerged(feetVoxels.filter(v => v.x > 0), PALETTE, pivots.footLeft);
+        footL.name = 'foot_l';
+        const footR = buildPartMerged(feetVoxels.filter(v => v.x < 0), PALETTE, pivots.footRight);
+        footR.name = 'foot_r';
+        
+        group.add(body, head, flipperL, flipperR, footL, footR);
+        group.scale.set(0.2, 0.2, 0.2);
+        group.position.y = 0.8;
+        
+        return group;
+    };
+    
+    /**
      * Build "Joe Mode" penguin (big floating head)
      */
     const buildJoeModePenguin = (data) => {
@@ -770,6 +811,8 @@ export function createPenguinBuilder(THREE) {
         // Check for special character types
         if (data.characterType === 'marcus') {
             group = buildMarcusMesh(data);
+        } else if (data.characterType === 'whiteWhale') {
+            group = buildWhiteWhaleMesh(data);
         } else {
             // Check if bodyItem hides the body (e.g., "joe" clothing)
             const bodyItemData = data.bodyItem ? ASSETS.BODY[data.bodyItem] : null;

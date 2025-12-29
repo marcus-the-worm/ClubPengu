@@ -59,8 +59,10 @@ export const BUILDINGS = [
 // Chat bubble height constants
 export const BUBBLE_HEIGHT_PENGUIN = 5.8;
 export const BUBBLE_HEIGHT_MARCUS = 6.8;
+export const BUBBLE_HEIGHT_WHALE = 6.5;
 export const NAME_HEIGHT_PENGUIN = 5;
 export const NAME_HEIGHT_MARCUS = 6;
+export const NAME_HEIGHT_WHALE = 5.8;
 
 // AI penguin names
 export const AI_NAMES = [

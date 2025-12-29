@@ -31,7 +31,7 @@ export { default as ParticleSystem } from './ParticleSystem';
 export { default as EmoteSystem, EMOTE_WHEEL_ITEMS, LOOPING_EMOTES, EMOTE_EMOJI_MAP } from './EmoteSystem';
 
 // Chat bubble system
-export { default as ChatBubbleManager, createChatSprite, getBubbleHeight, getNameHeight, BUBBLE_HEIGHT_PENGUIN, BUBBLE_HEIGHT_MARCUS } from './ChatBubbleSystem';
+export { default as ChatBubbleManager, createChatSprite, getBubbleHeight, getNameHeight, BUBBLE_HEIGHT_PENGUIN, BUBBLE_HEIGHT_MARCUS, BUBBLE_HEIGHT_WHALE, NAME_HEIGHT_WHALE } from './ChatBubbleSystem';
 
 // Multiplayer synchronization
 export { default as MultiplayerSync, hasAnimatedCosmetics, lerp, lerpRotation, calculateLerpFactor } from './MultiplayerSync';

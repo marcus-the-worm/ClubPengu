@@ -4,7 +4,7 @@ import { ASSETS } from './assets/index';
 import { generateBaseBody, generateFlippers, generateFeet, generateHead } from './generators';
 import { IconSettings, IconChevronLeft, IconChevronRight, IconCamera, IconWorld } from './Icons';
 import { useMultiplayer } from './multiplayer';
-import { characterRegistry, MarcusGenerators, MARCUS_PALETTE } from './characters';
+import { characterRegistry, MarcusGenerators, MARCUS_PALETTE, WhiteWhaleGenerators, WHITE_WHALE_PALETTE } from './characters';
 import WalletAuth from './components/WalletAuth';
 
 function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
@@ -720,6 +720,13 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
             addPart(MarcusGenerators.armRight(), 'flipper_r', MARCUS_PALETTE);
             addPart(MarcusGenerators.legLeft(), 'foot_l', MARCUS_PALETTE);
             addPart(MarcusGenerators.legRight(), 'foot_r', MARCUS_PALETTE);
+        } else if (characterType === 'whiteWhale') {
+            // Build White Whale - whale head on penguin body
+            addPart(WhiteWhaleGenerators.head(), 'head', WHITE_WHALE_PALETTE);
+            addPart(WhiteWhaleGenerators.body(), 'body', { ...PALETTE, ...WHITE_WHALE_PALETTE });
+            addPart(WhiteWhaleGenerators.flipperLeft(), 'flipper_l', { ...PALETTE, ...WHITE_WHALE_PALETTE });
+            addPart(WhiteWhaleGenerators.flipperRight(), 'flipper_r', { ...PALETTE, ...WHITE_WHALE_PALETTE });
+            addPart(WhiteWhaleGenerators.feet(), 'feet', PALETTE);
         } else {
             // Build standard Penguin character
             const bodyVoxels = generateBaseBody(PALETTE[skinColor] || skinColor);

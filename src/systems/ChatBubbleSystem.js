@@ -6,8 +6,10 @@
 // Height constants for different character types
 export const BUBBLE_HEIGHT_PENGUIN = 5.8;
 export const BUBBLE_HEIGHT_MARCUS = 6.8;
+export const BUBBLE_HEIGHT_WHALE = 6.5;
 export const NAME_HEIGHT_PENGUIN = 5;
 export const NAME_HEIGHT_MARCUS = 6;
+export const NAME_HEIGHT_WHALE = 5.8;
 
 /**
  * Create a chat bubble sprite for a message
@@ -149,20 +151,24 @@ export function createChatSprite(THREE, message, height = BUBBLE_HEIGHT_PENGUIN)
 
 /**
  * Get bubble height for a character type
- * @param {string} characterType - 'penguin' or 'marcus'
+ * @param {string} characterType - 'penguin', 'marcus', or 'whiteWhale'
  * @returns {number}
  */
 export function getBubbleHeight(characterType) {
-    return characterType === 'marcus' ? BUBBLE_HEIGHT_MARCUS : BUBBLE_HEIGHT_PENGUIN;
+    if (characterType === 'marcus') return BUBBLE_HEIGHT_MARCUS;
+    if (characterType === 'whiteWhale') return BUBBLE_HEIGHT_WHALE;
+    return BUBBLE_HEIGHT_PENGUIN;
 }
 
 /**
  * Get name height for a character type
- * @param {string} characterType - 'penguin' or 'marcus'
+ * @param {string} characterType - 'penguin', 'marcus', or 'whiteWhale'
  * @returns {number}
  */
 export function getNameHeight(characterType) {
-    return characterType === 'marcus' ? NAME_HEIGHT_MARCUS : NAME_HEIGHT_PENGUIN;
+    if (characterType === 'marcus') return NAME_HEIGHT_MARCUS;
+    if (characterType === 'whiteWhale') return NAME_HEIGHT_WHALE;
+    return NAME_HEIGHT_PENGUIN;
 }
 
 /**

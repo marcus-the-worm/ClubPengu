@@ -76,7 +76,8 @@ class MultiplayerSync {
         this.animateMesh = options.animateMesh;
         this.nameHeight = {
             penguin: options.nameHeightPenguin || 5,
-            marcus: options.nameHeightMarcus || 6
+            marcus: options.nameHeightMarcus || 6,
+            whiteWhale: options.nameHeightWhale || 5.8
         };
     }
 
@@ -150,9 +151,12 @@ class MultiplayerSync {
         if (this.createNameSprite) {
             nameSprite = this.createNameSprite(playerData.name || 'Player');
             if (nameSprite) {
-                const height = playerData.appearance?.characterType === 'marcus' 
+                const charType = playerData.appearance?.characterType;
+                const height = charType === 'marcus' 
                     ? this.nameHeight.marcus 
-                    : this.nameHeight.penguin;
+                    : charType === 'whiteWhale'
+                        ? this.nameHeight.whiteWhale
+                        : this.nameHeight.penguin;
                 nameSprite.position.set(0, height, 0);
                 mesh.add(nameSprite);
             }
