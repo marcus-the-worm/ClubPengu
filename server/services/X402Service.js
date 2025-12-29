@@ -12,17 +12,10 @@ const X402_FACILITATOR_URL = process.env.X402_FACILITATOR_URL || 'https://x402.o
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const SOLANA_NETWORK_ID = process.env.SOLANA_NETWORK || 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp';
 
-// Token addresses (should match client config)
-const CPW3_TOKEN_ADDRESS = process.env.CPW3_TOKEN_ADDRESS;
-const RENT_WALLET_ADDRESS = process.env.RENT_WALLET_ADDRESS;
-
-// Validate required env vars on startup
-if (!CPW3_TOKEN_ADDRESS) {
-    console.warn('⚠️ X402Service: CPW3_TOKEN_ADDRESS not set - balance checks will fail in production');
-}
-if (!RENT_WALLET_ADDRESS) {
-    console.warn('⚠️ X402Service: RENT_WALLET_ADDRESS not set - rent payments will fail');
-}
+// Token addresses - read lazily to allow dotenv to load first
+// Fallbacks provided for when env vars haven't loaded yet due to ES module hoisting
+const getTokenAddress = () => process.env.CPW3_TOKEN_ADDRESS || 'BDbMVbcc5hD5qiiGYwipeuUVMKDs16s9Nxk2hrhbpump';
+const getRentWallet = () => process.env.RENT_WALLET_ADDRESS || '466jab8XPyn5vXj3SgzCz8wuEkBKqVuQrUy4EtLiadxM';
 
 class X402Service {
     constructor() {
@@ -217,7 +210,7 @@ class X402Service {
                         paymentDetails: {
                             amount: expectedDetails.amount,
                             networkId: this.networkId,
-                            token: expectedDetails.token || CPW3_TOKEN_ADDRESS
+                            token: expectedDetails.token || getTokenAddress()
                         }
                     })
                 });
@@ -320,7 +313,7 @@ class X402Service {
      */
     async checkTokenBalance(walletAddress, tokenAddress, minimumBalance) {
         // In development without proper config, allow for testing
-        if (process.env.NODE_ENV !== 'production' && !CPW3_TOKEN_ADDRESS) {
+        if (process.env.NODE_ENV !== 'production' && !getTokenAddress()) {
             return { hasBalance: true, currentBalance: minimumBalance * 2, devMode: true };
         }
         
@@ -381,7 +374,7 @@ class X402Service {
      * @returns {Promise<Object>}
      */
     async checkRentEligibility(walletAddress, minimumBalance) {
-        return this.checkTokenBalance(walletAddress, CPW3_TOKEN_ADDRESS, minimumBalance);
+        return this.checkTokenBalance(walletAddress, getTokenAddress(), minimumBalance);
     }
 }
 

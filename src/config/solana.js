@@ -18,7 +18,7 @@ export const USDC_TOKEN_ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
 
 // ==================== WALLETS ====================
 // Treasury wallet for rent payments
-export const RENT_WALLET_ADDRESS = import.meta.env.VITE_RENT_WALLET_ADDRESS || 'RENTxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+export const RENT_WALLET_ADDRESS = import.meta.env.VITE_RENT_WALLET_ADDRESS || '466jab8XPyn5vXj3SgzCz8wuEkBKqVuQrUy4EtLiadxM';
 
 // ==================== NETWORK ====================
 // Solana mainnet CAIP-2 identifier

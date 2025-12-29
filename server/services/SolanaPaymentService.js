@@ -162,7 +162,10 @@ class SolanaPaymentService {
      * Get SPL token balance for a wallet
      */
     async getTokenBalance(walletAddress, tokenMintAddress) {
+        await this.ensureInitialized();
+        
         if (!this.connection) {
+            console.error('SolanaPayment: Connection still null after init');
             return 0;
         }
         
