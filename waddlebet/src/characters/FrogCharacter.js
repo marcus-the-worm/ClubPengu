@@ -321,6 +321,7 @@ export const generateFrogFlipper = (isLeft) => {
 
 /**
  * Generate frog feet - Webbed frog feet with 3 toes
+ * Uses main color (same as body) instead of orange
  */
 export const generateFrogFoot = (isLeft) => {
     const voxels = [];
@@ -334,28 +335,28 @@ export const generateFrogFoot = (isLeft) => {
                 x: x + xOffset,
                 y: -7,
                 z: z + 1,
-                c: 'feet'
+                c: 'main'  // Same as primary color
             });
         }
     }
     
     // Three webbed toes spreading out
     // Center toe (longest)
-    voxels.push({ x: xOffset, y: -7, z: 4, c: 'feet' });
-    voxels.push({ x: xOffset, y: -7, z: 5, c: 'feet' });
-    voxels.push({ x: xOffset, y: -7, z: 6, c: 'feetDark' });
+    voxels.push({ x: xOffset, y: -7, z: 4, c: 'main' });
+    voxels.push({ x: xOffset, y: -7, z: 5, c: 'main' });
+    voxels.push({ x: xOffset, y: -7, z: 6, c: 'mainDark' });
     
     // Inner toe (medium)
-    voxels.push({ x: xOffset - side, y: -7, z: 4, c: 'feet' });
-    voxels.push({ x: xOffset - side * 2, y: -7, z: 5, c: 'feetDark' });
+    voxels.push({ x: xOffset - side, y: -7, z: 4, c: 'main' });
+    voxels.push({ x: xOffset - side * 2, y: -7, z: 5, c: 'mainDark' });
     
     // Outer toe (medium)  
-    voxels.push({ x: xOffset + side, y: -7, z: 4, c: 'feet' });
-    voxels.push({ x: xOffset + side * 2, y: -7, z: 5, c: 'feetDark' });
+    voxels.push({ x: xOffset + side, y: -7, z: 4, c: 'main' });
+    voxels.push({ x: xOffset + side * 2, y: -7, z: 5, c: 'mainDark' });
     
     // Webbing between toes
-    voxels.push({ x: xOffset - side, y: -7, z: 3, c: 'feetDark' });
-    voxels.push({ x: xOffset + side, y: -7, z: 3, c: 'feetDark' });
+    voxels.push({ x: xOffset - side, y: -7, z: 3, c: 'mainDark' });
+    voxels.push({ x: xOffset + side, y: -7, z: 3, c: 'mainDark' });
     
     return voxels;
 };
