@@ -770,7 +770,98 @@ export const BODY = {
         voxels: [] 
     },
     
-    joe: { hideBody: true, voxels: [] }
+    joe: { hideBody: true, voxels: [] },
+    
+    // DOGINAL EXCLUSIVE: White Trenchcoat
+    // Designed for dog body shape (Y_OFFSET=4), no overlapping voxels
+    dogTrenchcoat: (() => {
+        const voxelMap = new Map();
+        const addVoxel = (x, y, z, c) => {
+            const key = `${x},${y},${z}`;
+            if (!voxelMap.has(key)) voxelMap.set(key, {x, y, z, c});
+        };
+        
+        const white = '#F5F5F5';
+        const cream = '#FFFEF0';
+        const buttonGold = '#C9A227';
+        const shadow = '#E0E0E0';
+        
+        // Dog body is at Y_OFFSET=4, body spans y:-8 to y:0 relative
+        // So absolute y positions for coat: -4 to 4 (body area)
+        // Coat wraps OUTSIDE the body (body radius ~5 in X, ~4 in Z)
+        
+        // Back of coat (z < 0, outside body)
+        for (let y = -2; y <= 2; y++) {
+            for (let x = -6; x <= 6; x++) {
+                // Back panel
+                if (Math.abs(x) <= 5) {
+                    addVoxel(x, y, -5, white);
+                }
+                // Side panels
+                if (Math.abs(x) === 6 && y >= -1) {
+                    addVoxel(x, y, -4, shadow);
+                    addVoxel(x, y, -3, shadow);
+                    addVoxel(x, y, -2, white);
+                }
+            }
+        }
+        
+        // Lower coat (hanging down)
+        for (let y = -4; y < -2; y++) {
+            for (let x = -5; x <= 5; x++) {
+                addVoxel(x, y, -5, cream);
+                if (Math.abs(x) >= 4) {
+                    addVoxel(x, y, -4, shadow);
+                }
+            }
+        }
+        
+        // Front lapels (open coat look, z > 0)
+        for (let y = 0; y <= 3; y++) {
+            // Left lapel
+            addVoxel(-6, y, 3, white);
+            addVoxel(-6, y, 4, shadow);
+            addVoxel(-5, y, 5, white);
+            
+            // Right lapel
+            addVoxel(6, y, 3, white);
+            addVoxel(6, y, 4, shadow);
+            addVoxel(5, y, 5, white);
+        }
+        
+        // Collar (around neck area, y ~3-4)
+        for (let x = -4; x <= 4; x++) {
+            if (Math.abs(x) >= 2) {
+                addVoxel(x, 4, -3, white);
+                addVoxel(x, 5, -2, cream);
+            }
+        }
+        // Collar points
+        addVoxel(-5, 4, 2, white);
+        addVoxel(-5, 5, 2, cream);
+        addVoxel(5, 4, 2, white);
+        addVoxel(5, 5, 2, cream);
+        
+        // Buttons (gold, on front)
+        addVoxel(0, 1, 6, buttonGold);
+        addVoxel(0, -1, 6, buttonGold);
+        addVoxel(0, -3, 6, buttonGold);
+        
+        // Belt/waist detail
+        for (let x = -5; x <= 5; x++) {
+            if (Math.abs(x) >= 3) {
+                addVoxel(x, -1, -5, shadow);
+            }
+        }
+        
+        // Shoulder epaulettes
+        addVoxel(-6, 3, -2, cream);
+        addVoxel(-6, 3, -1, cream);
+        addVoxel(6, 3, -2, cream);
+        addVoxel(6, 3, -1, cream);
+        
+        return Array.from(voxelMap.values());
+    })()
 };
 
 export default BODY;

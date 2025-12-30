@@ -16,7 +16,9 @@ import {
     SilverWhaleGenerators,
     SILVER_WHALE_PALETTE,
     GoldWhaleGenerators,
-    GOLD_WHALE_PALETTE
+    GOLD_WHALE_PALETTE,
+    DoginalGenerators,
+    DOGINAL_PALETTE
 } from '../characters';
 
 /**
@@ -619,6 +621,86 @@ export function createPenguinBuilder(THREE) {
         return group;
     };
     
+    /**
+     * Build Doginal (dog character) mesh with hat support
+     */
+    const buildDoginalMesh = (data) => {
+        const group = new THREE.Group();
+        const pivots = DoginalGenerators.pivots();
+        
+        const headVoxels = DoginalGenerators.head();
+        const head = buildPartMerged(headVoxels, DOGINAL_PALETTE);
+        head.name = 'head';
+        
+        const bodyVoxels = DoginalGenerators.body();
+        const body = buildPartMerged(bodyVoxels, DOGINAL_PALETTE);
+        body.name = 'body';
+        
+        const armLVoxels = DoginalGenerators.armLeft();
+        const armL = buildPartMerged(armLVoxels, DOGINAL_PALETTE, pivots.armLeft);
+        armL.name = 'flipper_l';
+        
+        const armRVoxels = DoginalGenerators.armRight();
+        const armR = buildPartMerged(armRVoxels, DOGINAL_PALETTE, pivots.armRight);
+        armR.name = 'flipper_r';
+        
+        const legLVoxels = DoginalGenerators.legLeft();
+        const legL = buildPartMerged(legLVoxels, DOGINAL_PALETTE, pivots.legLeft);
+        legL.name = 'foot_l';
+        
+        const legRVoxels = DoginalGenerators.legRight();
+        const legR = buildPartMerged(legRVoxels, DOGINAL_PALETTE, pivots.legRight);
+        legR.name = 'foot_r';
+        
+        // Animated tail
+        const tailVoxels = DoginalGenerators.tail();
+        const tail = buildPartMerged(tailVoxels, DOGINAL_PALETTE, pivots.tail);
+        tail.name = 'tail';
+        
+        // Animated ears
+        const earLVoxels = DoginalGenerators.earLeft();
+        const earL = buildPartMerged(earLVoxels, DOGINAL_PALETTE, pivots.earLeft);
+        earL.name = 'ear_l';
+        
+        const earRVoxels = DoginalGenerators.earRight();
+        const earR = buildPartMerged(earRVoxels, DOGINAL_PALETTE, pivots.earRight);
+        earR.name = 'ear_r';
+        
+        group.add(body, head, armL, armR, legL, legR, tail, earL, earR);
+        
+        // Doginal ALWAYS wears wizard hat - use proper hat system with effects!
+        // Create modified data to pass to addHat, but offset the voxels for dog head
+        const wizardHatVoxels = ASSETS.HATS['wizardHat'];
+        if (wizardHatVoxels && wizardHatVoxels.length > 0) {
+            // Offset hat voxels to sit on dog's head (Y+3 for head height, Z+3 for head forward offset)
+            const offsetHatVoxels = wizardHatVoxels.map(v => ({ ...v, y: v.y + 3, z: v.z + 3 }));
+            const hat = buildPartMerged(offsetHatVoxels, PALETTE);
+            hat.name = 'hat';
+            group.add(hat);
+            
+            // Set up wizard hat flag for magic trail animations (same as addHat does)
+            group.userData.hasWizardHat = true;
+        }
+        
+        // Add body item (trenchcoat, etc.) - offset for dog body position
+        if (data.bodyItem && data.bodyItem !== 'none' && ASSETS.BODY[data.bodyItem]) {
+            const bodyItemData = ASSETS.BODY[data.bodyItem];
+            const bodyItemVoxels = bodyItemData?.voxels || bodyItemData || [];
+            if (bodyItemVoxels.length > 0) {
+                // Offset body item voxels for dog body (Y_OFFSET=4, so adjust by -4 from penguin position)
+                const offsetBodyVoxels = bodyItemVoxels.map(v => ({ ...v, y: v.y - 4 }));
+                const bodyItemMesh = buildPartMerged(offsetBodyVoxels, PALETTE);
+                bodyItemMesh.name = 'bodyItem';
+                group.add(bodyItemMesh);
+            }
+        }
+        
+        group.scale.set(0.18, 0.18, 0.18);
+        group.position.y = 0.8;
+        
+        return group;
+    };
+    
     // Whale character configs
     const WHALE_CONFIGS = {
         whiteWhale: { generators: WhiteWhaleGenerators, palette: WHITE_WHALE_PALETTE },
@@ -834,6 +916,8 @@ export function createPenguinBuilder(THREE) {
         // Check for special character types
         if (data.characterType === 'marcus') {
             group = buildMarcusMesh(data);
+        } else if (data.characterType === 'doginal') {
+            group = buildDoginalMesh(data);
         } else if (WHALE_CONFIGS[data.characterType]) {
             group = buildWhaleMesh(data);
         } else {

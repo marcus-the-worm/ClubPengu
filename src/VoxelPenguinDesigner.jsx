@@ -15,7 +15,9 @@ import {
     SilverWhaleGenerators,
     SILVER_WHALE_PALETTE,
     GoldWhaleGenerators,
-    GOLD_WHALE_PALETTE
+    GOLD_WHALE_PALETTE,
+    DoginalGenerators,
+    DOGINAL_PALETTE
 } from './characters';
 import WalletAuth from './components/WalletAuth';
 
@@ -732,6 +734,48 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
             addPart(MarcusGenerators.armRight(), 'flipper_r', MARCUS_PALETTE);
             addPart(MarcusGenerators.legLeft(), 'foot_l', MARCUS_PALETTE);
             addPart(MarcusGenerators.legRight(), 'foot_r', MARCUS_PALETTE);
+        } else if (characterType === 'doginal') {
+            // Build Doginal dog character
+            addPart(DoginalGenerators.head(), 'head', DOGINAL_PALETTE);
+            addPart(DoginalGenerators.body(), 'body', DOGINAL_PALETTE);
+            addPart(DoginalGenerators.armLeft(), 'flipper_l', DOGINAL_PALETTE);
+            addPart(DoginalGenerators.armRight(), 'flipper_r', DOGINAL_PALETTE);
+            addPart(DoginalGenerators.legLeft(), 'foot_l', DOGINAL_PALETTE);
+            addPart(DoginalGenerators.legRight(), 'foot_r', DOGINAL_PALETTE);
+            
+            // Animated parts - tail, ears
+            addPart(DoginalGenerators.tail(), 'tail', DOGINAL_PALETTE);
+            addPart(DoginalGenerators.earLeft(), 'ear_l', DOGINAL_PALETTE);
+            addPart(DoginalGenerators.earRight(), 'ear_r', DOGINAL_PALETTE);
+            
+            // Doginal ALWAYS wears wizard hat - it's part of the character!
+            const doginalHat = ASSETS.HATS['wizardHat'] || [];
+            if (doginalHat.length > 0) {
+                // Offset hat voxels to sit on dog's head (Y+3 for head height, Z+3 for head forward offset)
+                const offsetHatVoxels = doginalHat.map(v => ({ ...v, y: v.y + 3, z: v.z + 3 }));
+                addPart(offsetHatVoxels, 'hat');
+                
+                // Add wizard hat glow effect (magic tip light) - offset for dog head
+                const wizardLight = new THREE.PointLight(0xFF69B4, 1.5, 8); // Pink magic glow
+                wizardLight.position.set(0, (17 + 3) * VOXEL_SIZE, 0); // Tip of wizard hat, offset
+                group.add(wizardLight);
+                if (mirrorGroup) mirrorGroup.add(wizardLight.clone());
+                
+                // Add gold star glows
+                const starLight = new THREE.PointLight(0xFFD700, 0.8, 5); // Gold glow
+                starLight.position.set(0, (14 + 3) * VOXEL_SIZE, 2 * VOXEL_SIZE);
+                group.add(starLight);
+                if (mirrorGroup) mirrorGroup.add(starLight.clone());
+            }
+            
+            // Add body item (trenchcoat, etc.) for Doginal
+            const dogBodyItemData = ASSETS.BODY[bodyItem];
+            const dogBodyItemVoxels = dogBodyItemData?.voxels || dogBodyItemData || [];
+            if (dogBodyItemVoxels.length > 0) {
+                // Offset for dog body position (Y_OFFSET=4, adjust by -4 from penguin)
+                const offsetBodyVoxels = dogBodyItemVoxels.map(v => ({ ...v, y: v.y - 4 }));
+                addPart(offsetBodyVoxels, 'bodyItem');
+            }
         } else if (characterType?.includes('Whale')) {
             // Build Whale variant - whale head on penguin body
             const WHALE_CONFIGS = {

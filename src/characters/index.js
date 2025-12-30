@@ -24,6 +24,7 @@ import WhiteWhaleGenerators, {
     GoldWhaleGenerators,
     GOLD_WHALE_PALETTE
 } from './WhiteWhaleCharacter';
+import DoginalGenerators, { DOGINAL_PALETTE } from './DoginalCharacter';
 
 // Register all characters (unlocks determined by server)
 characterRegistry.registerCharacter('penguin', {
@@ -113,6 +114,22 @@ characterRegistry.registerCharacter('goldWhale', {
     }
 });
 
+characterRegistry.registerCharacter('doginal', {
+    name: 'Doginal',
+    description: 'A loyal and magical dog companion with a wizard hat',
+    generators: DoginalGenerators,
+    palette: DOGINAL_PALETTE,
+    isSecret: true,
+    previewScale: 0.85,
+    customizationOptions: {
+        disableSkinColor: true,
+        disableHats: false,      // Allow hats - wizard hat by default!
+        disableEyes: true,
+        disableMouth: true,
+        disableBodyItems: false,
+    }
+});
+
 // Export everything
 export { 
     characterRegistry, 
@@ -125,6 +142,8 @@ export {
     SilverWhaleGenerators,
     SILVER_WHALE_PALETTE,
     GoldWhaleGenerators,
-    GOLD_WHALE_PALETTE
+    GOLD_WHALE_PALETTE,
+    DoginalGenerators,
+    DOGINAL_PALETTE
 };
 export default characterRegistry;

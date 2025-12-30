@@ -19,7 +19,11 @@ export function cacheAnimParts(meshWrapper) {
         eyesPart: meshInner.getObjectByName('eyes'),
         mouthPart: meshInner.getObjectByName('mouth'),
         footL: meshInner.getObjectByName('foot_l'),
-        footR: meshInner.getObjectByName('foot_r')
+        footR: meshInner.getObjectByName('foot_r'),
+        // Doginal-specific animated parts
+        tail: meshInner.getObjectByName('tail'),
+        earL: meshInner.getObjectByName('ear_l'),
+        earR: meshInner.getObjectByName('ear_r')
     };
     
     return meshWrapper._animParts;
@@ -52,15 +56,16 @@ export function animateMesh(
 ) {
     if (!meshWrapper || !meshWrapper.children[0]) return;
     const meshInner = meshWrapper.children[0];
-    // Marcus has different body proportions, whale uses penguin body
+    // Character type flags for different animations
     const isMarcus = characterType === 'marcus';
     const isWhale = characterType?.includes('Whale');
+    const isDoginal = characterType === 'doginal';
     
     // Use cached parts if available, otherwise look up and cache
     if (!meshWrapper._animParts) {
         cacheAnimParts(meshWrapper);
     }
-    const { flipperL, flipperR, head, hatPart, eyesPart, mouthPart, footL, footR } = meshWrapper._animParts || {};
+    const { flipperL, flipperR, head, hatPart, eyesPart, mouthPart, footL, footR, tail, earL, earR } = meshWrapper._animParts || {};
     
     // Reset all parts to default pose
     if(flipperL) { flipperL.rotation.set(0,0,0); }
@@ -75,6 +80,10 @@ export function animateMesh(
     if(hatPart) { hatPart.rotation.x = 0; hatPart.position.y = 0; hatPart.position.z = 0; }
     if(eyesPart) { eyesPart.position.y = 0; eyesPart.position.z = 0; eyesPart.rotation.x = 0; }
     if(mouthPart) { mouthPart.position.y = 0; mouthPart.position.z = 0; mouthPart.rotation.x = 0; }
+    // Doginal animated parts reset
+    if(tail) { tail.rotation.set(0,0,0); }
+    if(earL) { earL.rotation.set(0,0,0); }
+    if(earR) { earR.rotation.set(0,0,0); }
     
     // Jumping animation - feet point down when airborne
     if (isAirborne && !isSeatedOnFurniture && !isMounted) {
@@ -264,14 +273,71 @@ export function animateMesh(
     } else if (isMoving) {
         // Walking animation
         const walkCycle = time * 10;
-        if(footL) footL.rotation.x = Math.sin(walkCycle) * 0.5;
-        if(footR) footR.rotation.x = Math.sin(walkCycle + Math.PI) * 0.5;
-        if(flipperL) flipperL.rotation.x = Math.sin(walkCycle) * 0.5;
-        if(flipperR) flipperR.rotation.x = -Math.sin(walkCycle) * 0.5;
-        meshInner.rotation.z = Math.sin(time * 8) * 0.05; 
+        
+        if (isDoginal) {
+            // Quadruped dog trot animation
+            // Front-left + back-right move together, front-right + back-left together
+            const trotSpeed = time * 12; // Faster trot cycle
+            const trotAmount = 0.6;
+            
+            // Front legs (flipperL/R are front paws for dog)
+            if(flipperL) flipperL.rotation.x = Math.sin(trotSpeed) * trotAmount;
+            if(flipperR) flipperR.rotation.x = Math.sin(trotSpeed + Math.PI) * trotAmount;
+            
+            // Back legs (footL/R are back paws for dog) - opposite phase to front
+            if(footL) footL.rotation.x = Math.sin(trotSpeed + Math.PI) * trotAmount;
+            if(footR) footR.rotation.x = Math.sin(trotSpeed) * trotAmount;
+            
+            // Subtle body bounce and sway like a trotting dog
+            meshInner.position.y = 0.8 + Math.abs(Math.sin(trotSpeed * 2)) * 0.08;
+            meshInner.rotation.z = Math.sin(trotSpeed) * 0.03;
+            
+            // Head bob while trotting
+            if(head) head.rotation.x = Math.sin(trotSpeed * 2) * 0.05;
+            if(hatPart) hatPart.rotation.x = Math.sin(trotSpeed * 2) * 0.05;
+            
+            // TAIL WAG - fast happy wagging while running!
+            if(tail) {
+                tail.rotation.y = Math.sin(time * 20) * 0.8; // Fast side-to-side wag
+                tail.rotation.x = 0.2; // Tail up when running
+            }
+            
+            // EARS - flop while running
+            if(earL) {
+                earL.rotation.x = Math.sin(trotSpeed * 2) * 0.15;
+                earL.rotation.z = -0.1 + Math.sin(trotSpeed) * 0.1;
+            }
+            if(earR) {
+                earR.rotation.x = Math.sin(trotSpeed * 2) * 0.15;
+                earR.rotation.z = 0.1 - Math.sin(trotSpeed) * 0.1;
+            }
+        } else {
+            // Standard biped walking animation (penguin, marcus, whale)
+            if(footL) footL.rotation.x = Math.sin(walkCycle) * 0.5;
+            if(footR) footR.rotation.x = Math.sin(walkCycle + Math.PI) * 0.5;
+            if(flipperL) flipperL.rotation.x = Math.sin(walkCycle) * 0.5;
+            if(flipperR) flipperR.rotation.x = -Math.sin(walkCycle) * 0.5;
+            meshInner.rotation.z = Math.sin(time * 8) * 0.05;
+        }
     } else {
         // Idle animation
-        meshInner.rotation.z = Math.sin(time * 1.5) * 0.02;
+        if (isDoginal) {
+            // Dog idle - subtle breathing and ear twitch
+            meshInner.rotation.z = Math.sin(time * 1.5) * 0.015;
+            if(head) head.rotation.x = Math.sin(time * 0.8) * 0.02; // Slight head movement
+            
+            // TAIL - gentle slow wag when idle (happy dog)
+            if(tail) {
+                tail.rotation.y = Math.sin(time * 3) * 0.4; // Slower, gentler wag
+            }
+            
+            // EARS - occasional twitch
+            const earTwitch = Math.sin(time * 0.5) > 0.9 ? Math.sin(time * 15) * 0.1 : 0;
+            if(earL) earL.rotation.z = -0.05 + earTwitch;
+            if(earR) earR.rotation.z = 0.05 - earTwitch;
+        } else {
+            meshInner.rotation.z = Math.sin(time * 1.5) * 0.02;
+        }
     }
 }
 

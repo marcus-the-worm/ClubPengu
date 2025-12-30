@@ -3134,7 +3134,9 @@ const VoxelWorld = ({
                 }
                 
                 // --- WIZARD HAT WORLD-SPACE TRAIL (Per-Player Pools) ---
-                if (penguinData?.hat === 'wizardHat' && wizardTrailSystemRef.current) {
+                // Triggers for wizardHat equipped OR doginal character (who always has wizard hat)
+                const hasWizardHat = penguinData?.hat === 'wizardHat' || penguinData?.characterType === 'doginal';
+                if (hasWizardHat && wizardTrailSystemRef.current) {
                     wizardTrailSystemRef.current.getOrCreatePool('localPlayer');
                     wizardTrailSystemRef.current.update('localPlayer', playerRef.current.position, moving, time, delta);
                 }
@@ -3540,9 +3542,10 @@ const VoxelWorld = ({
                 // Slot displays are now attached to machines, not players
                 
                 // Wizard hat trail for other players - use the same system as local player
-                // Wizard hat trail for other players - use the same system as local player
+                // Triggers for wizardHat equipped OR doginal character (who always has wizard hat)
                 const otherAppearance = playerData.appearance || {};
-                if (otherAppearance.hat === 'wizardHat' && wizardTrailSystemRef.current) {
+                const otherHasWizardHat = otherAppearance.hat === 'wizardHat' || otherAppearance.characterType === 'doginal';
+                if (otherHasWizardHat && wizardTrailSystemRef.current) {
                     const poolKey = `player_${id}`;
                     wizardTrailSystemRef.current.getOrCreatePool(poolKey);
                     wizardTrailSystemRef.current.update(poolKey, meshData.mesh.position, isMoving, time, delta);
