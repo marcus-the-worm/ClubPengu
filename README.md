@@ -1,28 +1,32 @@
-# 🐧 Club Pengu
+# 🐧 Waddlebet
 
 <div align="center">
 
-![Club Pengu](whitepaper/public/icon.jpg)
+![Waddlebet](whitepaper/public/character.png)
 
 **The First Trencher Social Platform on Solana**
 
-*Reviving Club Pengu culture with Web3-native wagering, tradeable cosmetics, and virtual property rentals.*
+*Penguin-powered Web3 gaming with wagering, tradeable cosmetics, and virtual property rentals.*
 
 [![Solana](https://img.shields.io/badge/Built%20on-Solana-9945FF?style=for-the-badge&logo=solana)](https://solana.com)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-In%20Development-yellow?style=for-the-badge)]()
 
-[Whitepaper](./whitepaper) • [Play Now](https://clubpengu.fun) • [Community](https://x.com/i/communities/1998537610592137381) • [Buy $CPw3](https://pump.fun/coin/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump)
+[Whitepaper](./whitepaper) • [Play Now](https://waddlebet.fun) • [Community](https://x.com/i/communities/1998537610592137381) • [Buy $WADDLE](https://pump.fun/coin/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump)
 
 </div>
 
 ---
 
-## 🎮 What is Club Pengu?
+> **📢 Rebrand Notice:** Waddlebet was formerly known as "Club Pengu" / "Club Penguin on Solana". Same team, same vision, new name!
 
-Club Pengu is a **Web3 social gaming platform** that combines the nostalgic charm of classic penguin social games with modern blockchain technology. Built on Solana, it offers:
+---
 
-- **🐧 Club Pengu Vibes** - 3D voxel world, penguin customization, puffles, emotes, and the social experience you remember
+## 🎮 What is Waddlebet?
+
+Waddlebet is a **Web3 social gaming platform** that combines the nostalgic charm of classic penguin social games with modern blockchain technology. Built on Solana, it offers:
+
+- **🐧 Classic Penguin Vibes** - 3D voxel world, penguin customization, puffles, emotes, and the social experience you remember
 - **🏢 GTA V-Style Properties** - Rent igloos, apartments, and lounges. Paywall your space with any token
 - **🔄 RuneScape Trading** - Open gacha for rare cosmetics. Trade items with other players
 
@@ -52,15 +56,15 @@ Adopt fluffy puffle pets with tiered rarity:
 - **Epic** - Black, Gold (500 coins)
 - **Legendary** - Rainbow, Ghost (1000 coins) - *Special effects!*
 
-### 💰 $CPw3 Token Economy
+### 💰 $WADDLE Token Economy
 The native platform token powers the ecosystem:
 - **Property Rentals** - Rent igloos, apartments, and exclusive spaces
-- **Gacha System** - Spend $CPw3 to unlock rare, tradeable cosmetics
+- **Gacha System** - Spend $WADDLE to unlock rare, tradeable cosmetics
 - **Trading** - All items are tradeable between players
 
 ### 🎲 P2P Wagering
 Bet on minigames with **any Solana token**:
-- $SOL, $CPw3, $BONK, $WIF, $PENGU, or any SPL token
+- $SOL, $WADDLE, $BONK, $WIF, $PENGU, or any SPL token
 - You choose the token, you set the stakes
 - Winner takes all with instant Solana settlement
 
@@ -98,12 +102,13 @@ GTA V-style property system:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/Tanner253/ClubPengu.git
-   cd ClubPengu
+   git clone https://github.com/Tanner253/waddlebet.git
+   cd waddlebet
    ```
 
 2. **Install dependencies for the game**
    ```bash
+   cd waddlebet
    npm install
    ```
 
@@ -113,9 +118,19 @@ GTA V-style property system:
    ```
    Open [http://localhost:5173](http://localhost:5173) in your browser.
 
+4. **Run the server (for multiplayer)**
+   ```bash
+   npm run dev:server
+   ```
+
+5. **Run both client and server**
+   ```bash
+   npm run dev:all
+   ```
+
 ### Running the Whitepaper Site
 
-1. **Navigate to whitepaper folder**
+1. **Navigate to whitepaper folder** (from repo root)
    ```bash
    cd whitepaper
    ```
@@ -130,6 +145,23 @@ GTA V-style property system:
    npm run dev
    ```
    Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## 📁 Repository Structure
+
+```
+waddlebet/
+├── waddlebet/          # Game client & server
+│   ├── src/            # React frontend
+│   ├── server/         # Node.js backend
+│   ├── public/         # Static assets
+│   └── package.json    # Game dependencies
+├── whitepaper/         # Documentation site (Next.js)
+├── documentation/      # Technical docs & specs
+├── LICENSE
+└── README.md
+```
 
 ---
 
@@ -182,7 +214,7 @@ GTA V-style property system:
 - [ ] Additional Minigames (Pong, Connect 4, Tic Tac Toe)
 - [ ] Property Rental System
 - [ ] Igloo Customization
-- [ ] $CPw3 Token Integration
+- [ ] $WADDLE Token Integration
 
 ### Phase 3: Wagering
 - [ ] P2P Wagering System
@@ -204,11 +236,11 @@ GTA V-style property system:
 
 | Resource | Link |
 |----------|------|
-| 🎮 **Play Now** | [clubpengu.fun](https://clubpengu.fun) |
+| 🎮 **Play Now** | [waddlebet.fun](https://waddlebet.fun) |
 | 🌐 **Whitepaper** | [View Whitepaper](./whitepaper) |
 | 🐦 **X Community** | [Join Community](https://x.com/i/communities/1998537610592137381) |
-| 💰 **Buy $CPw3** | [PumpFun](https://pump.fun/coin/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump) |
-| 📦 **GitHub** | [Repository](https://github.com/Tanner253/ClubPengu) |
+| 💰 **Buy $WADDLE** | [PumpFun](https://pump.fun/coin/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump) |
+| 📦 **GitHub** | [Repository](https://github.com/Tanner253/waddlebet) |
 
 ---
 
@@ -222,7 +254,7 @@ GTA V-style property system:
 
 ## ⚠️ Disclaimer
 
-**Club Pengu is currently in active development.** Features, tokenomics, and gameplay mechanics described in this repository are subject to change. This is not financial advice. Always do your own research before participating in any cryptocurrency projects.
+**Waddlebet is currently in active development.** Features, tokenomics, and gameplay mechanics described in this repository are subject to change. This is not financial advice. Always do your own research before participating in any cryptocurrency projects.
 
 ---
 
@@ -234,9 +266,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Built with ❄️ by the Club Pengu Team**
+**Built with ❄️ by the Waddlebet Team**
 
 *Waddle on!* 🐧
 
 </div>
-
