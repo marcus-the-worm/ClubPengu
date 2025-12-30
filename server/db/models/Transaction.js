@@ -46,7 +46,11 @@ const transactionSchema = new mongoose.Schema({
             'cosmetic_burn',     // Cosmetic burned for gold (manual)
             'inventory_upgrade', // Gold spent on inventory slot upgrade
             'gold_sink_reroll',  // Gold spent on quality reroll (future)
-            'gold_sink_holo'     // Gold spent on holo blessing (future)
+            'gold_sink_holo',    // Gold spent on holo blessing (future)
+            // ========== GIFTING TYPES ==========
+            'gift_gold',         // Gold/coins gifted to another player
+            'gift_pebbles',      // Pebbles gifted to another player
+            'gift_item'          // Item gifted to another player
         ],
         index: true
     },

@@ -313,11 +313,11 @@ export function animateMesh(
             }
         } else {
             // Standard biped walking animation (penguin, marcus, whale)
-            if(footL) footL.rotation.x = Math.sin(walkCycle) * 0.5;
-            if(footR) footR.rotation.x = Math.sin(walkCycle + Math.PI) * 0.5;
-            if(flipperL) flipperL.rotation.x = Math.sin(walkCycle) * 0.5;
-            if(flipperR) flipperR.rotation.x = -Math.sin(walkCycle) * 0.5;
-            meshInner.rotation.z = Math.sin(time * 8) * 0.05;
+        if(footL) footL.rotation.x = Math.sin(walkCycle) * 0.5;
+        if(footR) footR.rotation.x = Math.sin(walkCycle + Math.PI) * 0.5;
+        if(flipperL) flipperL.rotation.x = Math.sin(walkCycle) * 0.5;
+        if(flipperR) flipperR.rotation.x = -Math.sin(walkCycle) * 0.5;
+        meshInner.rotation.z = Math.sin(time * 8) * 0.05; 
         }
     } else {
         // Idle animation
@@ -336,7 +336,7 @@ export function animateMesh(
             if(earL) earL.rotation.z = -0.05 + earTwitch;
             if(earR) earR.rotation.z = 0.05 - earTwitch;
         } else {
-            meshInner.rotation.z = Math.sin(time * 1.5) * 0.02;
+        meshInner.rotation.z = Math.sin(time * 1.5) * 0.02;
         }
     }
 }

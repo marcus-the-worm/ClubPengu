@@ -309,6 +309,7 @@ class Board {
         // Clear existing ships
         this.shipMeshes.forEach(m => this.root.remove(m));
         this.shipMeshes = [];
+        this.shipsByName = {}; // Track ships by name for animation
 
         // Build ships from grid data
         ships.forEach(ship => {
@@ -342,10 +343,17 @@ class Board {
                     shipMesh.rotation.y = Math.PI / 2;
                 }
                 
-                shipMesh.position.set(mx, ship.sunk ? -1 : 0, mz);
+                // Check if this ship was already animated as sinking
+                const alreadySinking = this.sinkingShips?.has(ship.name);
                 
-                // Darken if sunk
-                if (ship.sunk) {
+                // If sunk but not animated yet, keep at Y=0 (will be animated)
+                // If already sinking/sunk animation done, keep at final position
+                shipMesh.position.set(mx, alreadySinking ? -10 : 0, mz);
+                shipMesh.userData.shipName = ship.name;
+                shipMesh.userData.isSunk = ship.sunk;
+                
+                // Darken if already sunk
+                if (alreadySinking) {
                     shipMesh.children.forEach(c => {
                         if (c.material) {
                             c.material = c.material.clone();
@@ -357,6 +365,101 @@ class Board {
                 
                 this.root.add(shipMesh);
                 this.shipMeshes.push(shipMesh);
+                this.shipsByName[ship.name] = shipMesh;
+            }
+        });
+    }
+    
+    // Animate ship sinking - call when a ship is destroyed
+    sinkShip(shipName) {
+        if (!this.sinkingShips) this.sinkingShips = new Set();
+        if (this.sinkingShips.has(shipName)) return; // Already sinking
+        
+        const shipMesh = this.shipsByName?.[shipName];
+        if (!shipMesh) return;
+        
+        this.sinkingShips.add(shipName);
+        
+        // Darken ship immediately
+        shipMesh.children.forEach(c => {
+            if (c.material) {
+                c.material = c.material.clone();
+                c.material.color.multiplyScalar(0.2);
+                if (c.material.emissive) c.material.emissive.setHex(0x000000);
+            }
+        });
+        
+        // Dramatic rise effect then sink
+        gsap.to(shipMesh.position, { y: 0.5, duration: 0.3, ease: "power2.out" });
+        
+        // After a pause, sink dramatically
+        setTimeout(() => {
+            gsap.to(shipMesh.position, { y: -10, duration: 4, ease: "power2.in" });
+            gsap.to(shipMesh.rotation, { 
+                z: (Math.random() - 0.5) * 0.8, 
+                x: (Math.random() - 0.5) * 0.4, 
+                duration: 4 
+            });
+        }, 800);
+    }
+    
+    // Render sunk enemy ships (for enemy board - ships are normally hidden)
+    renderSunkShips(shipStatus) {
+        if (!shipStatus) return;
+        if (!this.shipsByName) this.shipsByName = {};
+        if (!this.sinkingShips) this.sinkingShips = new Set();
+        
+        shipStatus.forEach(ship => {
+            if (ship.sunk && ship.positions?.length > 0) {
+                // Check if ship mesh already exists
+                if (!this.shipsByName[ship.name]) {
+                    // Create ship mesh for newly sunk enemy ship
+                    const template = CONFIG.ships.find(s => s.name === ship.name) || CONFIG.ships[0];
+                    const shipMesh = ShipFactory.build({ ...template, size: ship.size });
+                    
+                    const firstIdx = ship.positions[0];
+                    const lastIdx = ship.positions[ship.positions.length - 1];
+                    const firstX = firstIdx % CONFIG.gridSize;
+                    const firstY = Math.floor(firstIdx / CONFIG.gridSize);
+                    const lastY = Math.floor(lastIdx / CONFIG.gridSize);
+                    
+                    const horizontal = firstY === lastY;
+                    const step = CONFIG.cellSize;
+                    const centerOffset = (CONFIG.gridSize * step) / 2 - (step / 2);
+                    
+                    const startX = (firstX * step) - centerOffset;
+                    const startZ = (firstY * step) - centerOffset;
+                    
+                    let mx, mz;
+                    if (horizontal) {
+                        mx = startX + ((ship.size - 1) * step / 2);
+                        mz = startZ;
+                        shipMesh.rotation.y = 0;
+                    } else {
+                        mx = startX;
+                        mz = startZ + ((ship.size - 1) * step / 2);
+                        shipMesh.rotation.y = Math.PI / 2;
+                    }
+                    
+                    // Already animated? Put at final position
+                    const alreadySinking = this.sinkingShips.has(ship.name);
+                    shipMesh.position.set(mx, alreadySinking ? -10 : 0, mz);
+                    shipMesh.userData.shipName = ship.name;
+                    
+                    if (alreadySinking) {
+                        shipMesh.children.forEach(c => {
+                            if (c.material) {
+                                c.material = c.material.clone();
+                                c.material.color.multiplyScalar(0.2);
+                                if (c.material.emissive) c.material.emissive.setHex(0x000000);
+                            }
+                        });
+                    }
+                    
+                    this.root.add(shipMesh);
+                    this.shipMeshes.push(shipMesh);
+                    this.shipsByName[ship.name] = shipMesh;
+                }
             }
         });
     }
@@ -664,8 +767,19 @@ class BattleshipEngine {
     }
 
     updateEnemyBoard(myShots, opponentShipStatus) {
-        // Only render markers on enemy board (we don't see their ships)
+        // Render markers on enemy board
         this.enemyBoard.renderMarkers(myShots);
+        
+        // Render sunk enemy ships (reveal them when destroyed)
+        if (opponentShipStatus) {
+            this.enemyBoard.renderSunkShips(opponentShipStatus);
+        }
+    }
+    
+    // Animate a ship sinking on a specific board
+    animateSinkingShip(shipName, isMyShip) {
+        const board = isMyShip ? this.playerBoard : this.enemyBoard;
+        board.sinkShip(shipName);
     }
 
     fireProjectile(fromPlayer, cellIndex, isHit, onComplete) {
@@ -907,11 +1021,13 @@ class BattleshipEngine {
             this.waterMesh.position.y = Math.sin(time * 0.5) * 0.2;
         }
 
-        // Ship floating
+        // Ship floating (only for ships not currently sinking)
         [this.playerBoard, this.enemyBoard].forEach(b => {
             const time = this.clock.getElapsedTime();
             b.shipMeshes.forEach((s, i) => {
-                if (s.position.y >= 0) {
+                // Don't animate ships that are sinking
+                const isSinking = b.sinkingShips?.has(s.userData.shipName);
+                if (s.position.y >= 0 && !isSinking) {
                     s.position.y = Math.sin(time * 1.5 + i) * 0.05;
                     s.rotation.z = Math.sin(time + i) * 0.01;
                 }
@@ -1077,6 +1193,13 @@ const P2PBattleship = ({ onMatchEnd }) => {
         engine.fireProjectile(isFiredByMe, action.cellIndex, isHit, () => {
             // Animation complete - now move camera if there's a pending move
             isAnimatingRef.current = false;
+            
+            // If a ship was sunk, trigger the sinking animation!
+            if (action.sunkShip) {
+                // isFiredByMe means I hit their ship (enemy board)
+                // !isFiredByMe means they hit my ship (my board)
+                engine.animateSinkingShip(action.sunkShip, !isFiredByMe);
+            }
             
             // Small delay after explosion before camera moves (like source code)
             setTimeout(() => {
