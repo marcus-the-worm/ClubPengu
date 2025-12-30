@@ -32,7 +32,7 @@ export async function fetchTokenData() {
     fetchInProgress = true;
     
     try {
-        const response = await fetch('https://api.dexscreener.com/latest/dex/tokens/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump');
+        const response = await fetch('https://api.dexscreener.com/latest/dex/tokens/BDbMVbcc5hD5qiiGYwipeuUVMKDs16s9Nxk2hrhbpump');
         
         if (!response.ok) {
             throw new Error(`API returned ${response.status}`);

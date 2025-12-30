@@ -169,7 +169,7 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                     
                     {/* Chart */}
                     <a
-                        href="https://dexscreener.com/solana/5yfmefzrompokc2r9j8b1mzqututhywr9vrqmsxhzd3r"
+                        href="https://dexscreener.com/solana/BDbMVbcc5hD5qiiGYwipeuUVMKDs16s9Nxk2hrhbpump"
                         target="_blank"
                         rel="noopener noreferrer"
                         className={`${compactBtn} bg-gradient-to-r from-green-600/80 to-emerald-600/80`}
@@ -299,7 +299,7 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                 
                 {/* Chart Button - DEX Screener Link */}
                 <a
-                    href="https://dexscreener.com/solana/5yfmefzrompokc2r9j8b1mzqututhywr9vrqmsxhzd3r"
+                    href="https://dexscreener.com/solana/BDbMVbcc5hD5qiiGYwipeuUVMKDs16s9Nxk2hrhbpump"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="bg-gradient-to-r from-green-600/80 to-emerald-600/80 hover:from-green-500 hover:to-emerald-500 active:from-green-700 active:to-emerald-700 backdrop-blur-sm text-white w-9 h-9 sm:px-3 sm:py-2 sm:w-auto sm:h-auto rounded-lg retro-text text-sm transition-colors flex items-center justify-center hover:scale-105 active:scale-95"

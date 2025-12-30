@@ -936,7 +936,7 @@ class Casino extends BaseBuilding {
         };
         
         // DexScreener iframe URL for the TV ($WADDLE, candles, market cap, 1hr)
-        group.userData.tvIframeUrl = 'https://dexscreener.com/solana/63RFxQy57mJKhRhWbdEQNcwmQ5kFfmSGJpVxKeVCpump?embed=1&theme=dark&chartStyle=1&chartType=mc&interval=60';
+        group.userData.tvIframeUrl = 'https://dexscreener.com/solana/BDbMVbcc5hD5qiiGYwipeuUVMKDs16s9Nxk2hrhbpump?embed=1&theme=dark&chartStyle=1&chartType=mc&interval=60';
 
         // ==================== EXTRAVAGANT EXTERIOR DECORATIONS ====================
         // Create the Vegas-style casino exterior with all the bells and whistles
