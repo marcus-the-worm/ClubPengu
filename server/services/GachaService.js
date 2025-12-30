@@ -454,7 +454,16 @@ class GachaService {
             isHolographic,
             isFirstEdition,
             mintedBy: walletAddress,
-            acquisitionMethod: 'gacha_roll'
+            acquisitionMethod: 'gacha_roll',
+            // Initialize ownership history with mint entry
+            ownershipHistory: [{
+                walletAddress,
+                acquiredAt: new Date(),
+                acquiredFrom: null, // null = minted
+                acquisitionType: 'mint',
+                price: 0
+            }],
+            totalTrades: 0
         });
         
         await cosmetic.save();

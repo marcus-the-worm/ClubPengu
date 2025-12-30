@@ -370,6 +370,114 @@ export function MultiplayerProvider({ children }) {
                 console.error(`📦 Inventory error: ${message.error}`);
                 callbacksRef.current.onInventoryError?.(message);
                 break;
+            
+            // ==================== MARKETPLACE MESSAGES ====================
+            case 'market_listings':
+                callbacksRef.current.onMarketListings?.(message);
+                break;
+                
+            case 'market_listing_detail':
+                callbacksRef.current.onMarketListingDetail?.(message);
+                break;
+                
+            case 'market_list_result':
+                callbacksRef.current.onMarketListResult?.(message);
+                break;
+                
+            case 'market_buy_result':
+                // Update pebbles balance if purchase was successful
+                if (message.success && message.newPebbleBalance !== undefined) {
+                    setUserData(prev => prev ? { ...prev, pebbles: message.newPebbleBalance } : prev);
+                }
+                callbacksRef.current.onMarketBuyResult?.(message);
+                break;
+                
+            case 'market_cancel_result':
+                callbacksRef.current.onMarketCancelResult?.(message);
+                break;
+                
+            case 'market_my_listings':
+                callbacksRef.current.onMarketMyListings?.(message);
+                break;
+                
+            case 'market_sales_history':
+                callbacksRef.current.onMarketSalesHistory?.(message);
+                break;
+                
+            case 'market_purchase_history':
+                callbacksRef.current.onMarketPurchaseHistory?.(message);
+                break;
+                
+            case 'market_price_history':
+                callbacksRef.current.onMarketPriceHistory?.(message);
+                break;
+                
+            case 'market_stats':
+                callbacksRef.current.onMarketStats?.(message);
+                break;
+                
+            case 'market_can_list':
+                callbacksRef.current.onMarketCanList?.(message);
+                break;
+            
+            // Real-time marketplace broadcasts
+            case 'market_new_listing':
+                // New listing added - update any open marketplace views
+                callbacksRef.current.onMarketNewListing?.(message);
+                break;
+                
+            case 'market_listing_removed':
+                // Listing removed (sold or cancelled) - remove from views
+                callbacksRef.current.onMarketListingRemoved?.(message);
+                break;
+                
+            case 'market_announcement':
+                // Marketplace announcement (new listing, sale, etc.)
+                callbacksRef.current.onMarketAnnouncement?.(message);
+                
+                // Also show as system chat message for all players
+                if (message.announcement) {
+                    const { event, itemName, rarity, price, sellerUsername, buyerUsername, serialNumber } = message.announcement;
+                    let announcementText = '';
+                    
+                    if (event === 'new_listing') {
+                        announcementText = `🏪 ${sellerUsername} listed ${itemName}${serialNumber ? ` #${serialNumber}` : ''} for ${price?.toLocaleString()} Pebbles!`;
+                    } else if (event === 'sale') {
+                        announcementText = `💰 ${buyerUsername} just purchased ${itemName}!`;
+                    }
+                    
+                    if (announcementText) {
+                        const marketChatMsg = {
+                            id: `market_${Date.now()}`,
+                            playerId: 'system',
+                            name: '🏪 MARKET',
+                            text: announcementText,
+                            timestamp: Date.now(),
+                            isSystem: true,
+                            rarity // Pass rarity for potential styling
+                        };
+                        setChatMessages(prev => [...prev.slice(-50), marketChatMsg]);
+                    }
+                }
+                break;
+                
+            case 'market_item_sold':
+                // Seller notification - their item sold!
+                callbacksRef.current.onMarketItemSold?.(message);
+                
+                // Show chat notification to seller
+                if (message.itemName) {
+                    const soldMsg = {
+                        id: `sold_${Date.now()}`,
+                        playerId: 'system',
+                        name: '💰 SOLD',
+                        text: `Your ${message.itemName} sold for ${message.price?.toLocaleString()} Pebbles to ${message.buyerUsername}!`,
+                        timestamp: Date.now(),
+                        isSystem: true
+                    };
+                    setChatMessages(prev => [...prev.slice(-50), soldMsg]);
+                }
+                break;
                 
             case 'username_changed':
                 // Username successfully changed

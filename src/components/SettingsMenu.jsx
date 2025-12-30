@@ -382,6 +382,24 @@ const SettingsMenu = ({ isOpen, onClose, settings, onSettingsChange, onOpenChang
                     <div className="bg-black/30 rounded-xl p-3">
                         <h3 className="text-white font-medium text-sm mb-2">📋 Info & Updates</h3>
                         <div className="space-y-2">
+                            {/* Tutorial Button */}
+                            <button
+                                onClick={() => {
+                                    onClose();
+                                    // Dispatch event to open tutorial (handled by GameHUD)
+                                    window.dispatchEvent(new CustomEvent('openTutorial'));
+                                }}
+                                className="w-full p-2.5 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-all text-left touch-manipulation select-none"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">❓</span>
+                                    <div className="flex-1">
+                                        <div className="text-purple-400 font-bold text-sm">Help & Tutorial</div>
+                                        <p className="text-white/40 text-[10px]">Learn how to play waddle.bet</p>
+                                    </div>
+                                    <span className="text-white/30">→</span>
+                                </div>
+                            </button>
                             <button
                                 onClick={() => {
                                     onClose();

@@ -83,6 +83,27 @@ const ownedCosmeticSchema = new mongoose.Schema({
         index: true
     },
     
+    // ========== OWNERSHIP HISTORY ==========
+    // Complete provenance chain from mint to current owner
+    ownershipHistory: [{
+        walletAddress: { type: String, required: true },
+        acquiredAt: { type: Date, required: true },
+        acquiredFrom: { type: String }, // null for mint, wallet address for trades
+        acquisitionType: { 
+            type: String, 
+            enum: ['mint', 'trade', 'gift', 'promo', 'airdrop'],
+            required: true 
+        },
+        transactionId: { type: String }, // MarketListing ID or other reference
+        price: { type: Number }, // Price paid (0 for mint/gift/promo)
+        _id: false
+    }],
+    
+    // Quick stats derived from history
+    totalTrades: { type: Number, default: 0 },
+    lastSalePrice: { type: Number },
+    lastSaleAt: { type: Date },
+    
 }, { timestamps: true });
 
 // ==================== INDEXES ====================
@@ -266,9 +287,27 @@ ownedCosmeticSchema.statics.getFullInventory = async function(walletAddress, opt
     const templates = await CosmeticTemplate.find({ templateId: { $in: templateIds } }).lean();
     const templateMap = new Map(templates.map(t => [t.templateId, t]));
     
+    // Check which items are currently listed on the marketplace
+    let listedInstanceIds = new Set();
+    try {
+        const MarketListing = mongoose.model('MarketListing');
+        const instanceIds = items.map(i => i.instanceId);
+        
+        const activeListings = await MarketListing.find({
+            itemInstanceId: { $in: instanceIds },
+            status: 'active'
+        }).select('itemInstanceId').lean();
+        
+        listedInstanceIds = new Set(activeListings.map(l => l.itemInstanceId));
+    } catch (error) {
+        console.error('📦 Error checking marketplace listings:', error.message);
+        // Continue without listing info rather than failing
+    }
+    
     // Merge and enrich data
     let enrichedItems = items.map(item => {
         const template = templateMap.get(item.templateId);
+        const isListed = listedInstanceIds.has(item.instanceId);
         return {
             instanceId: item.instanceId,
             templateId: item.templateId,
@@ -279,14 +318,15 @@ ownedCosmeticSchema.statics.getFullInventory = async function(walletAddress, opt
             mintedAt: item.mintedAt,
             tradable: item.tradable !== false, // Promo items are not tradable
             acquisitionMethod: item.acquisitionMethod || 'gacha_roll',
+            isListed, // Is this item currently listed on the marketplace?
             // Template data
             name: template?.name || 'Unknown',
             category: template?.category || 'unknown',
             rarity: template?.rarity || 'common',
             assetKey: template?.assetKey || item.templateId,
             duplicateGoldBase: template?.duplicateGoldBase || 25,
-            // Calculated burn value (0 for non-tradable items)
-            burnValue: item.tradable === false ? 0 : calculateBurnValue(template?.duplicateGoldBase || 25, item)
+            // Calculated burn value (0 for non-tradable or listed items)
+            burnValue: (item.tradable === false || isListed) ? 0 : calculateBurnValue(template?.duplicateGoldBase || 25, item)
         };
     });
     
@@ -382,6 +422,18 @@ ownedCosmeticSchema.statics.burnForGold = async function(instanceId, walletAddre
         return { success: false, error: 'NOT_TRADABLE', message: 'This item cannot be burned (promo/achievement item)' };
     }
     
+    // Check if item is currently listed on marketplace
+    try {
+        const MarketListing = mongoose.model('MarketListing');
+        const isListed = await MarketListing.isItemListed(instanceId);
+        if (isListed) {
+            return { success: false, error: 'ITEM_LISTED', message: 'Cannot burn an item that is listed for sale' };
+        }
+    } catch (e) {
+        // If MarketListing model isn't available, skip check (shouldn't happen)
+        console.error('Warning: Could not check listing status for burn:', e.message);
+    }
+    
     // Get template for base gold value
     const CosmeticTemplate = mongoose.model('CosmeticTemplate');
     const template = await CosmeticTemplate.findOne({ templateId: item.templateId });
@@ -413,6 +465,98 @@ ownedCosmeticSchema.statics.burnForGold = async function(instanceId, walletAddre
             isFirstEdition: item.isFirstEdition,
             serialNumber: item.serialNumber
         }
+    };
+};
+
+/**
+ * Transfer ownership with full history tracking
+ * @param {string} instanceId - Item instance ID
+ * @param {string} fromWallet - Seller's wallet
+ * @param {string} toWallet - Buyer's wallet  
+ * @param {object} options - { price, transactionId, acquisitionType }
+ * @param {object} session - MongoDB session for transactions
+ * @returns {object} - { success, item, error }
+ */
+ownedCosmeticSchema.statics.transferOwnership = async function(instanceId, fromWallet, toWallet, options = {}, session = null) {
+    const { price = 0, transactionId = null, acquisitionType = 'trade' } = options;
+    
+    // Find and verify ownership
+    const queryOptions = session ? { session } : {};
+    const item = await this.findOne({
+        instanceId,
+        ownerId: fromWallet,
+        convertedToGold: false
+    }, null, queryOptions);
+    
+    if (!item) {
+        return { success: false, error: 'ITEM_NOT_FOUND', message: 'Item not found or not owned by seller' };
+    }
+    
+    if (item.tradable === false) {
+        return { success: false, error: 'NOT_TRADABLE', message: 'This item cannot be traded' };
+    }
+    
+    // Initialize ownership history if missing (for legacy items)
+    if (!item.ownershipHistory || item.ownershipHistory.length === 0) {
+        item.ownershipHistory = [{
+            walletAddress: item.mintedBy || fromWallet,
+            acquiredAt: item.mintedAt || new Date(),
+            acquiredFrom: null,
+            acquisitionType: 'mint',
+            price: 0
+        }];
+    }
+    
+    // Add new ownership entry
+    item.ownershipHistory.push({
+        walletAddress: toWallet,
+        acquiredAt: new Date(),
+        acquiredFrom: fromWallet,
+        acquisitionType,
+        transactionId,
+        price
+    });
+    
+    // Update ownership
+    item.ownerId = toWallet;
+    item.totalTrades = (item.totalTrades || 0) + 1;
+    item.lastSalePrice = price;
+    item.lastSaleAt = new Date();
+    item.isEquipped = false; // Unequip on transfer
+    
+    await item.save(queryOptions);
+    
+    return {
+        success: true,
+        item: {
+            instanceId: item.instanceId,
+            templateId: item.templateId,
+            serialNumber: item.serialNumber,
+            totalTrades: item.totalTrades,
+            ownershipHistory: item.ownershipHistory
+        }
+    };
+};
+
+/**
+ * Get ownership history for an item
+ * @param {string} instanceId - Item instance ID
+ * @returns {Array} - Full ownership history
+ */
+ownedCosmeticSchema.statics.getOwnershipHistory = async function(instanceId) {
+    const item = await this.findOne({ instanceId }).select('ownershipHistory templateId serialNumber mintedAt mintedBy totalTrades lastSalePrice').lean();
+    
+    if (!item) return null;
+    
+    return {
+        instanceId,
+        templateId: item.templateId,
+        serialNumber: item.serialNumber,
+        mintedAt: item.mintedAt,
+        originalOwner: item.mintedBy,
+        totalTrades: item.totalTrades || 0,
+        lastSalePrice: item.lastSalePrice,
+        history: item.ownershipHistory || []
     };
 };
 

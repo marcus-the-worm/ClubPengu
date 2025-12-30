@@ -235,7 +235,7 @@ class TownCenter {
             x: C + 80,      // East side of map
             z: C + 20,      // Near the T intersection
             rotation: Math.PI / 2 + Math.PI,  // Face west toward the street
-            imagePath: '/advert.png'
+            imagePath: '/advert.jpg'
         });
         
         // Second billboard on the west side (behind pizzeria) facing east toward town
@@ -244,7 +244,7 @@ class TownCenter {
             x: C - 80,      // West side of map
             z: C + 40,      // Along the stem
             rotation: Math.PI / 2,  // Face east toward the street (rotated 180 from before)
-            imagePath: '/advert.png'
+            imagePath: '/advert.jpg'
         });
         
         // ==================== GRAVEL ICE WALKING PATH (T-SHAPE) ====================
@@ -1078,7 +1078,7 @@ class TownCenter {
                     // Highway-style billboard with lit-up advertisement (using new Billboard prop)
                     const billboardProp = new Billboard(this.THREE);
                     billboardProp.spawn(scene, prop.x, prop.y ?? 0, prop.z, {
-                        imagePath: prop.imagePath || '/advert.png',
+                        imagePath: prop.imagePath || '/advert.jpg',
                         width: 12,
                         height: 4,
                         poleHeight: 15,

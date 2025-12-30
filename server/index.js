@@ -15,7 +15,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import { connectDB, isDBConnected, disconnectDB } from './db/connection.js';
-import { User, OwnedCosmetic, Transaction } from './db/models/index.js';
+import { User, OwnedCosmetic, Transaction, MarketListing } from './db/models/index.js';
 import { 
     StatsService, 
     InboxService, 
@@ -35,6 +35,8 @@ import {
 import custodialWalletService from './services/CustodialWalletService.js';
 import { handleIglooMessage } from './handlers/iglooHandlers.js';
 import { handleTippingMessage } from './handlers/tippingHandlers.js';
+import { handleMarketplaceMessage } from './handlers/marketplaceHandlers.js';
+import { handleGiftMessage } from './handlers/giftHandlers.js';
 import rentScheduler from './schedulers/RentScheduler.js';
 import solanaPaymentService from './services/SolanaPaymentService.js';
 import devBotService, { BOT_CONFIG } from './services/DevBotService.js';
@@ -1244,6 +1246,27 @@ async function handleMessage(playerId, message) {
             return null;
         };
         const handled = await handleTippingMessage(playerId, player, message, sendToPlayer, getPlayerById, getPlayerByWallet);
+        if (handled) return;
+    }
+    
+    // Handle marketplace messages (cosmetic trading)
+    if (message.type?.startsWith('market_')) {
+        // Helper to find player by wallet address (for seller notifications)
+        const getPlayerByWallet = (wallet) => {
+            for (const [id, p] of players) {
+                if (p.walletAddress === wallet) {
+                    return { id, ...p };
+                }
+            }
+            return null;
+        };
+        const handled = await handleMarketplaceMessage(playerId, player, message, sendToPlayer, broadcastToAll, getPlayerByWallet);
+        if (handled) return;
+    }
+    
+    // Handle gift messages
+    if (message.type?.startsWith('gift_')) {
+        const handled = await handleGiftMessage(playerId, player, message, sendToPlayer, getPlayerById);
         if (handled) return;
     }
     
@@ -4299,6 +4322,9 @@ async function handleMessage(playerId, message) {
                 );
                 
                 if (result.success) {
+                    // Fetch updated withdrawal history to include in response
+                    const withdrawals = await pebbleService.getUserWithdrawals(player.walletAddress);
+                    
                     // Could be instant (completed) or queued (pending)
                     if (result.status === 'completed') {
                         sendToPlayer(playerId, {
@@ -4308,7 +4334,8 @@ async function handleMessage(playerId, message) {
                             pebbleAmount: result.pebbleAmount,
                             rakeAmount: result.rakeAmount,
                             solReceived: result.solReceived,
-                            txSignature: result.txSignature
+                            txSignature: result.txSignature,
+                            withdrawals // Include updated history
                         });
                     } else if (result.status === 'queued') {
                         sendToPlayer(playerId, {
@@ -4320,7 +4347,8 @@ async function handleMessage(playerId, message) {
                             solToReceive: result.solToReceive,
                             withdrawalId: result.withdrawalId,
                             queuePosition: result.queuePosition,
-                            message: result.message
+                            message: result.message,
+                            withdrawals // Include updated history
                         });
                     }
                 } else {
@@ -4366,11 +4394,15 @@ async function handleMessage(playerId, message) {
                 const result = await pebbleService.cancelWithdrawal(player.walletAddress, withdrawalId);
                 
                 if (result.success) {
+                    // Fetch updated withdrawal history
+                    const withdrawals = await pebbleService.getUserWithdrawals(player.walletAddress);
+                    
                     sendToPlayer(playerId, {
                         type: 'pebbles_withdrawal_cancelled',
                         withdrawalId,
                         refundedPebbles: result.refundedPebbles,
-                        pebbles: result.newBalance
+                        pebbles: result.newBalance,
+                        withdrawals // Include updated history
                     });
                 } else {
                     sendToPlayer(playerId, {
@@ -4542,6 +4574,17 @@ async function handleMessage(playerId, message) {
             }
             
             try {
+                // Check if item is currently listed on marketplace
+                const isListed = await MarketListing.isItemListed(instanceId);
+                if (isListed) {
+                    sendToPlayer(playerId, {
+                        type: 'inventory_error',
+                        error: 'ITEM_LISTED',
+                        message: 'Cannot burn an item that is listed for sale. Cancel the listing first.'
+                    });
+                    break;
+                }
+                
                 const result = await OwnedCosmetic.burnForGold(instanceId, player.walletAddress);
                 
                 if (result.success) {
@@ -4761,10 +4804,29 @@ async function handleMessage(playerId, message) {
             const idsToProcess = instanceIds.slice(0, 50);
             
             try {
+                // First, filter out any items that are currently listed
+                const listedItems = await MarketListing.find({
+                    itemInstanceId: { $in: idsToProcess },
+                    status: 'active'
+                }).select('itemInstanceId').lean();
+                const listedIds = new Set(listedItems.map(l => l.itemInstanceId));
+                
+                // Remove listed items from burn list
+                const safeIds = idsToProcess.filter(id => !listedIds.has(id));
+                
+                if (safeIds.length === 0 && listedIds.size > 0) {
+                    sendToPlayer(playerId, {
+                        type: 'inventory_error',
+                        error: 'ALL_ITEMS_LISTED',
+                        message: 'Cannot burn items that are listed for sale'
+                    });
+                    break;
+                }
+                
                 let totalGold = 0;
                 const burnedItems = [];
                 
-                for (const instanceId of idsToProcess) {
+                for (const instanceId of safeIds) {
                     const result = await OwnedCosmetic.burnForGold(instanceId, player.walletAddress);
                     if (result.success) {
                         totalGold += result.goldAwarded;
@@ -5025,6 +5087,23 @@ setInterval(async () => {
         console.error('🪨 Withdrawal queue error:', error.message);
     }
 }, 30000);
+
+// Expire old marketplace listings (every 5 minutes)
+setInterval(async () => {
+    if (!isDBConnected()) return;
+    
+    try {
+        const { default: marketplaceService } = await import('./services/MarketplaceService.js');
+        const expiredCount = await marketplaceService.expireOldListings();
+        if (expiredCount > 0) {
+            console.log(`🏪 Expired ${expiredCount} old marketplace listings`);
+            // Broadcast to all clients that listings may have changed
+            broadcastToAll({ type: 'market_listings_updated' });
+        }
+    } catch (error) {
+        console.error('🏪 Listing expiration error:', error.message);
+    }
+}, 5 * 60 * 1000); // 5 minutes
 
 // ==================== STARTUP ====================
 async function start() {

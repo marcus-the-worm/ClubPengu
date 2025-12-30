@@ -94,11 +94,21 @@ const PebblesPurchaseModal = ({ isOpen, onClose }) => {
                 }
                 setIsWithdrawing(false);
                 setWithdrawAmount('');
-                fetchWithdrawals();
+                // Use included withdrawal history if available, otherwise fetch
+                if (msg.withdrawals) {
+                    setWithdrawals(msg.withdrawals);
+                } else {
+                    fetchWithdrawals();
+                }
             },
             onPebblesWithdrawalCancelled: (msg) => {
                 setSuccess(`Withdrawal cancelled. Refunded ${msg.refundedPebbles} Pebbles.`);
-                fetchWithdrawals();
+                // Use included withdrawal history if available, otherwise fetch
+                if (msg.withdrawals) {
+                    setWithdrawals(msg.withdrawals);
+                } else {
+                    fetchWithdrawals();
+                }
             },
             onPebblesWithdrawalCompleted: (msg) => {
                 // Queued withdrawal was processed by server!

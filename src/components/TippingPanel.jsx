@@ -293,7 +293,8 @@ const styles = {
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 10000,
-        backdropFilter: 'blur(4px)'
+        backdropFilter: 'blur(4px)',
+        pointerEvents: 'auto'
     },
     panel: {
         background: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 100%)',
@@ -303,6 +304,7 @@ const styles = {
         minWidth: '360px',
         maxWidth: '420px',
         boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+        pointerEvents: 'auto'
     },
     header: {
         display: 'flex',

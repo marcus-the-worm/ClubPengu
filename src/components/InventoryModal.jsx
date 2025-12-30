@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useMultiplayer } from '../multiplayer';
 import { useClickOutside, useEscapeKey } from '../hooks';
 import CosmeticPreview3D from './CosmeticPreview3D';
@@ -56,6 +57,195 @@ const CATEGORY_ICONS = {
     skin: '🎨'
 };
 
+// ==================== TOOLTIPS ====================
+const TOOLTIPS = {
+    rarity: {
+        title: 'Rarity',
+        desc: 'How rare this item is from gacha rolls.',
+        tiers: [
+            { label: 'Divine', color: '#F59E0B', info: '0.1% - Extremely rare!' },
+            { label: 'Mythic', color: '#EF4444', info: '0.5% - Very rare' },
+            { label: 'Legendary', color: '#EC4899', info: '2% - Highly sought' },
+            { label: 'Epic', color: '#A855F7', info: '7% - Valuable' },
+            { label: 'Rare', color: '#3B82F6', info: '15%' },
+            { label: 'Uncommon', color: '#22C55E', info: '30%' },
+            { label: 'Common', color: '#9CA3AF', info: '45.4%' }
+        ]
+    },
+    quality: {
+        title: 'Quality',
+        desc: 'Affects burn value (gold when destroyed).',
+        tiers: [
+            { label: 'Flawless', color: '#C084FC', info: '4x burn - 2%' },
+            { label: 'Pristine', color: '#60A5FA', info: '1.8x burn - 10%' },
+            { label: 'Standard', color: '#9CA3AF', info: '1x burn - 60%' },
+            { label: 'Worn', color: '#6B7280', info: '0.7x burn - 28%' }
+        ]
+    },
+    edition: {
+        title: 'First Edition',
+        desc: 'Serial #1-3',
+        info: '🏆 2x burn value. Only first 3 minted of each item!'
+    },
+    holographic: {
+        title: 'Holographic',
+        desc: '3% chance roll',
+        info: '✨ Sparkles with rainbow effects. +1.5x burn value.'
+    },
+    burnValue: {
+        title: 'Burn Value',
+        desc: 'Gold earned when item is destroyed',
+        info: 'Value = Base × Quality × Edition × Holographic. This gold can be used for gacha rolls!'
+    }
+};
+
+// Tooltip component - uses portal to escape overflow clipping
+const InfoTooltip = ({ content, children }) => {
+    const [show, setShow] = useState(false);
+    const [coords, setCoords] = useState({ x: 0, y: 0 });
+    const triggerRef = useRef(null);
+    
+    const handleMouseEnter = () => {
+        if (triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            setCoords({
+                x: rect.left,
+                y: rect.top + rect.height / 2
+            });
+        }
+        setShow(true);
+    };
+    
+    const tooltip = show && createPortal(
+        <div 
+            className="fixed z-[99999] w-56 p-2 bg-gray-900 border border-white/20 rounded-lg shadow-2xl text-left pointer-events-none"
+            style={{
+                left: `${Math.max(8, coords.x - 230)}px`,
+                top: `${coords.y}px`,
+                transform: 'translateY(-50%)'
+            }}
+        >
+            <div className="text-xs text-white/90">{content}</div>
+        </div>,
+        document.body
+    );
+    
+    return (
+        <div 
+            ref={triggerRef}
+            className="relative inline-flex items-center"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={() => setShow(false)}
+        >
+            {children}
+            <span className="ml-1 text-white/40 hover:text-white/70 cursor-help text-xs">ⓘ</span>
+            {tooltip}
+        </div>
+    );
+};
+
+// Tier tooltip for rarity/quality - uses portal
+const TierTooltip = ({ type, value, children }) => {
+    const [show, setShow] = useState(false);
+    const [coords, setCoords] = useState({ x: 0, y: 0 });
+    const triggerRef = useRef(null);
+    const data = TOOLTIPS[type];
+    
+    const handleMouseEnter = () => {
+        if (triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            setCoords({ x: rect.left, y: rect.top + rect.height / 2 });
+        }
+        setShow(true);
+    };
+    
+    const tooltip = show && createPortal(
+        <div 
+            className="fixed z-[99999] w-64 p-2 bg-gray-900 border border-white/20 rounded-lg shadow-2xl pointer-events-none"
+            style={{
+                left: `${Math.max(8, coords.x - 270)}px`,
+                top: `${coords.y}px`,
+                transform: 'translateY(-50%)'
+            }}
+        >
+            <div className="font-bold text-white text-sm mb-1">{data.title}</div>
+            <div className="text-xs text-white/60 mb-2">{data.desc}</div>
+            <div className="space-y-0.5">
+                {data.tiers?.map(tier => (
+                    <div 
+                        key={tier.label}
+                        className={`text-xs flex items-center gap-2 px-1 py-0.5 rounded ${
+                            value?.toLowerCase() === tier.label.toLowerCase() ? 'bg-white/10' : ''
+                        }`}
+                    >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tier.color }} />
+                        <span style={{ color: tier.color }} className="w-16">{tier.label}</span>
+                        <span className="text-white/50">{tier.info}</span>
+                    </div>
+                ))}
+            </div>
+        </div>,
+        document.body
+    );
+    
+    return (
+        <div 
+            ref={triggerRef}
+            className="relative inline-flex items-center"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={() => setShow(false)}
+        >
+            {children}
+            <span className="ml-1 text-white/40 hover:text-white/70 cursor-help text-xs">ⓘ</span>
+            {tooltip}
+        </div>
+    );
+};
+
+// Badge tooltip - uses portal
+const BadgeTooltip = ({ type, children }) => {
+    const [show, setShow] = useState(false);
+    const [coords, setCoords] = useState({ x: 0, y: 0 });
+    const triggerRef = useRef(null);
+    const data = TOOLTIPS[type];
+    
+    const handleMouseEnter = () => {
+        if (triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            setCoords({ x: rect.left, y: rect.top + rect.height / 2 });
+        }
+        setShow(true);
+    };
+    
+    const tooltip = show && createPortal(
+        <div 
+            className="fixed z-[99999] w-56 p-2 bg-gray-900 border border-white/20 rounded-lg shadow-2xl pointer-events-none"
+            style={{
+                left: `${Math.max(8, coords.x - 230)}px`,
+                top: `${coords.y}px`,
+                transform: 'translateY(-50%)'
+            }}
+        >
+            <div className="font-bold text-white text-sm">{data.title}</div>
+            <div className="text-xs text-white/60">{data.desc}</div>
+            <div className="text-xs text-white/80 mt-1">{data.info}</div>
+        </div>,
+        document.body
+    );
+    
+    return (
+        <div 
+            ref={triggerRef}
+            className="relative inline-flex items-center cursor-help"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={() => setShow(false)}
+        >
+            {children}
+            {tooltip}
+        </div>
+    );
+};
+
 const InventoryModal = ({ isOpen, onClose }) => {
     const modalRef = useRef(null);
     const { userData, isAuthenticated, walletAddress, send, registerCallbacks } = useMultiplayer();
@@ -80,6 +270,10 @@ const InventoryModal = ({ isOpen, onClose }) => {
     const [burning, setBurning] = useState(false);
     const [upgrading, setUpgrading] = useState(false);
     
+    // Sell item state
+    const [sellItem, setSellItem] = useState(null);
+    const [selling, setSelling] = useState(false);
+    
     // Bulk selection
     const [bulkMode, setBulkMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState(new Set());
@@ -90,8 +284,10 @@ const InventoryModal = ({ isOpen, onClose }) => {
     useClickOutside(modalRef, onClose);
     useEscapeKey(onClose);
     
-    // Register callbacks
+    // Register callbacks - re-register when modal opens to ensure our callbacks are active
     useEffect(() => {
+        if (!isOpen) return; // Only register when open to avoid conflicts with MarketplaceModal
+        
         const callbacks = {
             onInventoryData: (data) => {
                 const newItems = data.items || [];
@@ -138,10 +334,30 @@ const InventoryModal = ({ isOpen, onClose }) => {
                 setUpgrading(false);
                 setMessage({ type: 'error', text: data.message || 'An error occurred' });
                 setTimeout(() => setMessage(null), 5000);
+            },
+            // Marketplace listing result
+            onMarketListResult: (data) => {
+                setSelling(false);
+                if (data.success) {
+                    setSellItem(null);
+                    setSelectedItem(null); // Close detail panel
+                    
+                    // Show appropriate message
+                    if (data.wasUnequipped) {
+                        setMessage({ type: 'success', text: 'Item listed! (Automatically unequipped)' });
+                    } else {
+                        setMessage({ type: 'success', text: 'Item listed on marketplace!' });
+                    }
+                    
+                    fetchInventory(); // Refresh to show item is now listed
+                } else {
+                    setMessage({ type: 'error', text: data.message || 'Failed to list item' });
+                }
+                setTimeout(() => setMessage(null), 3000);
             }
         };
         registerCallbacks(callbacks);
-    }, [registerCallbacks]);
+    }, [registerCallbacks, isOpen]);
     
     // Fetch inventory
     const fetchInventory = useCallback(() => {
@@ -175,6 +391,23 @@ const InventoryModal = ({ isOpen, onClose }) => {
             instanceId: selectedItem.instanceId
         });
     }, [selectedItem, burning, send]);
+    
+    // Handle list for sale - opens sell modal
+    const handleListForSale = useCallback((item) => {
+        setSellItem(item);
+    }, []);
+    
+    // Handle sell submission
+    const handleSell = useCallback((price) => {
+        if (!sellItem || selling) return;
+        
+        setSelling(true);
+        send({
+            type: 'market_list_item',
+            itemInstanceId: sellItem.instanceId,
+            price
+        });
+    }, [sellItem, selling, send]);
     
     // Handle bulk burn
     const handleBulkBurn = useCallback(() => {
@@ -461,22 +694,26 @@ const InventoryModal = ({ isOpen, onClose }) => {
                                         const rarity = RARITY_CONFIG[item.rarity] || RARITY_CONFIG.common;
                                         const isSelected = selectedItem?.instanceId === item.instanceId;
                                         const isBulkSelected = selectedIds.has(item.instanceId);
+                                        const isListed = item.isListed;
                                         
                                         return (
                                             <button
                                                 key={item.instanceId}
                                                 onClick={() => {
-                                                    if (bulkMode) {
+                                                    // Don't allow bulk selecting listed items
+                                                    if (bulkMode && !isListed) {
                                                         toggleBulkSelect(item.instanceId);
-                                                    } else {
+                                                    } else if (!bulkMode) {
                                                         setSelectedItem(isSelected ? null : item);
                                                         setConfirmBurn(false);
                                                     }
                                                 }}
                                                 className={`aspect-square rounded-lg border-2 transition-all relative overflow-hidden ${
-                                                    isSelected || isBulkSelected
-                                                        ? 'border-amber-400 ring-2 ring-amber-400/50'
-                                                        : `${rarity.border} hover:border-white/50`
+                                                    isListed 
+                                                        ? 'border-cyan-500/50 opacity-60 cursor-default'
+                                                        : isSelected || isBulkSelected
+                                                            ? 'border-amber-400 ring-2 ring-amber-400/50'
+                                                            : `${rarity.border} hover:border-white/50`
                                                 } bg-gradient-to-br ${rarity.bg}`}
                                             >
                                                 {/* Cached thumbnail - no WebGL context per item! */}
@@ -490,30 +727,43 @@ const InventoryModal = ({ isOpen, onClose }) => {
                                                     className="w-full h-full"
                                                 />
                                                 
+                                                {/* Listed overlay */}
+                                                {isListed && (
+                                                    <div className="absolute inset-0 bg-cyan-900/40 flex items-center justify-center">
+                                                        <span className="text-[10px] bg-cyan-600 text-white px-1.5 py-0.5 rounded font-bold shadow-lg">
+                                                            🏪 LISTED
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                
                                                 {/* Rarity indicator dot */}
-                                                <div 
-                                                    className="absolute top-1 right-1 w-2 h-2 rounded-full"
-                                                    style={{ backgroundColor: rarity.color, boxShadow: `0 0 6px ${rarity.color}` }}
-                                                />
+                                                {!isListed && (
+                                                    <div 
+                                                        className="absolute top-1 right-1 w-2 h-2 rounded-full"
+                                                        style={{ backgroundColor: rarity.color, boxShadow: `0 0 6px ${rarity.color}` }}
+                                                    />
+                                                )}
                                                 
                                                 {/* Special badges */}
-                                                <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5">
-                                                    {item.isFirstEdition && (
-                                                        <span className="text-[8px] bg-amber-500 text-black px-0.5 rounded font-bold shadow-lg">FE</span>
-                                                    )}
-                                                    {item.isHolographic && (
-                                                        <span className="text-[8px] bg-pink-500 text-white px-0.5 rounded font-bold shadow-lg">H</span>
-                                                    )}
-                                                    {item.quality === 'flawless' && (
-                                                        <span className="text-[8px] bg-purple-500 text-white px-0.5 rounded font-bold shadow-lg">FL</span>
-                                                    )}
-                                                    {item.quality === 'pristine' && (
-                                                        <span className="text-[8px] bg-blue-500 text-white px-0.5 rounded font-bold shadow-lg">PR</span>
-                                                    )}
-                                                </div>
+                                                {!isListed && (
+                                                    <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5">
+                                                        {item.isFirstEdition && (
+                                                            <span className="text-[8px] bg-amber-500 text-black px-0.5 rounded font-bold shadow-lg">FE</span>
+                                                        )}
+                                                        {item.isHolographic && (
+                                                            <span className="text-[8px] bg-pink-500 text-white px-0.5 rounded font-bold shadow-lg">H</span>
+                                                        )}
+                                                        {item.quality === 'flawless' && (
+                                                            <span className="text-[8px] bg-purple-500 text-white px-0.5 rounded font-bold shadow-lg">FL</span>
+                                                        )}
+                                                        {item.quality === 'pristine' && (
+                                                            <span className="text-[8px] bg-blue-500 text-white px-0.5 rounded font-bold shadow-lg">PR</span>
+                                                        )}
+                                                    </div>
+                                                )}
                                                 
                                                 {/* Bulk selection check */}
-                                                {bulkMode && isBulkSelected && (
+                                                {bulkMode && isBulkSelected && !isListed && (
                                                     <div className="absolute inset-0 bg-red-500/30 flex items-center justify-center pointer-events-none">
                                                         <span className="text-xl text-white drop-shadow-lg">✓</span>
                                                     </div>
@@ -556,6 +806,7 @@ const InventoryModal = ({ isOpen, onClose }) => {
                                     setConfirmBurn={setConfirmBurn}
                                     burning={burning}
                                     onBurn={handleBurn}
+                                    onListForSale={handleListForSale}
                                     onClose={() => setSelectedItem(null)}
                                 />
                             </div>
@@ -569,12 +820,120 @@ const InventoryModal = ({ isOpen, onClose }) => {
                                     setConfirmBurn={setConfirmBurn}
                                     burning={burning}
                                     onBurn={handleBurn}
+                                    onListForSale={handleListForSale}
                                     onClose={() => setSelectedItem(null)}
                                     isMobile={true}
                                 />
                             </div>
                         </>
                     )}
+                </div>
+            </div>
+            
+            {/* Sell Modal */}
+            {sellItem && (
+                <SellModal
+                    item={sellItem}
+                    onSell={handleSell}
+                    onClose={() => setSellItem(null)}
+                    selling={selling}
+                />
+            )}
+        </div>
+    );
+};
+
+// Sell Modal Component for listing items
+const SellModal = ({ item, onSell, onClose, selling }) => {
+    const [price, setPrice] = React.useState('');
+    const rarity = RARITY_CONFIG[item.rarity] || RARITY_CONFIG.common;
+    
+    const numPrice = parseInt(price) || 0;
+    const isValidPrice = numPrice >= 1 && numPrice <= 1000000;
+    
+    return (
+        <div 
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
+        >
+            <div className="bg-gray-900 rounded-xl border border-white/20 max-w-md w-full overflow-hidden">
+                {/* Header */}
+                <div className="p-4 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-cyan-900/50 to-purple-900/50">
+                    <h3 className="font-bold text-white text-lg">🏪 List Item for Sale</h3>
+                    <button onClick={onClose} className="text-white/50 hover:text-white text-xl">✕</button>
+                </div>
+                
+                {/* Item Preview */}
+                <div className={`p-4 bg-gradient-to-br ${rarity.bg} flex items-center gap-4`}>
+                    <div className="w-20 h-20 flex items-center justify-center">
+                        <CosmeticThumbnail
+                            templateId={item.templateId}
+                            category={item.category}
+                            assetKey={item.assetKey}
+                            rarity={item.rarity}
+                            isHolographic={item.isHolographic}
+                            size={72}
+                        />
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-white">{item.name}</h4>
+                        <p className="text-sm" style={{ color: rarity.color }}>{rarity.emoji} {rarity.label}</p>
+                        <p className="text-xs text-white/50">Serial #{item.serialNumber}</p>
+                    </div>
+                </div>
+                
+                {/* Price Input */}
+                <div className="p-4 space-y-4">
+                    <div>
+                        <label className="block text-sm text-white/70 mb-2">Set Your Price (Pebbles)</label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xl">🪨</span>
+                            <input
+                                type="number"
+                                value={price}
+                                onChange={(e) => setPrice(e.target.value)}
+                                placeholder="Enter price..."
+                                min="1"
+                                max="1000000"
+                                className="w-full bg-black/50 border border-white/20 rounded-lg py-3 pl-10 pr-4 text-white text-lg font-bold focus:border-cyan-500 focus:outline-none"
+                            />
+                        </div>
+                        <p className="text-xs text-white/40 mt-1">Min: 1 • Max: 1,000,000</p>
+                    </div>
+                    
+                    {/* Price Preview */}
+                    {numPrice > 0 && (
+                        <div className="bg-green-900/30 border border-green-500/30 rounded-lg p-3">
+                            <div className="flex justify-between items-center">
+                                <span className="text-white/80">You will receive</span>
+                                <span className="text-green-400 font-bold text-lg">{numPrice.toLocaleString()} 🪨</span>
+                            </div>
+                            <p className="text-xs text-green-300/60 mt-1">No marketplace fees!</p>
+                        </div>
+                    )}
+                    
+                    {/* Warning */}
+                    <div className="bg-amber-900/30 border border-amber-500/30 rounded-lg p-3 text-sm text-amber-200">
+                        ⚠️ Once listed, this item cannot be equipped or modified until the listing is cancelled.
+                    </div>
+                </div>
+                
+                {/* Actions */}
+                <div className="p-4 border-t border-white/10 flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-3 rounded-lg font-bold bg-gray-700 hover:bg-gray-600 text-white transition-all"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={() => onSell(numPrice)}
+                        disabled={!isValidPrice || selling}
+                        className="flex-1 py-3 rounded-lg font-bold bg-green-600 hover:bg-green-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {selling ? 'Listing...' : '📤 List for Sale'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -640,7 +999,9 @@ const BurnSection = ({ item, rarity, confirmBurn, setConfirmBurn, burning, onBur
     return (
         <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
             <div className="flex items-center justify-between mb-2">
-                <span className="text-red-300 text-sm">Burn Value</span>
+                <InfoTooltip content={TOOLTIPS.burnValue.info}>
+                    <span className="text-red-300 text-sm">Burn Value</span>
+                </InfoTooltip>
                 <span className="text-amber-400 font-bold text-lg flex items-center gap-1">
                     🪙 {item.burnValue}
                 </span>
@@ -732,9 +1093,10 @@ const BurnSection = ({ item, rarity, confirmBurn, setConfirmBurn, burning, onBur
 };
 
 // Item Detail Panel Component
-const ItemDetailPanel = ({ item, confirmBurn, setConfirmBurn, burning, onBurn, onClose, isMobile = false }) => {
+const ItemDetailPanel = ({ item, confirmBurn, setConfirmBurn, burning, onBurn, onListForSale, onClose, isMobile = false }) => {
     const rarity = RARITY_CONFIG[item.rarity] || RARITY_CONFIG.common;
     const quality = QUALITY_CONFIG[item.quality] || QUALITY_CONFIG.standard;
+    const canSell = item.tradable !== false;
     
     return (
         <div className={isMobile ? "space-y-3" : "space-y-4"}>
@@ -860,13 +1222,15 @@ const ItemDetailPanel = ({ item, confirmBurn, setConfirmBurn, burning, onBurn, o
             {!isMobile && (
                 <div className={`p-3 rounded-lg bg-gradient-to-r ${rarity.bg} border ${rarity.border}`}>
                     <div className="flex items-center justify-between">
-                        <span className="text-white font-bold flex items-center gap-2">
-                            <span 
-                                className="w-3 h-3 rounded-full" 
-                                style={{ backgroundColor: rarity.color, boxShadow: `0 0 8px ${rarity.color}` }}
-                            />
-                            {rarity.label}
-                        </span>
+                        <TierTooltip type="rarity" value={rarity.label}>
+                            <span className="text-white font-bold flex items-center gap-2">
+                                <span 
+                                    className="w-3 h-3 rounded-full" 
+                                    style={{ backgroundColor: rarity.color, boxShadow: `0 0 8px ${rarity.color}` }}
+                                />
+                                {rarity.label}
+                            </span>
+                        </TierTooltip>
                         <span className="text-white/70 text-sm capitalize">
                             {item.category}
                         </span>
@@ -877,33 +1241,41 @@ const ItemDetailPanel = ({ item, confirmBurn, setConfirmBurn, burning, onBurn, o
             {/* Properties - Desktop only (mobile shows inline) */}
             {!isMobile && (
                 <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                        <span className="text-white/60">Serial</span>
+                    <div className="flex justify-between text-sm items-center">
+                        <InfoTooltip content="Lower serial numbers are rarer and more valuable. #1 is the first ever minted!">
+                            <span className="text-white/60">Serial</span>
+                        </InfoTooltip>
                         <span className="text-white font-mono">#{item.serialNumber}</span>
                     </div>
                     
-                    <div className="flex justify-between text-sm">
-                        <span className="text-white/60">Quality</span>
+                    <div className="flex justify-between text-sm items-center">
+                        <TierTooltip type="quality" value={quality.label}>
+                            <span className="text-white/60">Quality</span>
+                        </TierTooltip>
                         <span style={{ color: quality.color }} className="font-bold">
                             {quality.label} ({quality.multiplier})
                         </span>
                     </div>
                     
                     {item.isHolographic && (
-                        <div className="flex justify-between text-sm">
+                        <div className="flex justify-between text-sm items-center">
                             <span className="text-white/60">Holographic</span>
-                            <span className="text-pink-400 font-bold flex items-center gap-1">
-                                ✨ Yes (3x)
-                            </span>
+                            <BadgeTooltip type="holographic">
+                                <span className="text-pink-400 font-bold flex items-center gap-1">
+                                    ✨ Yes (1.5x)
+                                </span>
+                            </BadgeTooltip>
                         </div>
                     )}
                     
                     {item.isFirstEdition && (
-                        <div className="flex justify-between text-sm">
+                        <div className="flex justify-between text-sm items-center">
                             <span className="text-white/60">First Edition</span>
-                            <span className="text-amber-400 font-bold flex items-center gap-1">
-                                👑 Yes (2x)
-                            </span>
+                            <BadgeTooltip type="edition">
+                                <span className="text-amber-400 font-bold flex items-center gap-1">
+                                    👑 Yes (2x)
+                                </span>
+                            </BadgeTooltip>
                         </div>
                     )}
                     
@@ -932,15 +1304,43 @@ const ItemDetailPanel = ({ item, confirmBurn, setConfirmBurn, burning, onBurn, o
                 </div>
             )}
             
-            {/* Burn Value */}
-            <BurnSection 
-                item={item} 
-                rarity={rarity}
-                confirmBurn={confirmBurn}
-                setConfirmBurn={setConfirmBurn}
-                burning={burning}
-                onBurn={onBurn}
-            />
+            {/* Listed on Marketplace Notice */}
+            {item.isListed && (
+                <div className="p-4 bg-cyan-900/30 border border-cyan-500/50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                        <span className="text-2xl">🏪</span>
+                        <div>
+                            <div className="font-bold text-cyan-300">Listed for Sale</div>
+                            <div className="text-xs text-cyan-200/70">
+                                This item is currently on the marketplace. Cancel the listing to equip, burn, or modify it.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* List for Sale Button - only show if not already listed */}
+            {canSell && onListForSale && !item.isListed && (
+                <button
+                    onClick={() => onListForSale(item)}
+                    className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white transition-all flex items-center justify-center gap-2"
+                >
+                    <span>🏪</span>
+                    <span>List for Sale</span>
+                </button>
+            )}
+            
+            {/* Burn Value - only show if not listed */}
+            {!item.isListed && (
+                <BurnSection 
+                    item={item} 
+                    rarity={rarity}
+                    confirmBurn={confirmBurn}
+                    setConfirmBurn={setConfirmBurn}
+                    burning={burning}
+                    onBurn={onBurn}
+                />
+            )}
         </div>
     );
 };

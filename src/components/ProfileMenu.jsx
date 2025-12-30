@@ -9,6 +9,7 @@ import { useChallenge } from '../challenge';
 import { useMultiplayer } from '../multiplayer/MultiplayerContext';
 import { useDeviceDetection, useClickOutside, useEscapeKey } from '../hooks';
 import TippingPanel from './TippingPanel';
+import GiftPanel from './GiftPanel';
 
 const ProfileMenu = () => {
     const {
@@ -25,6 +26,9 @@ const ProfileMenu = () => {
     
     const [showGameDropdown, setShowGameDropdown] = useState(false);
     const [showTipPanel, setShowTipPanel] = useState(false);
+    const [showGiftDropdown, setShowGiftDropdown] = useState(false);
+    const [showGiftPanel, setShowGiftPanel] = useState(false);
+    const [giftType, setGiftType] = useState(null); // 'gold', 'pebbles', 'item', 'spl'
     const menuRef = useRef(null);
     
     // Use shared device detection hook
@@ -134,7 +138,7 @@ const ProfileMenu = () => {
                         </div>
                         
                         {/* Middle: Stats (compact grid) */}
-                        <div className="bg-black/30 rounded-lg p-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] min-w-[140px]">
+                        <div className="bg-black/30 rounded-lg p-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] min-w-[140px]">
                             <span className="text-white/50">💰 Theirs</span>
                             <span className="text-yellow-400 font-bold text-right">
                                 {stats?.coins ?? 0}
@@ -150,6 +154,18 @@ const ProfileMenu = () => {
                             <span className="text-white/50">🔴 C4</span>
                             <span className="text-red-400 font-bold text-right">
                                 {stats?.connect4Wins ?? 0}W/{stats?.connect4Losses ?? 0}L
+                            </span>
+                            <span className="text-white/50">🚢 BS</span>
+                            <span className="text-blue-400 font-bold text-right">
+                                {stats?.battleshipWins ?? 0}W/{stats?.battleshipLosses ?? 0}L
+                            </span>
+                            <span className="text-white/50">🃏 UNO</span>
+                            <span className="text-orange-400 font-bold text-right">
+                                {stats?.unoWins ?? 0}W/{stats?.unoLosses ?? 0}L
+                            </span>
+                            <span className="text-white/50">🂡 BJ</span>
+                            <span className="text-green-400 font-bold text-right">
+                                {stats?.blackjackWins ?? 0}W/{stats?.blackjackLosses ?? 0}L
                             </span>
                             <span className="text-white/50 border-t border-white/10 pt-1">💰 You</span>
                             <span className="text-yellow-400 font-bold text-right border-t border-white/10 pt-1">
@@ -176,11 +192,11 @@ const ProfileMenu = () => {
                                         </button>
                                         {isAuthenticated && selectedPlayer?.isAuthenticated && (
                                             <button
-                                                onClick={() => setShowTipPanel(true)}
-                                                className="px-3 py-2 rounded-lg font-bold text-white text-xs flex items-center justify-center gap-1.5 transition-all bg-gradient-to-r from-emerald-500 to-teal-500 active:scale-95"
+                                                onClick={() => setShowGiftDropdown(!showGiftDropdown)}
+                                                className="px-3 py-2 rounded-lg font-bold text-white text-xs flex items-center justify-center gap-1.5 transition-all bg-gradient-to-r from-pink-500 to-purple-500 active:scale-95"
                                             >
-                                                <span>💸</span>
-                                                <span>Tip USDC</span>
+                                                <span>🎁</span>
+                                                <span>Gift ▼</span>
                                             </button>
                                         )}
                                     </>
@@ -219,6 +235,52 @@ const ProfileMenu = () => {
                         targetPlayer={selectedPlayer}
                         onClose={() => setShowTipPanel(false)}
                     />
+                )}
+                
+                {/* Gift Panel Overlay */}
+                {showGiftPanel && (
+                    <GiftPanel
+                        targetPlayer={selectedPlayer}
+                        giftType={giftType}
+                        onClose={() => { setShowGiftPanel(false); setGiftType(null); }}
+                    />
+                )}
+                
+                {/* Gift Dropdown for landscape */}
+                {showGiftDropdown && (
+                    <div 
+                        className="fixed inset-0 z-[60] flex items-center justify-center pointer-events-auto"
+                        onClick={() => setShowGiftDropdown(false)}
+                        onMouseDown={e => e.stopPropagation()}
+                    >
+                        <div className="bg-gray-800 rounded-xl border border-white/20 shadow-2xl p-2 min-w-[200px] pointer-events-auto" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+                            <div className="text-white/60 text-xs px-3 py-2 border-b border-white/10 mb-1">Send Gift to {selectedPlayer.name}</div>
+                            <button
+                                onClick={() => { setGiftType('gold'); setShowGiftPanel(true); setShowGiftDropdown(false); }}
+                                className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 text-white rounded-lg transition-colors"
+                            >
+                                <span>🪙</span><span>Gold</span>
+                            </button>
+                            <button
+                                onClick={() => { setGiftType('pebbles'); setShowGiftPanel(true); setShowGiftDropdown(false); }}
+                                className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 text-white rounded-lg transition-colors"
+                            >
+                                <span>🪨</span><span>Pebbles</span>
+                            </button>
+                            <button
+                                onClick={() => { setGiftType('item'); setShowGiftPanel(true); setShowGiftDropdown(false); }}
+                                className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 text-white rounded-lg transition-colors"
+                            >
+                                <span>🎒</span><span>Item</span>
+                            </button>
+                            <button
+                                onClick={() => { setGiftType('spl'); setShowGiftPanel(true); setShowGiftDropdown(false); }}
+                                className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 text-white rounded-lg transition-colors"
+                            >
+                                <span>🪙</span><span>SPL Token</span>
+                            </button>
+                        </div>
+                    </div>
                 )}
             </div>
         );
@@ -317,6 +379,24 @@ const ProfileMenu = () => {
                                 {stats?.battleshipWins ?? 0}W / {stats?.battleshipLosses ?? 0}L
                             </span>
                         </div>
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs">
+                            <span className="text-white/60">🃏 UNO</span>
+                            <span className="text-orange-400 font-bold">
+                                {stats?.unoWins ?? 0}W / {stats?.unoLosses ?? 0}L
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs">
+                            <span className="text-white/60">🂡 Blackjack</span>
+                            <span className="text-green-400 font-bold">
+                                {stats?.blackjackWins ?? 0}W / {stats?.blackjackLosses ?? 0}L
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] sm:text-xs">
+                            <span className="text-white/60">🎩 Monopoly</span>
+                            <span className="text-purple-400 font-bold">
+                                {stats?.monopolyWins ?? 0}W / {stats?.monopolyLosses ?? 0}L
+                            </span>
+                        </div>
                     </div>
                     
                     {/* Challenge Button - Auth users or dev mode */}
@@ -365,14 +445,65 @@ const ProfileMenu = () => {
                         </>
                     )}
                     
-                    {/* Tip Button - for authenticated users */}
+                    {/* Gift Button - for authenticated users */}
+                    {isAuthenticated && selectedPlayer?.isAuthenticated && (
+                        <div className="relative mt-2">
+                            <button
+                                onClick={() => setShowGiftDropdown(!showGiftDropdown)}
+                                className="w-full py-2 sm:py-2.5 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-400 hover:to-purple-400 active:from-pink-600 active:to-purple-600 active:scale-95"
+                            >
+                                <span>🎁</span>
+                                <span>Gift</span>
+                                <span className={`transition-transform ${showGiftDropdown ? 'rotate-180' : ''}`}>▼</span>
+                            </button>
+                            
+                            {/* Gift Selection Dropdown */}
+                            {showGiftDropdown && (
+                                <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800 rounded-xl border border-white/10 shadow-xl animate-fade-in z-20">
+                                    <div className="p-1">
+                                        <button
+                                            onClick={() => { setGiftType('gold'); setShowGiftPanel(true); setShowGiftDropdown(false); }}
+                                            className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 active:bg-white/20 text-white rounded-lg my-0.5 transition-colors"
+                                        >
+                                            <span className="text-lg">🪙</span>
+                                            <span className="flex-1 text-left text-sm font-medium">Send Gold</span>
+                                        </button>
+                                        <button
+                                            onClick={() => { setGiftType('pebbles'); setShowGiftPanel(true); setShowGiftDropdown(false); }}
+                                            className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 active:bg-white/20 text-white rounded-lg my-0.5 transition-colors"
+                                        >
+                                            <span className="text-lg">🪨</span>
+                                            <span className="flex-1 text-left text-sm font-medium">Send Pebbles</span>
+                                        </button>
+                                        <button
+                                            onClick={() => { setGiftType('item'); setShowGiftPanel(true); setShowGiftDropdown(false); }}
+                                            className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 active:bg-white/20 text-white rounded-lg my-0.5 transition-colors"
+                                        >
+                                            <span className="text-lg">🎒</span>
+                                            <span className="flex-1 text-left text-sm font-medium">Send Item</span>
+                                        </button>
+                                        <button
+                                            onClick={() => { setGiftType('spl'); setShowGiftPanel(true); setShowGiftDropdown(false); }}
+                                            className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-white/10 active:bg-white/20 text-white rounded-lg my-0.5 transition-colors"
+                                        >
+                                            <span className="text-lg">🪙</span>
+                                            <span className="flex-1 text-left text-sm font-medium">Send SPL Token</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    
+                    {/* USDC Tip Button - Coming Soon */}
                     {isAuthenticated && selectedPlayer?.isAuthenticated && (
                         <button
-                            onClick={() => setShowTipPanel(true)}
-                            className="w-full mt-2 py-2 sm:py-2.5 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:from-emerald-600 active:to-teal-600 active:scale-95"
+                            disabled
+                            className="w-full mt-2 py-2 sm:py-2.5 rounded-xl font-bold text-white/50 text-sm flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-emerald-800/50 to-teal-800/50 cursor-not-allowed"
                         >
                             <span>💸</span>
                             <span>Send USDC Tip</span>
+                            <span className="text-xs text-white/40">(Coming Soon)</span>
                         </button>
                     )}
                     
@@ -392,6 +523,15 @@ const ProfileMenu = () => {
                 <TippingPanel
                     targetPlayer={selectedPlayer}
                     onClose={() => setShowTipPanel(false)}
+                />
+            )}
+            
+            {/* Gift Panel Overlay */}
+            {showGiftPanel && (
+                <GiftPanel
+                    targetPlayer={selectedPlayer}
+                    giftType={giftType}
+                    onClose={() => { setShowGiftPanel(false); setGiftType(null); }}
                 />
             )}
         </div>

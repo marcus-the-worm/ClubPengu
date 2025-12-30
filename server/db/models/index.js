@@ -22,4 +22,7 @@ export { default as GachaRoll } from './GachaRoll.js';
 // Pebble System
 export { default as PebbleWithdrawal } from './PebbleWithdrawal.js';
 
+// Marketplace
+export { default as MarketListing } from './MarketListing.js';
+
 

@@ -236,7 +236,16 @@ class PromoCodeService {
                     isFirstEdition: false,  // NEVER first edition for promo items (overrides atomic result)
                     mintedBy: 'PROMO_SYSTEM',  // Mark as system-generated
                     acquisitionMethod: 'promo_code',
-                    tradable: false  // PROMO ITEMS CANNOT BE TRADED/SOLD/BURNED
+                    tradable: false,  // PROMO ITEMS CANNOT BE TRADED/SOLD/BURNED
+                    // Initialize ownership history with promo entry
+                    ownershipHistory: [{
+                        walletAddress,
+                        acquiredAt: new Date(),
+                        acquiredFrom: 'PROMO_SYSTEM',
+                        acquisitionType: 'promo',
+                        price: 0
+                    }],
+                    totalTrades: 0
                 });
 
                 await ownedCosmetic.save();

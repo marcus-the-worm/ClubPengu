@@ -519,7 +519,7 @@ class Nightclub extends BaseRoom {
         
         // Load texture
         const textureLoader = new THREE.TextureLoader();
-        const bannerTexture = textureLoader.load('/advert.png');
+        const bannerTexture = textureLoader.load('/advert.jpg');
         bannerTexture.colorSpace = THREE.SRGBColorSpace;
         
         // Frame

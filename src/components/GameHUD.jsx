@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import GameManager from '../engine/GameManager';
 import InboxButton from './InboxButton';
 import TokenomicsModal from './TokenomicsModal';
@@ -6,6 +6,8 @@ import WalletButton from './WalletButton';
 import StatsModal from './StatsModal';
 import PebblesPurchaseModal from './PebblesPurchaseModal';
 import InventoryModal from './InventoryModal';
+import MarketplaceModal from './MarketplaceModal';
+import TutorialModal, { shouldShowTutorial } from './TutorialModal';
 import { useMultiplayer } from '../multiplayer';
 
 /**
@@ -19,10 +21,34 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
     const [showTokenomics, setShowTokenomics] = useState(false);
     const [showPebblesPurchase, setShowPebblesPurchase] = useState(false);
     const [showInventory, setShowInventory] = useState(false);
+    const [showMarketplace, setShowMarketplace] = useState(false);
+    const [showTutorial, setShowTutorial] = useState(false);
     
     // Get pebbles from multiplayer context
     const { userData, isAuthenticated } = useMultiplayer();
     const pebbles = userData?.pebbles || 0;
+    
+    // Track if we've already shown tutorial this session to avoid re-triggering
+    const tutorialShownRef = useRef(false);
+    
+    // Show tutorial when user authenticates (if not dismissed)
+    useEffect(() => {
+        if (isAuthenticated && !tutorialShownRef.current && shouldShowTutorial()) {
+            // Small delay to let the game load first
+            const timer = setTimeout(() => {
+                setShowTutorial(true);
+                tutorialShownRef.current = true;
+            }, 1500);
+            return () => clearTimeout(timer);
+        }
+    }, [isAuthenticated]);
+    
+    // Listen for openTutorial event from settings
+    useEffect(() => {
+        const handleOpenTutorial = () => setShowTutorial(true);
+        window.addEventListener('openTutorial', handleOpenTutorial);
+        return () => window.removeEventListener('openTutorial', handleOpenTutorial);
+    }, []);
     
     // Detect portrait mode for responsive layout
     const [isPortrait, setIsPortrait] = useState(() => 
@@ -104,6 +130,16 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                             className="bg-black/70 backdrop-blur-md rounded-lg px-1.5 py-1 flex items-center gap-1 border border-amber-400/50 active:border-amber-400 active:bg-amber-900/30 transition-colors touch-manipulation"
                         >
                             <span className="text-[10px]">📦</span>
+                        </button>
+                    )}
+                    
+                    {/* Marketplace Button (Mobile) */}
+                    {isAuthenticated && (
+                        <button 
+                            onClick={() => setShowMarketplace(true)}
+                            className="bg-black/70 backdrop-blur-md rounded-lg px-1.5 py-1 flex items-center gap-1 border border-cyan-400/50 active:border-cyan-400 active:bg-cyan-900/30 transition-colors touch-manipulation"
+                        >
+                            <span className="text-[10px]">🏪</span>
                         </button>
                     )}
                 </div>
@@ -217,6 +253,18 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                 <InventoryModal
                     isOpen={showInventory}
                     onClose={() => setShowInventory(false)}
+                />
+                
+                {/* Marketplace Modal (Portrait) */}
+                <MarketplaceModal
+                    isOpen={showMarketplace}
+                    onClose={() => setShowMarketplace(false)}
+                />
+                
+                {/* Tutorial Modal (Portrait) */}
+                <TutorialModal
+                    isOpen={showTutorial}
+                    onClose={() => setShowTutorial(false)}
                 />
             </>
         );
@@ -345,6 +393,18 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
                         <span className="text-amber-300 font-bold retro-text text-sm hidden sm:inline">Inventory</span>
                     </button>
                 )}
+                
+                {/* Marketplace Button */}
+                {isAuthenticated && (
+                    <button 
+                        onClick={() => setShowMarketplace(true)}
+                        className="bg-black/70 backdrop-blur-md rounded-lg px-3 py-2 flex items-center gap-2 border border-cyan-400/30 hover:border-cyan-400/60 hover:bg-black/80 transition-all"
+                        title="Open Marketplace"
+                    >
+                        <span className="text-lg">🏪</span>
+                        <span className="text-cyan-300 font-bold retro-text text-sm hidden sm:inline">Market</span>
+                    </button>
+                )}
             </div>
             
             {/* Coin Reward Animation */}
@@ -378,6 +438,18 @@ const GameHUD = ({ showMinimap = false, onOpenPuffles, showInbox = true, onOpenS
             <InventoryModal
                 isOpen={showInventory}
                 onClose={() => setShowInventory(false)}
+            />
+            
+            {/* Marketplace Modal */}
+            <MarketplaceModal
+                isOpen={showMarketplace}
+                onClose={() => setShowMarketplace(false)}
+            />
+            
+            {/* Tutorial Modal - shows on first login */}
+            <TutorialModal
+                isOpen={showTutorial}
+                onClose={() => setShowTutorial(false)}
             />
         </>
     );

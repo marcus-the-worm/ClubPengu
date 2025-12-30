@@ -25,7 +25,7 @@ class Billboard extends BaseProp {
     spawn(scene, x, y, z, options = {}) {
         const THREE = this.THREE;
         
-        const imagePath = options.imagePath || '/advert.png';
+        const imagePath = options.imagePath || '/advert.jpg';
         const boardWidth = options.width || 12;
         const boardHeight = options.height || 4;
         const poleHeight = options.poleHeight || 15;
