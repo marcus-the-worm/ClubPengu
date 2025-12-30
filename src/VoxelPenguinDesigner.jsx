@@ -398,6 +398,14 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
         // Check if character is unlocked (penguin always available, others from server)
         if (typeId === 'penguin' || unlockedCharactersList.includes(typeId)) {
             setCharacterType(typeId);
+            
+            // Doginal has built-in wizard hat and doesn't use penguin cosmetics
+            if (typeId === 'doginal') {
+                setHat('none');      // Wizard hat is built into the model
+                setEyes('none');     // Dog has its own eyes
+                setMouth('none');    // Dog has its own mouth/snout
+                setBodyItem('none'); // No shirt on dog
+            }
         }
     };
     
