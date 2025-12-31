@@ -4,6 +4,7 @@
  */
 
 import { User, OwnedCosmetic, Transaction, MarketListing } from '../db/models/index.js';
+import { validateWalletAddress, validateAmount } from '../utils/securityValidation.js';
 
 /**
  * Handle gift-related WebSocket messages
@@ -69,8 +70,53 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Can't gift yourself
-                if (recipientWallet === player.walletAddress) {
+                // CRITICAL SECURITY: Validate wallet addresses and amount
+                const senderValidation = validateWalletAddress(player.walletAddress);
+                const recipientValidation = validateWalletAddress(recipientWallet);
+                const amountValidation = validateAmount(amount, {
+                    min: 1,
+                    max: 1000000,
+                    allowFloat: false,
+                    allowZero: false
+                });
+                
+                if (!senderValidation.valid) {
+                    console.error(`🚨 Security: Invalid sender wallet address: ${senderValidation.error}`);
+                    sendToPlayer(playerId, {
+                        type: 'gift_result',
+                        success: false,
+                        error: 'INVALID_SENDER',
+                        message: 'Invalid sender wallet address'
+                    });
+                    return true;
+                }
+                
+                if (!recipientValidation.valid) {
+                    sendToPlayer(playerId, {
+                        type: 'gift_result',
+                        success: false,
+                        error: 'INVALID_RECIPIENT',
+                        message: recipientValidation.error || 'Invalid recipient wallet address'
+                    });
+                    return true;
+                }
+                
+                if (!amountValidation.valid) {
+                    sendToPlayer(playerId, {
+                        type: 'gift_result',
+                        success: false,
+                        error: 'INVALID_AMOUNT',
+                        message: amountValidation.error || 'Invalid gift amount'
+                    });
+                    return true;
+                }
+                
+                // Use sanitized values
+                const sanitizedRecipientWallet = recipientValidation.address;
+                const sanitizedAmount = amountValidation.value;
+                
+                // Can't gift yourself (use sanitized addresses)
+                if (sanitizedRecipientWallet === senderValidation.address) {
                     sendToPlayer(playerId, {
                         type: 'gift_result',
                         success: false,
@@ -80,20 +126,8 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Validate amount
-                const giftAmount = parseInt(amount);
-                if (!giftAmount || giftAmount < 1) {
-                    sendToPlayer(playerId, {
-                        type: 'gift_result',
-                        success: false,
-                        error: 'INVALID_AMOUNT',
-                        message: 'Invalid gift amount'
-                    });
-                    return true;
-                }
-                
-                // Get sender
-                const sender = await User.findOne({ walletAddress: player.walletAddress });
+                // Get sender (use sanitized wallet address)
+                const sender = await User.findOne({ walletAddress: senderValidation.address });
                 if (!sender) {
                     sendToPlayer(playerId, {
                         type: 'gift_result',
@@ -104,8 +138,8 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Check balance
-                if (sender.coins < giftAmount) {
+                // Check balance (use sanitized amount)
+                if (sender.coins < sanitizedAmount) {
                     sendToPlayer(playerId, {
                         type: 'gift_result',
                         success: false,
@@ -115,8 +149,8 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Get recipient
-                const recipient = await User.findOne({ walletAddress: recipientWallet });
+                // Get recipient (use sanitized wallet address)
+                const recipient = await User.findOne({ walletAddress: sanitizedRecipientWallet });
                 if (!recipient) {
                     sendToPlayer(playerId, {
                         type: 'gift_result',
@@ -127,26 +161,26 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Transfer gold
-                sender.coins -= giftAmount;
-                recipient.coins += giftAmount;
+                // Transfer gold (use sanitized amount)
+                sender.coins -= sanitizedAmount;
+                recipient.coins += sanitizedAmount;
                 
                 await Promise.all([
                     sender.save(),
                     recipient.save()
                 ]);
                 
-                // Log transaction
+                // Log transaction (use sanitized values)
                 await Transaction.record({
                     type: 'gift_gold',
-                    fromWallet: player.walletAddress,
-                    toWallet: recipientWallet,
-                    amount: giftAmount,
+                    fromWallet: senderValidation.address,
+                    toWallet: sanitizedRecipientWallet,
+                    amount: sanitizedAmount,
                     currency: 'coins',
                     reason: `Gift to ${recipient.username}`
                 });
                 
-                console.log(`🎁 ${sender.username} gifted ${giftAmount} gold to ${recipient.username}`);
+                console.log(`🎁 ${sender.username} gifted ${sanitizedAmount} gold to ${recipient.username}`);
                 
                 // Update sender's coins in their UI
                 sendToPlayer(playerId, {
@@ -156,8 +190,8 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                 });
                 
                 // Notify recipient if they're online - update their coins balance immediately
-                if (getPlayerByWallet && recipientWallet) {
-                    const recipientPlayer = getPlayerByWallet(recipientWallet);
+                if (getPlayerByWallet && sanitizedRecipientWallet) {
+                    const recipientPlayer = getPlayerByWallet(sanitizedRecipientWallet);
                     if (recipientPlayer && recipientPlayer.id) {
                         // Send coins_update to recipient so their UI updates immediately
                         sendToPlayer(recipientPlayer.id, {
@@ -170,8 +204,8 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                 }
                 
                 // Notify recipient if they're online - show gift notification
-                if (getPlayerByWallet && recipientWallet) {
-                    const recipientPlayer = getPlayerByWallet(recipientWallet);
+                if (getPlayerByWallet && sanitizedRecipientWallet) {
+                    const recipientPlayer = getPlayerByWallet(sanitizedRecipientWallet);
                     if (recipientPlayer && recipientPlayer.id) {
                         // Send gift_received message to recipient so they see a notification
                         sendToPlayer(recipientPlayer.id, {
@@ -179,9 +213,9 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                             giftType: 'gold',
                             from: {
                                 username: player.name,
-                                walletAddress: player.walletAddress
+                                walletAddress: senderValidation.address
                             },
-                            amount: giftAmount
+                            amount: sanitizedAmount
                         });
                         console.log(`🎁 Notified recipient ${recipient.username} of gold gift`);
                     }
@@ -190,7 +224,7 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                 sendToPlayer(playerId, {
                     type: 'gift_result',
                     success: true,
-                    message: `Sent ${giftAmount} gold to ${recipient.username}!`
+                    message: `Sent ${sanitizedAmount} gold to ${recipient.username}!`
                 });
                 
             } catch (error) {
@@ -323,11 +357,11 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     recipient.save()
                 ]);
                 
-                // Log transaction
+                // Log transaction (use sanitized values)
                 await Transaction.record({
                     type: 'gift_pebbles',
-                    fromWallet: player.walletAddress,
-                    toWallet: recipientWallet,
+                    fromWallet: senderValidation.address,
+                    toWallet: recipientValidation.address,
                     amount: giftAmount,
                     currency: 'pebbles',
                     reason: `Gift to ${recipient.username}`
@@ -341,9 +375,9 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     pebbles: sender.pebbles
                 });
                 
-                // Notify recipient if they're online - update their pebbles balance immediately
-                if (getPlayerByWallet && recipientWallet) {
-                    const recipientPlayer = getPlayerByWallet(recipientWallet);
+                // Notify recipient if they're online - update their pebbles balance immediately (use sanitized address)
+                if (getPlayerByWallet && recipientValidation.address) {
+                    const recipientPlayer = getPlayerByWallet(recipientValidation.address);
                     if (recipientPlayer && recipientPlayer.id) {
                         // Send pebbles_update to recipient so their UI updates immediately
                         sendToPlayer(recipientPlayer.id, {
@@ -354,9 +388,9 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     }
                 }
                 
-                // Notify recipient if they're online - show gift notification
-                if (getPlayerByWallet && recipientWallet) {
-                    const recipientPlayer = getPlayerByWallet(recipientWallet);
+                // Notify recipient if they're online - show gift notification (use sanitized address)
+                if (getPlayerByWallet && recipientValidation.address) {
+                    const recipientPlayer = getPlayerByWallet(recipientValidation.address);
                     if (recipientPlayer && recipientPlayer.id) {
                         // Send gift_received message to recipient so they see a notification
                         sendToPlayer(recipientPlayer.id, {
@@ -364,7 +398,7 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                             giftType: 'pebbles',
                             from: {
                                 username: player.name,
-                                walletAddress: player.walletAddress
+                                walletAddress: senderValidation.address
                             },
                             amount: giftAmount
                         });
@@ -406,8 +440,36 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Can't gift yourself
-                if (recipientWallet === player.walletAddress) {
+                // CRITICAL SECURITY: Validate wallet addresses
+                const senderValidation = validateWalletAddress(player.walletAddress);
+                const recipientValidation = validateWalletAddress(recipientWallet);
+                
+                if (!senderValidation.valid) {
+                    console.error(`🚨 Security: Invalid sender wallet address: ${senderValidation.error}`);
+                    sendToPlayer(playerId, {
+                        type: 'gift_result',
+                        success: false,
+                        error: 'INVALID_SENDER',
+                        message: 'Invalid sender wallet address'
+                    });
+                    return true;
+                }
+                
+                if (!recipientValidation.valid) {
+                    sendToPlayer(playerId, {
+                        type: 'gift_result',
+                        success: false,
+                        error: 'INVALID_RECIPIENT',
+                        message: recipientValidation.error || 'Invalid recipient wallet address'
+                    });
+                    return true;
+                }
+                
+                // Use sanitized addresses
+                const sanitizedRecipientWallet = recipientValidation.address;
+                
+                // Can't gift yourself (use sanitized addresses)
+                if (sanitizedRecipientWallet === senderValidation.address) {
                     sendToPlayer(playerId, {
                         type: 'gift_result',
                         success: false,
@@ -427,10 +489,10 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Get item
+                // Get item (use sanitized sender address)
                 const item = await OwnedCosmetic.findOne({
                     instanceId: itemInstanceId,
-                    ownerId: player.walletAddress,
+                    ownerId: senderValidation.address,
                     convertedToGold: false
                 });
                 
@@ -467,8 +529,8 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Get recipient
-                const recipient = await User.findOne({ walletAddress: recipientWallet });
+                // Get recipient (use sanitized wallet address)
+                const recipient = await User.findOne({ walletAddress: sanitizedRecipientWallet });
                 if (!recipient) {
                     sendToPlayer(playerId, {
                         type: 'gift_result',
@@ -483,8 +545,8 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                 // Args: instanceId, fromWallet, toWallet, options
                 const transferResult = await OwnedCosmetic.transferOwnership(
                     itemInstanceId,
-                    player.walletAddress,  // fromWallet
-                    recipientWallet,       // toWallet
+                    senderValidation.address,  // fromWallet (sanitized)
+                    sanitizedRecipientWallet,  // toWallet (sanitized)
                     {
                         price: 0,
                         acquisitionType: 'gift'
@@ -501,11 +563,11 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     return true;
                 }
                 
-                // Log transaction
+                // Log transaction (use sanitized addresses)
                 await Transaction.record({
                     type: 'gift_item',
-                    fromWallet: player.walletAddress,
-                    toWallet: recipientWallet,
+                    fromWallet: senderValidation.address,
+                    toWallet: sanitizedRecipientWallet,
                     amount: 1,
                     currency: 'item',
                     relatedData: {
@@ -517,9 +579,9 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                 
                 console.log(`🎁 ${player.name} gifted item ${item.templateId} #${item.serialNumber} to ${recipient.username}`);
                 
-                // Notify recipient if they're online - show gift notification
-                if (getPlayerByWallet && recipientWallet) {
-                    const recipientPlayer = getPlayerByWallet(recipientWallet);
+                // Notify recipient if they're online - show gift notification (use sanitized address)
+                if (getPlayerByWallet && sanitizedRecipientWallet) {
+                    const recipientPlayer = getPlayerByWallet(sanitizedRecipientWallet);
                     if (recipientPlayer && recipientPlayer.id) {
                         // Send gift_received message to recipient so they see a notification
                         sendToPlayer(recipientPlayer.id, {
@@ -527,7 +589,7 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                             giftType: 'item',
                             from: {
                                 username: player.name,
-                                walletAddress: player.walletAddress
+                                walletAddress: senderValidation.address
                             },
                             item: {
                                 templateId: item.templateId,

@@ -15,6 +15,7 @@ import {
     getMint,
     ASSOCIATED_TOKEN_PROGRAM_ID
 } from '@solana/spl-token';
+import { createMemoInstruction } from '@solana/spl-memo';
 import PhantomWallet from './PhantomWallet.js';
 
 // Configuration - uses VITE_SOLANA_RPC_URL from environment
@@ -215,6 +216,17 @@ export async function sendSPLToken(options) {
                 tokenProgramId  // Token program (Token-2022 for pump.fun!)
             )
         );
+        
+        // Add memo instruction if provided (helps with transaction transparency and security)
+        if (memo && memo.trim()) {
+            transaction.add(
+                createMemoInstruction(
+                    Buffer.from(memo, 'utf8'),
+                    [senderPubkey] // Signer for memo
+                )
+            );
+            console.log(`   Memo: ${memo}`);
+        }
         
         console.log('✅ Transaction built (with ATA creation if needed)');
         console.log('✍️ Requesting wallet signature...');
@@ -469,6 +481,16 @@ export async function createSignedWagerTransaction(options) {
                 transferAmount, [], tokenProgramId
             )
         );
+        
+        // Add memo instruction for wager transaction
+        const wagerMemo = `WaddleBet: Wager deposit for match ${matchId}`;
+        transaction.add(
+            createMemoInstruction(
+                Buffer.from(wagerMemo, 'utf8'),
+                [senderPubkey] // Signer for memo
+            )
+        );
+        console.log(`   Memo: ${wagerMemo}`);
         
         console.log('✍️ Requesting wager signature...');
         console.log('⚠️ This authorizes payment IF you lose the match');

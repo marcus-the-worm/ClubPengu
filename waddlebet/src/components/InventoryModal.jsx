@@ -458,7 +458,11 @@ const InventoryModal = ({ isOpen, onClose }) => {
             }
             
             // Send SOL to rake wallet
-            const result = await wallet.sendSOL(RAKE_WALLET, INVENTORY_UPGRADE_SOL);
+            const result = await wallet.sendSOL(
+                RAKE_WALLET, 
+                INVENTORY_UPGRADE_SOL,
+                `WaddleBet: Inventory upgrade (+200 slots)`
+            );
             
             if (!result.success) {
                 throw new Error(result.message || result.error || 'Transaction failed');

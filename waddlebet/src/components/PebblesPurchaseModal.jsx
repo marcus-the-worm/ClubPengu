@@ -198,7 +198,11 @@ const PebblesPurchaseModal = ({ isOpen, onClose }) => {
                 // SOL Payment
                 console.log(`🪨 Purchasing ${bundle.pebbles} Pebbles for ${bundle.sol} SOL`);
                 
-                const result = await wallet.sendSOL(RAKE_WALLET, bundle.sol);
+                const result = await wallet.sendSOL(
+                    RAKE_WALLET, 
+                    bundle.sol,
+                    `WaddleBet: Purchase ${bundle.pebbles} Pebbles with SOL`
+                );
                 
                 if (!result.success) {
                     throw new Error(result.message || result.error || 'Transaction failed');
@@ -239,7 +243,7 @@ const PebblesPurchaseModal = ({ isOpen, onClose }) => {
                     recipientAddress: RAKE_WALLET,
                     tokenMintAddress: WADDLE_TOKEN,
                     amount: waddleTokensNeeded,
-                    memo: `Pebbles purchase: ${pebblesToReceive}`
+                    memo: `WaddleBet: Purchase ${pebblesToReceive} Pebbles with $WADDLE`
                 });
                 
                 if (!result.success) {

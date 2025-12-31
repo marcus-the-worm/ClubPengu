@@ -650,17 +650,57 @@ class BlackjackService {
             }
             
             // Pay out
-            if (player.payout > 0 && this.userService?.updateCoins) {
-                await this.userService.updateCoins(player.wallet || player.id, player.payout);
-                console.log(`🎰 ${player.name}: ${player.result} - ${player.result === 'blackjack' ? 'BLACKJACK!' : ''} Bet: ${player.bet}, Payout: ${player.payout}`);
+            if (player.payout > 0) {
+                // Ensure we have a wallet address (required for payouts)
+                const walletAddress = player.wallet;
+                if (!walletAddress) {
+                    console.error(`🎰 ERROR: Cannot payout to ${player.name} (playerId: ${player.id}) - no wallet address`);
+                    continue;
+                }
                 
-                // Send coins update to player
-                const newBalance = await this.userService.getUserCoins(player.wallet || player.id);
-                this.sendToPlayer?.(player.id, {
-                    type: 'coins_update',
-                    coins: newBalance,
-                    isAuthenticated: true
-                });
+                if (!this.userService?.updateCoins) {
+                    console.error(`🎰 ERROR: Cannot payout - userService.updateCoins not available`);
+                    continue;
+                }
+                
+                try {
+                    // Credit the payout (payout already includes bet + winnings)
+                    const coinResult = await this.userService.updateCoins(walletAddress, player.payout);
+                    
+                    if (!coinResult.success) {
+                        console.error(`🎰 ERROR: Payout failed for ${player.name}: ${coinResult.error}`);
+                        continue;
+                    }
+                    
+                    console.log(`🎰 ${player.name}: ${player.result} - ${player.result === 'blackjack' ? 'BLACKJACK!' : ''} Bet: ${player.bet}, Payout: ${player.payout}, New Balance: ${coinResult.newBalance || 'unknown'}`);
+                    
+                    // Send coins update to player
+                    const newBalance = coinResult.newBalance || await this.userService.getUserCoins(walletAddress);
+                    this.sendToPlayer?.(player.id, {
+                        type: 'coins_update',
+                        coins: newBalance,
+                        isAuthenticated: true
+                    });
+                } catch (error) {
+                    console.error(`🎰 ERROR: Exception during payout for ${player.name}:`, error);
+                }
+            } else if (player.payout === 0 && player.result === 'push') {
+                // Push - refund bet (bet was already deducted, so add it back)
+                const walletAddress = player.wallet;
+                if (walletAddress && this.userService?.updateCoins) {
+                    try {
+                        await this.userService.updateCoins(walletAddress, player.bet);
+                        const newBalance = await this.userService.getUserCoins(walletAddress);
+                        this.sendToPlayer?.(player.id, {
+                            type: 'coins_update',
+                            coins: newBalance,
+                            isAuthenticated: true
+                        });
+                        console.log(`🎰 ${player.name}: Push - refunded bet ${player.bet}`);
+                    } catch (error) {
+                        console.error(`🎰 ERROR: Push refund failed for ${player.name}:`, error);
+                    }
+                }
             }
         }
         

@@ -301,9 +301,10 @@ class PhantomWallet {
      * Send native SOL to a recipient
      * @param {string} recipientAddress - Wallet address to send SOL to
      * @param {number} amountSol - Amount in SOL (e.g., 0.1 = 0.1 SOL)
+     * @param {string} memo - Optional memo for the transaction
      * @returns {Promise<{ success: boolean, signature?: string, error?: string }>}
      */
-    async sendSOL(recipientAddress, amountSol) {
+    async sendSOL(recipientAddress, amountSol, memo = '') {
         const provider = this.getProvider();
         
         if (!provider || !this.connected) {
@@ -316,6 +317,7 @@ class PhantomWallet {
         
         try {
             const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = await import('@solana/web3.js');
+            const { createMemoInstruction } = await import('@solana/spl-memo');
             
             const SOLANA_RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
             
@@ -344,6 +346,17 @@ class PhantomWallet {
                     lamports
                 })
             );
+            
+            // Add memo instruction if provided (helps with transaction transparency and security)
+            if (memo && memo.trim()) {
+                transaction.add(
+                    createMemoInstruction(
+                        Buffer.from(memo, 'utf8'),
+                        [fromPubkey] // Signer for memo
+                    )
+                );
+                console.log(`   Memo: ${memo}`);
+            }
             
             // Sign via Phantom
             console.log('✍️ Requesting signature...');
