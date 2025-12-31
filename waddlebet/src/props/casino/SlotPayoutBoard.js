@@ -92,6 +92,18 @@ export function createSlotPayoutBoard(THREE, position = { x: 0, y: 0, z: 0 }, ro
     group.position.set(position.x, position.y, position.z);
     group.rotation.y = rotation;
     
+    // Store banner data on surface mesh for zoom overlay
+    surface.userData.isBanner = true;
+    surface.userData.bannerData = {
+        type: 'canvas',
+        title: 'Gacha Drop Rates',
+        description: 'Cosmetic gacha drop rates and rarities',
+        canvas: canvas,
+        renderFn: (ctx, w, h) => {
+            drawPayoutBoard(ctx, w, h);
+        }
+    };
+    
     return {
         group,
         canvas,
@@ -138,14 +150,16 @@ function drawPayoutBoard(ctx, W, H) {
     ctx.fillText('Roll for exclusive penguin cosmetics! • 25 🪨 Pebbles per roll • Duplicates = Gold!', W/2, 135);
     
     // Rarity tiers - arranged horizontally (7 tiers)
+    // Values from whitepaper: dupeGold converted to pebbles (1 gold = 1 pebble approximation, or use SOL values)
+    // Using pebble values based on whitepaper dupeGold values
     const rarities = [
-        { emoji: '✨', name: 'Divine', rate: '0.02%', color: '#FFFFFF', dupGold: '2500g', bgAlpha: 0.25 },
-        { emoji: '🔴', name: 'Mythic', rate: '0.18%', color: '#EF4444', dupGold: '1000g', bgAlpha: 0.2 },
-        { emoji: '🟡', name: 'Legendary', rate: '0.8%', color: '#F59E0B', dupGold: '500g', bgAlpha: 0.15 },
-        { emoji: '🟣', name: 'Epic', rate: '4%', color: '#A855F7', dupGold: '150g', bgAlpha: 0.12 },
-        { emoji: '🔵', name: 'Rare', rate: '15%', color: '#3B82F6', dupGold: '50g', bgAlpha: 0.1 },
-        { emoji: '🟢', name: 'Uncommon', rate: '30%', color: '#22C55E', dupGold: '15g', bgAlpha: 0.08 },
-        { emoji: '⚪', name: 'Common', rate: '50%', color: '#9CA3AF', dupGold: '5g', bgAlpha: 0.05 }
+        { emoji: '✨', name: 'Divine', rate: '0.02%', color: '#FFFFFF', dupPebbles: '50,000', dupSol: '50.00', bgAlpha: 0.25 },
+        { emoji: '🔴', name: 'Mythic', rate: '0.18%', color: '#EF4444', dupPebbles: '10,000', dupSol: '10.00', bgAlpha: 0.2 },
+        { emoji: '🟡', name: 'Legendary', rate: '0.8%', color: '#F59E0B', dupPebbles: '2,500', dupSol: '2.50', bgAlpha: 0.15 },
+        { emoji: '🟣', name: 'Epic', rate: '4%', color: '#A855F7', dupPebbles: '500', dupSol: '0.50', bgAlpha: 0.12 },
+        { emoji: '🔵', name: 'Rare', rate: '15%', color: '#3B82F6', dupPebbles: '150', dupSol: '0.15', bgAlpha: 0.1 },
+        { emoji: '🟢', name: 'Uncommon', rate: '30%', color: '#22C55E', dupPebbles: '50', dupSol: '0.05', bgAlpha: 0.08 },
+        { emoji: '⚪', name: 'Common', rate: '50%', color: '#9CA3AF', dupPebbles: '25', dupSol: '0.025', bgAlpha: 0.05 }
     ];
     
     // Calculate column positions
@@ -195,15 +209,20 @@ function drawPayoutBoard(ctx, W, H) {
         ctx.lineTo(startX + columnWidth * (idx + 1) - 21, startY + 200);
         ctx.stroke();
         
-        // Duplicate Gold Label
-        ctx.font = '18px "Segoe UI", Arial';
+        // Duplicate Value Label (Pebbles)
+        ctx.font = '16px "Segoe UI", Arial';
         ctx.fillStyle = '#a78bfa';
-        ctx.fillText('Dupe Gold', x, startY + 235);
+        ctx.fillText('Dupe Value', x, startY + 230);
         
-        // Duplicate Gold Value
-        ctx.font = 'bold 28px "Segoe UI", Arial';
-        ctx.fillStyle = '#ffd700';
-        ctx.fillText(r.dupGold, x, startY + 275);
+        // Duplicate Pebbles Value
+        ctx.font = 'bold 24px "Segoe UI", Arial';
+        ctx.fillStyle = '#87CEEB';
+        ctx.fillText(`${r.dupPebbles} 🪨`, x, startY + 260);
+        
+        // Duplicate SOL Value (smaller, below)
+        ctx.font = 'bold 18px "Segoe UI", Arial';
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText(`${r.dupSol} SOL`, x, startY + 285);
         
         // Special tags for rare items
         if (idx === 0) {
@@ -217,13 +236,17 @@ function drawPayoutBoard(ctx, W, H) {
         }
     });
     
-    // Pity System callout at bottom
+    // Pity System callout at bottom - ensure it fits
     ctx.fillStyle = '#ffd700';
     ctx.shadowColor = '#ffd700';
     ctx.shadowBlur = 30;
-    ctx.font = 'bold 36px "Segoe UI", Arial';
+    ctx.font = 'bold 32px "Segoe UI", Arial'; // Slightly smaller font to prevent cutoff
     ctx.textAlign = 'center';
-    ctx.fillText('🎁 PITY SYSTEM ACTIVE! • Guaranteed drops after bad luck • Holographic & First Edition variants!', W/2, H - 45);
+    // Split text into two lines to prevent cutoff
+    const pityText1 = '🎁 PITY SYSTEM ACTIVE! • Guaranteed drops after bad luck';
+    const pityText2 = 'Holographic & First Edition variants!';
+    ctx.fillText(pityText1, W/2, H - 60);
+    ctx.fillText(pityText2, W/2, H - 25);
     ctx.shadowBlur = 0;
 }
 

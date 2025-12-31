@@ -1,5 +1,5 @@
 import CollisionSystem from '../engine/CollisionSystem';
-import { createProp, PROP_TYPES, Billboard, IceFishingHole, ArcadeMachine } from '../props';
+import { createProp, PROP_TYPES, Billboard, IceFishingHole, ArcadeMachine, createIglooInfoBoard } from '../props';
 import { createNightclubExterior } from '../props/NightclubExterior';
 import { createDojoParkour } from '../props/DojoParkour';
 import { createCasino } from '../buildings';
@@ -230,12 +230,16 @@ class TownCenter {
         // ==================== HIGHWAY BILLBOARD ====================
         // Tall illuminated billboard facing the main T-stem street
         // Positioned on the east side of town, facing west toward the street
+        // 3x board size for maximum visibility, normal pole height
         props.push({
             type: 'billboard',
             x: C + 80,      // East side of map
             z: C + 20,      // Near the T intersection
             rotation: Math.PI / 2 + Math.PI,  // Face west toward the street
-            imagePath: '/advert.jpg'
+            imagePath: '/advert.jpg',
+            width: 36,      // 3x default (12)
+            height: 12,     // 3x default (4)
+            poleHeight: 15  // Keep normal height
         });
         
         // Second billboard on the west side (behind pizzeria) facing east toward town
@@ -244,7 +248,10 @@ class TownCenter {
             x: C - 80,      // West side of map
             z: C + 40,      // Along the stem
             rotation: Math.PI / 2,  // Face east toward the street (rotated 180 from before)
-            imagePath: '/advert.jpg'
+            imagePath: '/advert.jpg',
+            width: 36,      // 3x default (12)
+            height: 12,     // 3x default (4)
+            poleHeight: 15  // Keep normal height
         });
         
         // ==================== GRAVEL ICE WALKING PATH (T-SHAPE) ====================
@@ -321,6 +328,22 @@ class TownCenter {
             { type: 'igloo', x: C - 40, z: C - 21, rotation: Math.PI },  // igloo8
             { type: 'igloo', x: C + 40, z: C - 21, rotation: Math.PI },  // igloo9
             { type: 'igloo', x: C + 70, z: C - 18, rotation: Math.PI },  // igloo10
+        );
+        
+        // ==================== PERSONAL IGLOO - PENGUIN CREATOR ====================
+        // Special igloo that opens the in-game penguin customizer
+        props.push({
+            type: 'personal_igloo',
+            x: C + 67.6,
+            z: C + 78.7,
+            rotation: Math.PI  // Face north toward spawn
+        });
+        
+        // Street lights near wardrobe igloo for visibility
+        props.push(
+            { type: 'lamp_post', x: C + 60, z: C + 72, isOn: true },   // Left of wardrobe
+            { type: 'lamp_post', x: C + 75, z: C + 72, isOn: true },   // Right of wardrobe
+            { type: 'lamp_post', x: C + 67.6, z: C + 86, isOn: true }  // Behind wardrobe
         );
         
         // ==================== BENCHES - OUTSIDE WALKWAYS ====================
@@ -742,6 +765,182 @@ class TownCenter {
                     this.sknyIgloos.push(sknyProp);
                     break;
                 }
+                case 'personal_igloo': {
+                    // Personal Igloo - Special wardrobe igloo with floating cosmetics
+                    const personalIglooProp = createProp(this.THREE, null, PROP_TYPES.IGLOO, 0, 0, 0, { withEntrance: true });
+                    mesh = attachPropData(personalIglooProp, personalIglooProp.group);
+                    
+                    // Recolor the igloo to golden/legendary theme
+                    mesh.traverse((child) => {
+                        if (child.isMesh && child.material) {
+                            // Clone material to not affect other igloos
+                            child.material = child.material.clone();
+                            // Give it a golden/purple legendary look
+                            if (child.material.color) {
+                                const originalColor = child.material.color.getHex();
+                                // Make whites golden, grays purple-tinted
+                                if (originalColor > 0xAAAAAA) {
+                                    child.material.color.setHex(0xFFD700); // Gold
+                                    child.material.emissive = new this.THREE.Color(0x332200);
+                                    child.material.emissiveIntensity = 0.3;
+                                } else if (originalColor > 0x555555) {
+                                    child.material.color.setHex(0x9966FF); // Purple
+                                    child.material.emissive = new this.THREE.Color(0x220033);
+                                    child.material.emissiveIntensity = 0.2;
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Mark this as a personal igloo for interaction handling
+                    mesh.userData.isPersonalIgloo = true;
+                    mesh.userData.interactionType = 'penguin_creator';
+                    
+                    // === FLOATING COSMETICS (Actual game items) ===
+                    const floatingGroup = new this.THREE.Group();
+                    floatingGroup.position.set(0, 8, 0); // Above igloo
+                    mesh.add(floatingGroup);
+                    
+                    // Import actual cosmetics from the game
+                    import('../assets/index.js').then(({ HATS, BODY }) => {
+                        const VOXEL_SIZE = 0.15; // Scale for floating items
+                        
+                        // Helper to create a voxel mesh from cosmetic data
+                        const createVoxelMesh = (voxels, orbitRadius, orbitSpeed, yOffset, scale = 1) => {
+                            const itemGroup = new this.THREE.Group();
+                            const boxGeo = new this.THREE.BoxGeometry(VOXEL_SIZE * scale, VOXEL_SIZE * scale, VOXEL_SIZE * scale);
+                            
+                            voxels.forEach(v => {
+                                const color = typeof v.c === 'string' && v.c.startsWith('#') ? v.c : '#FFD700';
+                                const mat = new this.THREE.MeshStandardMaterial({
+                                    color: color,
+                                    emissive: color,
+                                    emissiveIntensity: 0.3,
+                                    metalness: 0.6,
+                                    roughness: 0.3
+                                });
+                                const voxelMesh = new this.THREE.Mesh(boxGeo, mat);
+                                voxelMesh.position.set(v.x * VOXEL_SIZE * scale, v.y * VOXEL_SIZE * scale, v.z * VOXEL_SIZE * scale);
+                                itemGroup.add(voxelMesh);
+                            });
+                            
+                            // Orbit container
+                            const orbit = new this.THREE.Group();
+                            orbit.userData.orbitSpeed = orbitSpeed;
+                            orbit.userData.yOffset = yOffset;
+                            itemGroup.position.set(orbitRadius, 0, 0);
+                            orbit.add(itemGroup);
+                            return orbit;
+                        };
+                        
+                        // Select some actual cosmetics to display
+                        const hatNames = ['crown', 'wizardHat', 'topHat', 'vikingHelmet', 'partyHat', 'cowboyHat'];
+                        const availableHats = hatNames.filter(name => HATS[name] && HATS[name].length > 0);
+                        
+                        // Add floating hats
+                        availableHats.slice(0, 4).forEach((hatName, i) => {
+                            const hatVoxels = HATS[hatName];
+                            if (hatVoxels && hatVoxels.length > 0) {
+                                const orbitSpeed = 0.4 + i * 0.15;
+                                const yOffset = Math.sin(i * 1.5) * 0.5;
+                                const orbit = createVoxelMesh(hatVoxels, 3.5, orbitSpeed, yOffset, 1.2);
+                                orbit.rotation.y = (i / 4) * Math.PI * 2;
+                                floatingGroup.add(orbit);
+                            }
+                        });
+                        
+                        // If we don't have enough hats, add body items
+                        if (availableHats.length < 4) {
+                            const bodyNames = ['cape', 'bowtie', 'scarf'];
+                            bodyNames.forEach((itemName, i) => {
+                                if (BODY[itemName] && BODY[itemName].voxels && BODY[itemName].voxels.length > 0) {
+                                    const orbit = createVoxelMesh(BODY[itemName].voxels, 3.5, 0.6 + i * 0.1, i * 0.3, 1.0);
+                                    orbit.rotation.y = Math.PI + (i / 3) * Math.PI;
+                                    floatingGroup.add(orbit);
+                                }
+                            });
+                        }
+                    }).catch(err => {
+                        console.warn('Could not load cosmetics for wardrobe display:', err);
+                    });
+                    
+                    // Store for animation
+                    mesh.userData.floatingGroup = floatingGroup;
+                    
+                    // === SIGN BANNER ===
+                    const signCanvas = document.createElement('canvas');
+                    signCanvas.width = 800;
+                    signCanvas.height = 200;
+                    const ctx = signCanvas.getContext('2d');
+                    
+                    // Gradient background
+                    const gradient = ctx.createLinearGradient(0, 0, 800, 0);
+                    gradient.addColorStop(0, '#1a0a2e');
+                    gradient.addColorStop(0.5, '#2d1b4e');
+                    gradient.addColorStop(1, '#1a0a2e');
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, 0, 800, 200);
+                    
+                    // Golden border
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.lineWidth = 8;
+                    ctx.strokeRect(8, 8, 784, 184);
+                    
+                    // Inner glow border
+                    ctx.strokeStyle = '#9966FF';
+                    ctx.lineWidth = 4;
+                    ctx.strokeRect(16, 16, 768, 168);
+                    
+                    // Text with glow
+                    ctx.shadowColor = '#FFD700';
+                    ctx.shadowBlur = 20;
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = 'bold 56px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('✨ WARDROBE ✨', 400, 85);
+                    
+                    ctx.shadowColor = '#00FFFF';
+                    ctx.shadowBlur = 15;
+                    ctx.fillStyle = '#00FFFF';
+                    ctx.font = 'bold 36px Arial';
+                    ctx.fillText('Change Your Look', 400, 145);
+                    ctx.shadowBlur = 0;
+                    
+                    const signTexture = new this.THREE.CanvasTexture(signCanvas);
+                    const signMaterial = new this.THREE.SpriteMaterial({ map: signTexture, transparent: true });
+                    const signSprite = new this.THREE.Sprite(signMaterial);
+                    signSprite.scale.set(12, 3, 1);
+                    signSprite.position.set(0, 12, 0);
+                    mesh.add(signSprite);
+                    
+                    // === AMBIENT LIGHTS ===
+                    // Main spotlight on igloo
+                    const spotlight = new this.THREE.SpotLight(0xFFD700, 3, 20, Math.PI / 4, 0.5);
+                    spotlight.position.set(0, 15, 5);
+                    spotlight.target.position.set(0, 0, 0);
+                    mesh.add(spotlight);
+                    mesh.add(spotlight.target);
+                    
+                    // Purple accent light
+                    const purpleLight = new this.THREE.PointLight(0x9966FF, 2, 15);
+                    purpleLight.position.set(-5, 6, -3);
+                    mesh.add(purpleLight);
+                    
+                    // Cyan accent light  
+                    const cyanLight = new this.THREE.PointLight(0x00FFFF, 2, 15);
+                    cyanLight.position.set(5, 6, -3);
+                    mesh.add(cyanLight);
+                    
+                    // Ground glow
+                    const groundGlow = new this.THREE.PointLight(0xFFD700, 1.5, 12);
+                    groundGlow.position.set(0, 0.5, 4);
+                    mesh.add(groundGlow);
+                    
+                    // Store lights for potential animation
+                    mesh.userData.wardrobeLights = { spotlight, purpleLight, cyanLight, groundGlow };
+                    
+                    break;
+                }
                 case 'lamp_post': {
                     // Use new modular prop system with auto-attached collision
                     const lampProp = createProp(this.THREE, null, PROP_TYPES.LAMP_POST, 0, 0, 0, { 
@@ -1079,9 +1278,9 @@ class TownCenter {
                     const billboardProp = new Billboard(this.THREE);
                     billboardProp.spawn(scene, prop.x, prop.y ?? 0, prop.z, {
                         imagePath: prop.imagePath || '/advert.jpg',
-                        width: 12,
-                        height: 4,
-                        poleHeight: 15,
+                        width: prop.width || 12,
+                        height: prop.height || 4,
+                        poleHeight: prop.poleHeight || 15,
                         rotation: prop.rotation ?? 0
                     });
                     mesh = billboardProp.group;
@@ -1432,6 +1631,29 @@ class TownCenter {
         });
         
         this._addWallBoundary(scene);
+        
+        // ==================== IGLOO INFO BOARDS ====================
+        // Information boards explaining igloo rental mechanics - one on each side
+        
+        // Right side board (east of nightclub)
+        const iglooInfoBoardRight = createIglooInfoBoard(
+            this.THREE,
+            { x: C + 63.1, y: 0, z: C - 85.3 },
+            0  // Face north
+        );
+        scene.add(iglooInfoBoardRight.group);
+        this.propMeshes.push(iglooInfoBoardRight.group);
+        
+        // Left side board (west of nightclub) - mirrored position
+        const iglooInfoBoardLeft = createIglooInfoBoard(
+            this.THREE,
+            { x: C - 63.1, y: 0, z: C - 85.3 },
+            0  // Face north
+        );
+        scene.add(iglooInfoBoardLeft.group);
+        this.propMeshes.push(iglooInfoBoardLeft.group);
+        
+        this.iglooInfoBoards = [iglooInfoBoardRight, iglooInfoBoardLeft];
         
         // ==================== STATIC MESH OPTIMIZATION ====================
         // CRITICAL: Disable matrixAutoUpdate for all static meshes
@@ -1815,8 +2037,16 @@ class TownCenter {
 
     update(time, delta, nightFactor = 0.5, playerPos = null) {
         if (!this._animatedCache) {
-            this._animatedCache = { campfires: [], christmasTrees: [], nightclubs: [], casinos: [], sknyIgloos: [], floatingSigns: [], frameCounter: 0 };
+            this._animatedCache = { campfires: [], christmasTrees: [], nightclubs: [], casinos: [], sknyIgloos: [], floatingSigns: [], wardrobeIgloos: [], frameCounter: 0 };
             this.propMeshes.forEach(mesh => {
+                // Wardrobe/Personal igloo with floating cosmetics
+                if (mesh.userData.isPersonalIgloo && mesh.userData.floatingGroup) {
+                    this._animatedCache.wardrobeIgloos.push({
+                        mesh: mesh,
+                        floatingGroup: mesh.userData.floatingGroup,
+                        lights: mesh.userData.wardrobeLights
+                    });
+                }
                 if (mesh.name === 'campfire') {
                     const flames = [];
                     mesh.traverse(child => { if (child.userData.isFlame) flames.push(child); });
@@ -1886,6 +2116,49 @@ class TownCenter {
             this._animatedCache.sknyIgloos.forEach(sknyProp => {
                 if (sknyProp.update) {
                     sknyProp.update(time);
+                }
+            });
+            
+            // Wardrobe igloo floating cosmetics animation
+            this._animatedCache.wardrobeIgloos.forEach(({ floatingGroup, lights }) => {
+                if (floatingGroup) {
+                    // Rotate each floating item in its orbit
+                    floatingGroup.children.forEach((orbit, index) => {
+                        const speed = orbit.userData.orbitSpeed || 0.5;
+                        const yOffset = orbit.userData.yOffset || 0;
+                        
+                        // Rotate around center
+                        orbit.rotation.y = time * speed + (index * Math.PI * 0.5);
+                        
+                        // Gentle vertical bobbing
+                        orbit.position.y = yOffset + Math.sin(time * 2 + index) * 0.3;
+                        
+                        // Make each item spin on its own axis
+                        if (orbit.children[0]) {
+                            orbit.children[0].rotation.y = time * 2;
+                            orbit.children[0].rotation.x = Math.sin(time + index) * 0.2;
+                        }
+                    });
+                    
+                    // Pulse the entire floating group
+                    const pulse = 1 + Math.sin(time * 1.5) * 0.05;
+                    floatingGroup.scale.setScalar(pulse);
+                }
+                
+                // Animate lights
+                if (lights) {
+                    // Pulse purple light
+                    if (lights.purpleLight) {
+                        lights.purpleLight.intensity = 2 + Math.sin(time * 3) * 0.5;
+                    }
+                    // Pulse cyan light (offset)
+                    if (lights.cyanLight) {
+                        lights.cyanLight.intensity = 2 + Math.sin(time * 3 + Math.PI) * 0.5;
+                    }
+                    // Ground glow pulse
+                    if (lights.groundGlow) {
+                        lights.groundGlow.intensity = 1.5 + Math.sin(time * 2) * 0.3;
+                    }
                 }
             });
         }

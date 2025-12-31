@@ -139,6 +139,30 @@ class Billboard extends BaseProp {
         
         const advert = new THREE.Mesh(advertGeo, advertMat);
         advert.position.set(0, poleHeight + boardHeight / 2, frameDepth + 0.05);
+        
+        // Check if this is a highway billboard (using default advert.jpg)
+        const isHighwayBillboard = imagePath === '/advert.jpg' || !imagePath || imagePath.includes('advert');
+        
+        // Store banner data for zoom overlay
+        if (isHighwayBillboard) {
+            // Highway billboards show image with developer info as description
+            advert.userData.bannerData = {
+                type: 'image',
+                title: 'About Waddlebet',
+                description: 'Built by Tanner253\n📦 GitHub: github.com/Tanner253/ClubPengu\n🐦 Contact: @oSKNYo_dev\n💰 Buy $WADDLE: pump.fun/coin/BDbMVbcc5hD5qiiGYwipeuUVMKDs16s9Nxk2hrhbpump',
+                imagePath: imagePath
+            };
+        } else {
+            // Regular billboards show images
+            advert.userData.bannerData = {
+                type: 'image',
+                title: 'Billboard Advertisement',
+                description: 'Click to view full-size image',
+                imagePath: imagePath
+            };
+        }
+        advert.userData.isBanner = true; // Mark for click detection
+        
         this.addMesh(advert, group);
         
         // ==================== LIGHTING ====================
@@ -204,6 +228,50 @@ class Billboard extends BaseProp {
             accent.position.set(corner.x, corner.y, frameDepth + 0.2);
             this.addMesh(accent, group);
         });
+        
+        // ==================== "YOUR AD HERE" TEXT BANNER ====================
+        if (options.showAdText !== false) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 512;
+            canvas.height = 64;
+            
+            // Background with gradient
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+            gradient.addColorStop(0, '#FF6B00');
+            gradient.addColorStop(0.5, '#FFD700');
+            gradient.addColorStop(1, '#FF6B00');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Border
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+            
+            // Text
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('📢 YOUR ADVERTISEMENT HERE 📢', canvas.width / 2, canvas.height / 2);
+            
+            const textTexture = new THREE.CanvasTexture(canvas);
+            const textMat = new THREE.SpriteMaterial({ 
+                map: textTexture, 
+                transparent: true,
+                depthTest: false
+            });
+            this.materials.push(textMat);
+            
+            const textSprite = new THREE.Sprite(textMat);
+            const textWidth = boardWidth * 0.8;
+            const textHeight = textWidth * (canvas.height / canvas.width);
+            textSprite.scale.set(textWidth, textHeight, 1);
+            textSprite.position.set(0, poleHeight + boardHeight + 2 + textHeight / 2, frameDepth);
+            textSprite.renderOrder = 999;
+            group.add(textSprite);
+        }
         
         // Store collision data
         this._collisionBounds = {

@@ -1257,19 +1257,29 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     };
     
     // Cycle function - allows selecting ANY item for window shopping/preview
-    const cycle = (current, list, setter, dir) => {
-        if (list.length <= 1) return; // Nothing to cycle
+    // Only skip "none" for eyes (default: "normal") and mouth (default: "beak")
+    // Other categories can have "none" as a selectable option
+    const cycle = (current, list, setter, dir, defaultVal = null) => {
+        // For eyes and mouth, filter out "none" and the default value
+        // For other categories, allow "none" to be selectable
+        const shouldSkipNone = defaultVal !== null && defaultVal !== 'none';
+        const filteredList = shouldSkipNone 
+            ? list.filter(item => item !== 'none' && item !== defaultVal)
+            : list;
         
-        const idx = list.indexOf(current);
-        let nextIdx;
-        if (idx === -1) {
-            nextIdx = 0;
-        } else {
-            nextIdx = idx + dir;
-            if(nextIdx < 0) nextIdx = list.length - 1;
-            if(nextIdx >= list.length) nextIdx = 0;
+        if (filteredList.length === 0) return; // Nothing to cycle
+        
+        // If current is "none" or default (for eyes/mouth), start from first/last item
+        if (shouldSkipNone && (current === 'none' || current === defaultVal)) {
+            setter(dir > 0 ? filteredList[0] : filteredList[filteredList.length - 1]);
+            return;
         }
-        setter(list[nextIdx]);
+        
+        const idx = filteredList.indexOf(current);
+        let nextIdx = idx === -1 ? 0 : idx + dir;
+        if (nextIdx < 0) nextIdx = filteredList.length - 1;
+        if (nextIdx >= filteredList.length) nextIdx = 0;
+        setter(filteredList[nextIdx]);
     };
     
     // Reset to default appearance
@@ -1353,17 +1363,27 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                             <hr className="border-gray-600/50" />
 
                             {[
-                                { label: 'HEADWEAR', key: 'head', val: hat, set: setHat, list: options.head },
-                                { label: 'EYES', key: 'eyes', val: eyes, set: setEyes, list: options.eyes },
-                                { label: 'MOUTH', key: 'mouth', val: mouth, set: setMouth, list: options.mouth },
-                                { label: 'CLOTHING', key: 'body', val: bodyItem, set: setBodyItem, list: options.body },
-                                { label: 'MOUNTS', key: 'mounts', val: mount, set: setMount, list: options.mounts, isMount: true },
+                                { label: 'HEADWEAR', key: 'head', val: hat, set: setHat, list: options.head, defaultVal: null },
+                                { label: 'EYES', key: 'eyes', val: eyes, set: setEyes, list: options.eyes, defaultVal: 'normal' },
+                                { label: 'MOUTH', key: 'mouth', val: mouth, set: setMouth, list: options.mouth, defaultVal: 'beak' },
+                                { label: 'CLOTHING', key: 'body', val: bodyItem, set: setBodyItem, list: options.body, defaultVal: null },
+                                { label: 'MOUNTS', key: 'mounts', val: mount, set: setMount, list: options.mounts, isMount: true, defaultVal: null },
                             ].map((opt, i) => {
                                 const categoryForCheck = opt.key === 'head' ? 'hat' : opt.key === 'body' ? 'bodyItem' : opt.key;
-                                const isCurrentLocked = opt.isMount ? !isMountUnlocked(opt.val) : !isCosmeticUnlocked(opt.val, categoryForCheck);
+                                const isCurrentLocked = opt.isMount 
+                                    ? (opt.val !== 'none' && !isMountUnlocked(opt.val))
+                                    : (opt.val !== 'none' && opt.val !== opt.defaultVal && !isCosmeticUnlocked(opt.val, categoryForCheck));
                                 const unlockedCount = opt.isMount ? unlockedCounts.mounts : unlockedCounts[opt.key];
                                 const totalCount = opt.isMount ? allCounts.mounts : allCounts[opt.key];
                                 const displayCount = showOwnedOnly ? opt.list.length : totalCount;
+                                
+                                // Display text - show default name instead of "none" only for eyes and mouth
+                                const displayText = (opt.val === 'none' && opt.defaultVal)
+                                    ? (opt.defaultVal === 'normal' ? 'Normal' : opt.defaultVal === 'beak' ? 'Beak' : 'Default')
+                                    : opt.val.replace(/([A-Z])/g, ' $1').trim();
+                                
+                                // Only disable cycling for eyes/mouth when on "none" (which shows as default)
+                                const shouldDisableCycling = opt.defaultVal && opt.val === 'none';
                                 
                                 return (
                                     <div key={i} className="flex flex-col gap-1">
@@ -1378,8 +1398,9 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                                             isCurrentLocked ? 'bg-red-900/30 border border-red-500/30' : 'bg-black/30'
                                         }`}>
                                             <button 
-                                                className="voxel-btn p-2 text-white hover:text-yellow-400"
-                                                onClick={() => cycle(opt.val, opt.list, opt.set, -1)}
+                                                className="voxel-btn p-2 text-white hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                onClick={() => cycle(opt.val, opt.list, opt.set, -1, opt.defaultVal)}
+                                                disabled={shouldDisableCycling}
                                             >
                                                 <IconChevronLeft size={20} />
                                             </button>
@@ -1388,7 +1409,7 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                                                     isCurrentLocked ? 'text-red-400' : 'text-white'
                                                 }`}>
                                                     {isCurrentLocked && '🔒 '}
-                                                    {opt.val.replace(/([A-Z])/g, ' $1').trim()}
+                                                    {displayText}
                                                 </span>
                                                 {isCurrentLocked && (
                                                     <span className="text-[9px] text-red-400/80">
@@ -1397,8 +1418,9 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
                                                 )}
                                             </div>
                                             <button 
-                                                className="voxel-btn p-2 text-white hover:text-yellow-400"
-                                                onClick={() => cycle(opt.val, opt.list, opt.set, 1)}
+                                                className="voxel-btn p-2 text-white hover:text-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                onClick={() => cycle(opt.val, opt.list, opt.set, 1, opt.defaultVal)}
+                                                disabled={shouldDisableCycling}
                                             >
                                                 <IconChevronRight size={20} />
                                             </button>

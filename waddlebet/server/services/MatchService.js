@@ -606,6 +606,7 @@ class MatchService {
             
             // After drawing, turn passes
             this._unoNextTurn(match);
+            this._notifyMatchState(match);
             return { success: true };
         }
         
@@ -639,6 +640,9 @@ class MatchService {
             
             state.lastAction = { type: 'play', player: playerKey, card };
             
+            // Notify state change immediately so card counts update
+            this._notifyMatchState(match);
+            
             // Check for win condition
             if (hand.length === 0) {
                 // Check if UNO was called when they had 1 card
@@ -648,6 +652,7 @@ class MatchService {
                 match.winnerId = isPlayer1 ? match.player1.id : match.player2.id;
                 match.winnerWallet = isPlayer1 ? match.player1.wallet : match.player2.wallet;
                 match.endedAt = Date.now();
+                this._notifyMatchState(match);
                 return { success: true, gameComplete: true };
             }
             
@@ -661,6 +666,7 @@ class MatchService {
                 state.phase = 'selectColor';
                 state.waitingForColor = playerKey;
                 state.pendingWildEffect = card.v;
+                this._notifyMatchState(match);
                 return { success: true, needColorSelection: true };
             }
             
@@ -669,6 +675,7 @@ class MatchService {
             
             // Move to next turn
             this._unoNextTurn(match);
+            this._notifyMatchState(match);
             return { success: true };
         }
         
@@ -699,6 +706,9 @@ class MatchService {
                 hand.push(state.deck.pop());
             }
         }
+        
+        // Notify state change so card counts update immediately
+        this._notifyMatchState(match);
     }
     
     _unoReshuffleDeck(state) {
@@ -1739,7 +1749,7 @@ class MatchService {
             state.currentEvent = { type: 'own', title: space.name, description: 'You own this' };
             state.phase = 'end';
         } else {
-            const rent = this._monopolyCalculateRent(state, position, owner);
+            const rent = this._monopolyCalculateRent(match, state, position, owner);
             player.money -= rent;
             state[owner].money += rent;
             state.currentEvent = { type: 'rent', title: 'RENT DUE', description: `Paid $${rent}` };
@@ -1747,9 +1757,19 @@ class MatchService {
         }
     }
     
-    _monopolyCalculateRent(state, position, owner) {
+    _monopolyCalculateRent(match, state, position, owner) {
         const space = MONOPOLY_SPACES[position];
         let rent = space.rent || 0;
+        
+        // Calculate game duration in minutes for rent scaling
+        const gameStartTime = state.gameStartTime || match.createdAt || Date.now();
+        const gameDurationMinutes = Math.max(0, (Date.now() - gameStartTime) / (1000 * 60));
+        
+        // Rent scaling: starts at 1x, increases gradually up to 3x after 10 minutes
+        // Formula: 1 + (gameDurationMinutes / 10) * 2, capped at 3x
+        const rentMultiplier = Math.min(3, 1 + (gameDurationMinutes / 10) * 2);
+        rent = Math.floor(rent * rentMultiplier);
+        
         const ownerProps = state[owner].properties;
         const group = space.group;
         
@@ -1762,13 +1782,13 @@ class MatchService {
         
         if (space.type === 'station') {
             const count = ownerProps.filter(i => MONOPOLY_SPACES[i].type === 'station').length;
-            rent = 25 * Math.pow(2, count - 1);
+            rent = Math.floor(25 * Math.pow(2, count - 1) * rentMultiplier);
         }
         
         if (space.type === 'utility') {
             const count = ownerProps.filter(i => MONOPOLY_SPACES[i].type === 'utility').length;
             const multiplier = count === 2 ? 10 : 4;
-            rent = (state.lastDice[0] + state.lastDice[1]) * multiplier;
+            rent = Math.floor((state.lastDice[0] + state.lastDice[1]) * multiplier * rentMultiplier);
         }
         
         return rent;

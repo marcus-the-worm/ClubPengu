@@ -10,6 +10,7 @@ import { useMultiplayer } from '../multiplayer/MultiplayerContext';
 import { useDeviceDetection, useClickOutside, useEscapeKey } from '../hooks';
 import TippingPanel from './TippingPanel';
 import GiftPanel from './GiftPanel';
+import PenguinPreview3D from './PenguinPreview3D';
 
 const ProfileMenu = () => {
     const {
@@ -54,14 +55,6 @@ const ProfileMenu = () => {
     
     // Allow challenging in dev mode even as guest
     const canChallenge = isAuthenticated || isDev;
-    
-    // Get penguin color for preview
-    const penguinColor = selectedPlayer.appearance?.skin || 'blue';
-    const colorHex = {
-        blue: '#0066CC', red: '#CC2222', green: '#228B22', pink: '#FF69B4',
-        purple: '#6B2D8B', orange: '#FF6600', yellow: '#DAA520', black: '#1A1A1A',
-        white: '#F5F5F5', teal: '#008080', gold: '#DAA520', cyan: '#00CED1'
-    }[penguinColor] || '#0066CC';
     
     const handleChallengeClick = () => {
         setShowGameDropdown(!showGameDropdown);
@@ -116,22 +109,21 @@ const ProfileMenu = () => {
                     >
                     
                     <div className="flex gap-3 p-3">
-                        {/* Left: Avatar + Name */}
-                        <div className="flex flex-col items-center justify-center min-w-[80px]">
-                            <div 
-                                className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg"
-                                style={{ 
-                                    background: `linear-gradient(135deg, ${colorHex}, ${colorHex}88)`,
-                                    border: '2px solid rgba(255,255,255,0.2)'
-                                }}
-                            >
-                                🐧
+                        {/* Left: 3D Avatar + Name */}
+                        <div className="flex flex-col items-center justify-center min-w-[90px]">
+                            <div className="rounded-lg overflow-hidden border border-white/20 shadow-lg bg-slate-900/50">
+                                <PenguinPreview3D 
+                                    appearance={selectedPlayer.appearance}
+                                    size={70}
+                                    autoRotate={true}
+                                    rotationSpeed={0.015}
+                                />
                             </div>
-                            <h3 className="text-white font-bold text-sm mt-1.5 text-center max-w-[80px] truncate">
+                            <h3 className="text-white font-bold text-sm mt-1.5 text-center max-w-[90px] truncate">
                                 {selectedPlayer.name}
                             </h3>
                             {selectedPlayer.appearance?.hat && selectedPlayer.appearance.hat !== 'none' && (
-                                <p className="text-white/40 text-[9px] truncate max-w-[80px]">
+                                <p className="text-white/40 text-[9px] truncate max-w-[90px]">
                                     {selectedPlayer.appearance.hat}
                                 </p>
                             )}
@@ -321,16 +313,15 @@ const ProfileMenu = () => {
                         onClick={handleMenuInteraction}
                     >
                     
-                    {/* Penguin Preview */}
+                    {/* 3D Penguin Preview */}
                     <div className="flex justify-center mb-3">
-                        <div 
-                            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-2xl sm:text-3xl shadow-lg"
-                            style={{ 
-                                background: `linear-gradient(135deg, ${colorHex}, ${colorHex}88)`,
-                                border: '3px solid rgba(255,255,255,0.2)'
-                            }}
-                        >
-                            🐧
+                        <div className="rounded-xl overflow-hidden border-2 border-white/20 shadow-lg bg-slate-900/50">
+                            <PenguinPreview3D 
+                                appearance={selectedPlayer.appearance}
+                                size={100}
+                                autoRotate={true}
+                                rotationSpeed={0.015}
+                            />
                         </div>
                     </div>
                     

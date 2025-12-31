@@ -6,6 +6,10 @@ import GameHUD from './components/GameHUD';
 import ChatLog from './components/ChatLog';
 import Portal from './components/Portal';
 import IglooPortal from './components/IglooPortal';
+import BannerZoomOverlay from './components/BannerZoomOverlay';
+import IglooRentalGuide from './components/IglooRentalGuide';
+import GachaDropRatesGuide from './components/GachaDropRatesGuide';
+import PenguinCreatorOverlay from './components/PenguinCreatorOverlay';
 import PufflePanel from './components/PufflePanel';
 import VirtualJoystick from './components/VirtualJoystick';
 import TouchCameraControl from './components/TouchCameraControl';
@@ -51,6 +55,7 @@ import BattleshipGame from './minigames/BattleshipGame';
 
 const VoxelWorld = ({ 
     penguinData, 
+    onPenguinDataChange, // Callback to update penguinData in parent (App.jsx)
     room = 'town',  // Current room/layer
     onExitToDesigner, 
     onChangeRoom,
@@ -264,6 +269,13 @@ const VoxelWorld = ({
     const emoteRef = useRef({ type: null, startTime: 0 });
     const [showPufflePanel, setShowPufflePanel] = useState(false);
     const playerPuffleRef = useRef(null);
+    
+    // Banner Zoom Overlay State
+    const [bannerZoomOpen, setBannerZoomOpen] = useState(false);
+    const [bannerZoomData, setBannerZoomData] = useState(null);
+    const [iglooRentalGuideOpen, setIglooRentalGuideOpen] = useState(false);
+    const [gachaDropRatesGuideOpen, setGachaDropRatesGuideOpen] = useState(false);
+    const bannerZoomRenderFn = useRef(null);
     const aiPufflesRef = useRef([]); // { id, puffle }
     
     // Multi-puffle ownership system
@@ -354,6 +366,9 @@ const VoxelWorld = ({
     const [arcadeGameActive, setArcadeGameActive] = useState(false); // True when arcade minigame is open
     const [arcadeGameType, setArcadeGameType] = useState(null); // 'battleship' etc
     const [arcadeInteraction, setArcadeInteraction] = useState(null); // { machine, prompt, gameType }
+    
+    // Penguin Creator Overlay State (for in-game wardrobe)
+    const [penguinCreatorOpen, setPenguinCreatorOpen] = useState(false);
     
     // Lord Fishnu Interaction State
     const [lordFishnuInteraction, setLordFishnuInteraction] = useState(null); // { canPayRespects, prompt }
@@ -574,7 +589,7 @@ const VoxelWorld = ({
         controls.minDistance = 5;
         controls.maxDistance = 50;
         controls.maxPolarAngle = Math.PI / 2 - 0.1; // Initial value - dynamically updated by CameraController based on player elevation
-        controls.minPolarAngle = 0.1;               // Prevent going directly overhead
+        controls.minPolarAngle = 0.02;              // Allow looking almost straight up when zoomed in
         controls.enablePan = false;
         controls.rotateSpeed = 0.5;     // Slower rotation for smoother feel
         controls.zoomSpeed = 0.8;       // Smooth zoom
@@ -1531,10 +1546,10 @@ const VoxelWorld = ({
         }
         
         // --- INITIALIZE/RESTORE AI AGENTS ---
-        // AI persist across room changes. Only create new AI data if none exist.
-        // centerX and centerZ already declared above
+        // AI DISABLED FOR PERFORMANCE - set to true to re-enable
+        const AI_ENABLED = false;
         
-        if (aiAgentsRef.current.length === 0) {
+        if (AI_ENABLED && aiAgentsRef.current.length === 0) {
             // First time - create AI agents
             AI_NAMES.forEach((name, i) => {
                 const skins = Object.keys(PALETTE).filter(k => !['floorLight','floorDark','wood','rug','glass','beerGold','mirrorFrame','mirrorGlass', 'asphalt', 'roadLine', 'buildingBrickRed', 'buildingBrickYellow', 'buildingBrickBlue', 'windowLight', 'windowDark', 'grass', 'snow', 'water', 'waterDeep', 'butterfly1', 'butterfly2', 'butterfly3'].includes(k));
@@ -1632,7 +1647,7 @@ const VoxelWorld = ({
                     lastRoomChange: Date.now()
                 });
             });
-        } else {
+        } else if (AI_ENABLED) {
             // Room changed - rebuild AI meshes and add to new scene
             aiAgentsRef.current.forEach(ai => {
                 // Rebuild mesh using stored appearance data
@@ -4111,11 +4126,206 @@ const VoxelWorld = ({
                 meshToPlayerMap.set(botMesh, 'dev_bot_wager');
             }
             
-            // Check for intersections
+            // Collect banner sprites for click detection
+            const bannerSprites = [];
+            // Igloo banners
+            iglooOccupancySpritesRef.current.forEach(sprite => {
+                if (sprite.visible) bannerSprites.push(sprite);
+            });
+            // Match banners (from matchBannersRef)
+            if (matchBannersRef.current) {
+                matchBannersRef.current.forEach((bannerData) => {
+                    if (bannerData.sprite && bannerData.sprite.visible) {
+                        bannerSprites.push(bannerData.sprite);
+                    }
+                });
+            }
+            // PvE banners (from pveBannersRef)
+            if (pveBannersRef.current) {
+                pveBannersRef.current.forEach((bannerData) => {
+                    if (bannerData.sprite && bannerData.sprite.visible) {
+                        bannerSprites.push(bannerData.sprite);
+                    }
+                });
+            }
+            // Lord Fishnu sprite
+            if (lordFishnuSpriteRef.current && lordFishnuSpriteRef.current.visible) {
+                bannerSprites.push(lordFishnuSpriteRef.current);
+                // Store banner data if not already set
+                if (!lordFishnuSpriteRef.current.userData.bannerData) {
+                    lordFishnuSpriteRef.current.userData.bannerData = {
+                        type: 'canvas',
+                        title: 'Lord Fishnu Lore',
+                        description: 'The legend of Lord Fishnu',
+                        canvas: lordFishnuSpriteRef.current.material.map.image,
+                        renderFn: (ctx, w, h) => {
+                            const img = lordFishnuSpriteRef.current.material.map.image;
+                            if (img) {
+                                ctx.drawImage(img, 0, 0, w, h);
+                            }
+                        }
+                    };
+                }
+            }
+            // Casino TV and payout boards (stored in room refs)
+            if (casinoRoomRef.current) {
+                const casino = casinoRoomRef.current;
+                if (casino.tvMesh && casino.tvMesh.visible) {
+                    bannerSprites.push(casino.tvMesh);
+                }
+                if (casino.payoutBoards) {
+                    casino.payoutBoards.forEach(board => {
+                        if (board.group && board.group.visible) {
+                            board.group.traverse(child => {
+                                if (child.isMesh && child.userData.isBanner) {
+                                    bannerSprites.push(child);
+                                }
+                            });
+                        }
+                    });
+                }
+            }
+            // Nightclub banners (stored in nightclub ref)
+            if (nightclubRef.current) {
+                const nightclub = nightclubRef.current;
+                if (nightclub.bannerMeshes) {
+                    nightclub.bannerMeshes.forEach(mesh => {
+                        if (mesh.visible) bannerSprites.push(mesh);
+                    });
+                }
+            }
+            
+            // Billboards (find all billboard groups in scene and get their advert meshes)
+            if (sceneRef.current) {
+                sceneRef.current.traverse(obj => {
+                    if (obj.name === 'billboard' && obj.isGroup) {
+                        // Traverse billboard group to find advert mesh with bannerData
+                        obj.traverse(child => {
+                            if (child.isMesh && child.userData?.isBanner && child.userData?.bannerData) {
+                                if (child.visible) bannerSprites.push(child);
+                            }
+                        });
+                    }
+                });
+            }
+            
+            // Also check all meshes in scene for bannerData (catch any we might have missed)
+            if (sceneRef.current) {
+                sceneRef.current.traverse(obj => {
+                    if (obj.isMesh && obj.userData?.isBanner && obj.userData?.bannerData && !bannerSprites.includes(obj)) {
+                        if (obj.visible) bannerSprites.push(obj);
+                    }
+                });
+            }
+            
+            // Check for intersections with players first
             const allMeshes = [];
             playerMeshes.forEach(m => m.traverse(child => { if (child.isMesh) allMeshes.push(child); }));
             
             const intersects = raycaster.intersectObjects(allMeshes, false);
+            
+            // Check banner clicks - handle sprites and meshes separately
+            // THREE.Sprite objects don't work with standard raycaster, need manual check
+            let clickedBanner = null;
+            let bannerData = null;
+            
+            // Separate sprites from meshes
+            const bannerMeshes = [];
+            const bannerSpritesOnly = [];
+            bannerSprites.forEach(s => {
+                if (s.isMesh) {
+                    bannerMeshes.push(s);
+                } else if (s.isSprite) {
+                    bannerSpritesOnly.push(s);
+                }
+            });
+            
+            // First check meshes (they work with raycaster)
+            const bannerMeshIntersects = raycaster.intersectObjects(bannerMeshes, false);
+            
+            if (bannerMeshIntersects.length > 0) {
+                clickedBanner = bannerMeshIntersects[0].object;
+            } else if (bannerSpritesOnly.length > 0) {
+                // Check sprites manually (THREE.Sprite needs special handling)
+                // Sprites are always billboarded (facing camera), so check distance from ray to sprite position
+                const ray = raycaster.ray;
+                let closestSprite = null;
+                let closestDistance = Infinity;
+                
+                for (const sprite of bannerSpritesOnly) {
+                    if (!sprite.visible) continue;
+                    
+                    // Get sprite world position
+                    const spriteWorldPos = new THREE.Vector3();
+                    sprite.getWorldPosition(spriteWorldPos);
+                    
+                    // Calculate distance from ray to sprite position
+                    const rayToSprite = new THREE.Vector3().subVectors(spriteWorldPos, ray.origin);
+                    const rayDir = ray.direction.clone().normalize();
+                    const projectionLength = rayToSprite.dot(rayDir);
+                    
+                    // Closest point on ray to sprite
+                    const closestPointOnRay = ray.origin.clone().add(rayDir.multiplyScalar(projectionLength));
+                    const distanceToRay = closestPointOnRay.distanceTo(spriteWorldPos);
+                    
+                    // Get sprite size (approximate from scale)
+                    const spriteSize = Math.max(sprite.scale.x, sprite.scale.y) / 2;
+                    
+                    // Check if ray passes through sprite bounds
+                    if (distanceToRay < spriteSize && projectionLength > 0) {
+                        if (distanceToRay < closestDistance) {
+                            closestDistance = distanceToRay;
+                            closestSprite = sprite;
+                        }
+                    }
+                }
+                
+                if (closestSprite) {
+                    clickedBanner = closestSprite;
+                }
+            }
+            
+            // If we found a clicked banner, get its banner data
+            if (clickedBanner) {
+                let obj = clickedBanner;
+                while (obj && !bannerData) {
+                    bannerData = obj.userData?.bannerData;
+                    if (!bannerData && obj.parent) {
+                        obj = obj.parent;
+                    } else {
+                        break;
+                    }
+                }
+                
+                if (bannerData) {
+                    // Check if this is the Igloo Rental Guide - use special component
+                    if (bannerData.title === '🏠 Igloo Rental Guide' || 
+                        (bannerData.title && bannerData.title.includes('Igloo Rental Guide'))) {
+                        setIglooRentalGuideOpen(true);
+                        return; // Don't process player clicks if banner was clicked
+                    }
+                    
+                    // Check if this is the Gacha Drop Rates board - use special component
+                    if (bannerData.title === 'Gacha Drop Rates' || 
+                        (bannerData.title && bannerData.title.includes('Gacha')) ||
+                        (bannerData.title && bannerData.title.includes('Cosmetic Gacha'))) {
+                        setGachaDropRatesGuideOpen(true);
+                        return; // Don't process player clicks if banner was clicked
+                    }
+                    
+                    // Open banner zoom overlay for other banners
+                    setBannerZoomData({
+                        type: bannerData.type || 'canvas',
+                        title: bannerData.title || 'Banner',
+                        description: bannerData.description,
+                        imagePath: bannerData.imagePath, // For image type banners (billboards)
+                        canvas: bannerData.canvas
+                    });
+                    bannerZoomRenderFn.current = bannerData.renderFn;
+                    setBannerZoomOpen(true);
+                    return; // Don't process player clicks if banner was clicked
+                }
+            }
             
             if (intersects.length > 0) {
                 // Find which player was clicked/tapped
@@ -4686,6 +4896,38 @@ const VoxelWorld = ({
         }
     };
     
+    // State for wardrobe igloo interaction
+    const [wardrobeInteraction, setWardrobeInteraction] = useState(null);
+    
+    // Check for wardrobe/personal igloo proximity (town only)
+    const checkWardrobeIgloo = () => {
+        if (room !== 'town' || penguinCreatorOpen) {
+            if (wardrobeInteraction) setWardrobeInteraction(null);
+            return;
+        }
+        
+        const playerPos = posRef.current;
+        // Personal igloo position (from TownCenter.js: C + 67.6, C + 78.7)
+        const wardrobeX = CENTER_X + 67.6;
+        const wardrobeZ = CENTER_Z + 78.7;
+        const interactionRadius = 6;
+        
+        const dx = playerPos.x - wardrobeX;
+        const dz = playerPos.z - wardrobeZ;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        
+        if (distance < interactionRadius) {
+            if (!wardrobeInteraction) {
+                setWardrobeInteraction({
+                    prompt: '✨ Press E to customize your penguin',
+                    type: 'wardrobe'
+                });
+            }
+        } else if (wardrobeInteraction) {
+            setWardrobeInteraction(null);
+        }
+    };
+    
     useEffect(() => {
         const interval = setInterval(() => {
             checkPortals();
@@ -4695,9 +4937,10 @@ const VoxelWorld = ({
             checkFishingSpots();
             checkLordFishnu();
             checkArcadeMachines();
+            checkWardrobeIgloo();
         }, 200);
         return () => clearInterval(interval);
-    }, [nearbyPortal, room, slotInteraction, blackjackInteraction, blackjackGameActive, fishingInteraction, lordFishnuInteraction, arcadeInteraction, userData?.coins, isAuthenticated]);
+    }, [nearbyPortal, room, slotInteraction, blackjackInteraction, blackjackGameActive, fishingInteraction, lordFishnuInteraction, arcadeInteraction, wardrobeInteraction, penguinCreatorOpen, userData?.coins, isAuthenticated]);
     
     // Handle portal entry
     const handlePortalEnter = () => {
@@ -4866,6 +5109,12 @@ const VoxelWorld = ({
     useEffect(() => {
         lordFishnuInteractionRef.current = lordFishnuInteraction;
     }, [lordFishnuInteraction]);
+    
+    // Wardrobe interaction ref for E key handler
+    const wardrobeInteractionRef = useRef(null);
+    useEffect(() => {
+        wardrobeInteractionRef.current = wardrobeInteraction;
+    }, [wardrobeInteraction]);
     
     // Holy messages for Lord Fishnu
     const LORD_FISHNU_MESSAGES = [
@@ -5110,6 +5359,22 @@ const VoxelWorld = ({
         window.addEventListener('keydown', handleFishnuKeyPress);
         return () => window.removeEventListener('keydown', handleFishnuKeyPress);
     }, [nearbyPortal, fishingInteraction, emoteWheelOpen, room, handlePayRespects]);
+    
+    // E key handler for Wardrobe Igloo (Penguin Creator)
+    useEffect(() => {
+        const handleWardrobeKeyPress = (e) => {
+            if (e.code === 'KeyE' && room === 'town' && !penguinCreatorOpen) {
+                const wi = wardrobeInteractionRef.current;
+                // Only trigger if near wardrobe and NOT near other interactions
+                if (wi?.type === 'wardrobe' && !nearbyPortal && !fishingInteraction && !emoteWheelOpen && !arcadeInteraction) {
+                    setPenguinCreatorOpen(true);
+                    setWardrobeInteraction(null);
+                }
+            }
+        };
+        window.addEventListener('keydown', handleWardrobeKeyPress);
+        return () => window.removeEventListener('keydown', handleWardrobeKeyPress);
+    }, [nearbyPortal, fishingInteraction, emoteWheelOpen, arcadeInteraction, room, penguinCreatorOpen]);
     
     // Handle town interactions (benches, snowmen, etc.)
     useEffect(() => {
@@ -6250,6 +6515,45 @@ const VoxelWorld = ({
                 />
              )}
              
+             {/* Banner Zoom Overlay */}
+             <BannerZoomOverlay
+                isOpen={bannerZoomOpen}
+                onClose={() => {
+                    setBannerZoomOpen(false);
+                    setBannerZoomData(null);
+                    bannerZoomRenderFn.current = null;
+                }}
+                bannerData={bannerZoomData}
+                renderCanvas={bannerZoomRenderFn.current}
+             />
+             
+             {/* Igloo Rental Guide */}
+             <IglooRentalGuide
+                isOpen={iglooRentalGuideOpen}
+                onClose={() => setIglooRentalGuideOpen(false)}
+             />
+             
+             {/* Gacha Drop Rates Guide */}
+             <GachaDropRatesGuide
+                isOpen={gachaDropRatesGuideOpen}
+                onClose={() => setGachaDropRatesGuideOpen(false)}
+             />
+             
+             {/* Penguin Creator Overlay (Wardrobe Igloo) */}
+             <PenguinCreatorOverlay
+                isOpen={penguinCreatorOpen}
+                onClose={() => setPenguinCreatorOpen(false)}
+                currentData={penguinData}
+                onSave={(newData) => {
+                    // Update local state immediately (for instant visual feedback)
+                    if (onPenguinDataChange) {
+                        onPenguinDataChange(newData);
+                    }
+                    // Update appearance on server (broadcasts to all players)
+                    mpUpdateAppearance(newData);
+                }}
+             />
+             
              {/* Casino TV is now rendered in 3D space with real data from DexScreener API */}
              
              {/* Mobile PUBG-style Joystick - LEFT side (or right if left-handed) */}
@@ -6593,6 +6897,42 @@ const VoxelWorld = ({
                         }}
                     >
                         🎮 PLAY
+                    </button>
+                    
+                    {/* Desktop hint */}
+                    {!isMobile && (
+                        <p className="text-white/50 text-[10px] mt-1 retro-text">or press E</p>
+                    )}
+                </div>
+             )}
+             
+             {/* Wardrobe Igloo Interaction UI (Penguin Creator) */}
+             {wardrobeInteraction && room === 'town' && !fishingInteraction && !nearbyPortal && !penguinCreatorOpen && (
+                <div 
+                    className={`absolute bg-gradient-to-b from-purple-900/95 to-indigo-900/95 backdrop-blur-sm rounded-xl border border-yellow-500/50 text-center z-20 shadow-lg shadow-yellow-500/30 ${
+                        isMobile 
+                            ? isLandscape 
+                                ? 'bottom-[180px] right-28 p-3' 
+                                : 'bottom-[170px] left-1/2 -translate-x-1/2 p-3'
+                            : 'bottom-24 left-1/2 -translate-x-1/2 p-4'
+                    }`}
+                >
+                    <div className="text-3xl mb-1">✨</div>
+                    <p className="text-yellow-300 retro-text text-sm mb-2">
+                        {isMobile 
+                            ? '👔 Tap to customize'
+                            : wardrobeInteraction.prompt
+                        }
+                    </p>
+                    
+                    <button
+                        className="w-full px-6 py-2 font-bold rounded-lg retro-text text-sm transition-all active:scale-95 shadow-lg bg-gradient-to-b from-yellow-400 to-amber-600 hover:from-yellow-300 hover:to-amber-500 text-black"
+                        onClick={() => {
+                            setPenguinCreatorOpen(true);
+                            setWardrobeInteraction(null);
+                        }}
+                    >
+                        🐧 CUSTOMIZE
                     </button>
                     
                     {/* Desktop hint */}

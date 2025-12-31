@@ -4034,10 +4034,20 @@ async function handleMessage(playerId, message) {
             
             if (validatedAmount > 0) {
                 try {
-                    await userService.updateCoins(player.walletAddress, validatedAmount);
-                    const newBalance = await userService.getUserCoins(player.walletAddress);
+                    // Add coins (winAmount already includes bet + winnings)
+                    const result = await userService.updateCoins(player.walletAddress, validatedAmount);
+                    if (!result.success) {
+                        console.error('🎰 Blackjack payout failed:', result.error);
+                        sendToPlayer(playerId, {
+                            type: 'blackjack_error',
+                            error: result.error || 'Payout failed'
+                        });
+                        break;
+                    }
                     
-                    console.log(`🎰 Blackjack payout to ${player.name}: ${validatedAmount} coins (${result})`);
+                    const newBalance = result.newBalance || await userService.getUserCoins(player.walletAddress);
+                    
+                    console.log(`🎰 Blackjack payout to ${player.name}: +${validatedAmount} coins (${result}), new balance: ${newBalance}`);
                     
                     sendToPlayer(playerId, {
                         type: 'coins_update',
@@ -4046,10 +4056,10 @@ async function handleMessage(playerId, message) {
                     });
                     
                 } catch (e) {
-                    console.error('Blackjack payout error:', e);
+                    console.error('🎰 Blackjack payout error:', e);
                     sendToPlayer(playerId, {
                         type: 'blackjack_error',
-                        error: 'Payout failed'
+                        error: 'Payout failed: ' + (e.message || 'Unknown error')
                     });
                 }
             } else {
@@ -4238,6 +4248,51 @@ async function handleMessage(playerId, message) {
                 });
             } catch (error) {
                 console.error('🎰 Gacha history error:', error);
+            }
+            break;
+        }
+        
+        case 'get_all_cosmetics': {
+            // Get all cosmetic templates from database (for frontend to load dynamically)
+            try {
+                const { CosmeticTemplate } = await import('./db/models/index.js');
+                const cosmetics = await CosmeticTemplate.find({ isActive: true })
+                    .select('templateId assetKey category rarity name description acquisitionType')
+                    .lean();
+                
+                // Group by category for easier frontend consumption
+                const grouped = {
+                    skin: [],
+                    hat: [],
+                    eyes: [],
+                    mouth: [],
+                    bodyItem: [],
+                    mount: []
+                };
+                
+                cosmetics.forEach(cosmetic => {
+                    if (grouped[cosmetic.category]) {
+                        grouped[cosmetic.category].push({
+                            id: cosmetic.assetKey,
+                            templateId: cosmetic.templateId,
+                            name: cosmetic.name,
+                            rarity: cosmetic.rarity,
+                            acquisitionType: cosmetic.acquisitionType
+                        });
+                    }
+                });
+                
+                sendToPlayer(playerId, {
+                    type: 'all_cosmetics',
+                    cosmetics: grouped
+                });
+            } catch (error) {
+                console.error('🎨 Get all cosmetics error:', error);
+                sendToPlayer(playerId, {
+                    type: 'all_cosmetics',
+                    cosmetics: {},
+                    error: 'Failed to fetch cosmetics'
+                });
             }
             break;
         }

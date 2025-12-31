@@ -73,7 +73,7 @@ class SceneManager {
         this.controls.minDistance = options.minDistance || 5;
         this.controls.maxDistance = options.maxDistance || 50;
         this.controls.maxPolarAngle = options.maxPolarAngle || Math.PI * 0.45;
-        this.controls.minPolarAngle = options.minPolarAngle || 0.1;
+        this.controls.minPolarAngle = options.minPolarAngle || 0.02; // Allow looking almost straight up
         
         return this.controls;
     }

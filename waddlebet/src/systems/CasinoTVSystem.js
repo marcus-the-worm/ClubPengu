@@ -305,6 +305,18 @@ export async function createCasinoTVSprite(THREE) {
     mesh.userData.lastUpdate = Date.now();
     mesh.userData.isCasinoTV = true;
     
+    // Store banner data for zoom overlay
+    mesh.userData.bannerData = {
+        type: 'canvas',
+        title: '$WADDLE Token Chart',
+        description: 'Real-time token price and market data from DexScreener',
+        canvas: canvas,
+        renderFn: (ctx, w, h) => {
+            const tokenData = cachedTokenData;
+            renderCasinoTVBanner(ctx, tokenData);
+        }
+    };
+    
     // Start auto-refresh timer
     mesh.userData.refreshInterval = setInterval(async () => {
         await updateCasinoTVSprite(mesh);

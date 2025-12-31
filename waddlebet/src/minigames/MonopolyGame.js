@@ -132,6 +132,7 @@ export function createInitialState() {
         
         // Turn timing
         turnStartedAt: Date.now(),
+        gameStartTime: Date.now(), // Track when game started for rent scaling
         
         // Animation state for client
         animatingMove: false,
@@ -368,10 +369,20 @@ function handlePropertyLanding(state, currentPlayer, position) {
 
 /**
  * Calculate rent for a property
+ * Rent scales with game duration to keep the game balanced
  */
 function calculateRent(state, position, owner) {
     const space = SPACES[position];
     let rent = space.rent || 0;
+    
+    // Calculate game duration in minutes
+    const gameStartTime = state.gameStartTime || state.turnStartedAt || Date.now();
+    const gameDurationMinutes = Math.max(0, (Date.now() - gameStartTime) / (1000 * 60));
+    
+    // Rent scaling: starts at 1x, increases gradually up to 3x after 10 minutes
+    // Formula: 1 + (gameDurationMinutes / 10) * 2, capped at 3x
+    const rentMultiplier = Math.min(3, 1 + (gameDurationMinutes / 10) * 2);
+    rent = Math.floor(rent * rentMultiplier);
     
     // Check for monopoly (double rent)
     const ownerProps = state[owner].properties;
@@ -386,17 +397,17 @@ function calculateRent(state, position, owner) {
         }
     }
     
-    // Station rent based on count owned
+    // Station rent based on count owned (also scales with duration)
     if (space.type === 'station') {
         const stationCount = ownerProps.filter(i => SPACES[i].type === 'station').length;
-        rent = 25 * Math.pow(2, stationCount - 1);
+        rent = Math.floor(25 * Math.pow(2, stationCount - 1) * rentMultiplier);
     }
     
-    // Utility rent based on dice
+    // Utility rent based on dice (also scales with duration)
     if (space.type === 'utility') {
         const utilityCount = ownerProps.filter(i => SPACES[i].type === 'utility').length;
         const multiplier = utilityCount === 2 ? 10 : 4;
-        rent = (state.lastDice[0] + state.lastDice[1]) * multiplier;
+        rent = Math.floor((state.lastDice[0] + state.lastDice[1]) * multiplier * rentMultiplier);
     }
     
     return rent;

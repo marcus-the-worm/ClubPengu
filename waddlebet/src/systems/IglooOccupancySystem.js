@@ -620,6 +620,17 @@ export function createIglooOccupancySprite(THREE, count, iglooIndex = 0, iglooDa
     sprite.userData.iglooData = iglooData;
     sprite.userData.canvasHeight = h;
     
+    // Store banner data for zoom overlay
+    sprite.userData.bannerData = {
+        type: 'canvas',
+        title: iglooData?.banner?.title || 'Igloo Instructions',
+        description: 'Click to view igloo rental instructions',
+        canvas: canvas,
+        renderFn: (ctx, w, h) => {
+            renderIglooBanner(ctx, count, iglooIndex, iglooData);
+        }
+    };
+    
     return sprite;
 }
 

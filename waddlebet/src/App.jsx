@@ -273,6 +273,7 @@ const AppContent = () => {
                 <div className={`absolute inset-0 ${isInMatch ? 'pointer-events-none' : ''}`}>
                     <VoxelWorld 
                         penguinData={penguinData} 
+                        onPenguinDataChange={setPenguinData}
                         room={currentRoom}
                         onExitToDesigner={handleExitToDesigner}
                         onChangeRoom={handleChangeRoom}

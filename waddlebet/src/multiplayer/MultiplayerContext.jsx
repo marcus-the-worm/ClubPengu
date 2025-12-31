@@ -95,8 +95,19 @@ export function MultiplayerProvider({ children }) {
         onChatMessage: null,
         onAuthSuccess: null,
         onAuthFailure: null,
-        onPromoResult: null
+        onPromoResult: null,
+        onAllCosmeticsLoaded: null
     });
+    
+    // All cosmetics loaded from database
+    const [allCosmetics, setAllCosmetics] = useState(null);
+    
+    // Fetch all cosmetics from database
+    const fetchAllCosmetics = useCallback(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'get_all_cosmetics' }));
+        }
+    }, []);
     
     // ==================== CONNECT ====================
     const connect = useCallback(() => {
@@ -839,6 +850,12 @@ export function MultiplayerProvider({ children }) {
                     appearancePlayer.appearance = message.appearance;
                     appearancePlayer.needsMeshRebuild = true;
                 }
+                break;
+                
+            case 'all_cosmetics':
+                // All cosmetic templates loaded from database
+                setAllCosmetics(message.cosmetics);
+                callbacksRef.current.onAllCosmeticsLoaded?.(message.cosmetics);
                 break;
                 
             case 'player_puffle':
@@ -1592,6 +1609,10 @@ export function MultiplayerProvider({ children }) {
         syncCoins,
         updateUserCoins,
         changeUsername,
+        
+        // Cosmetics
+        allCosmetics,
+        fetchAllCosmetics,
         checkUsername,
         
         // Raw send for ChallengeContext

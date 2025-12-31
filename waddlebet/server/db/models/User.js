@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema({
     },
     characterType: {
         type: String,
-        enum: ['penguin', 'marcus', 'whiteWhale', 'blackWhale', 'silverWhale', 'goldWhale', 'doginal'],
+        enum: ['penguin', 'marcus', 'whiteWhale', 'blackWhale', 'silverWhale', 'goldWhale', 'doginal', 'frog'],
         default: 'penguin'
     },
 

@@ -1151,6 +1151,17 @@ export function updateMatchBanners(params) {
             scene.add(sprite);
             bannerData = { sprite, canvas, ctx, texture, gameType: matchData.gameType };
             banners.set(matchId, bannerData);
+            
+            // Store banner data for zoom overlay
+            sprite.userData.bannerData = {
+                type: 'canvas',
+                title: `${matchData.gameType} Match`,
+                description: 'Match information banner',
+                canvas: canvas,
+                renderFn: (ctx, w, h) => {
+                    renderBannerToCanvas(ctx, matchData);
+                }
+            };
         }
         
         // Update banner content

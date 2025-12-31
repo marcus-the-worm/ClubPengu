@@ -24,6 +24,7 @@ export { default as Campfire } from './Campfire';
 export { default as LogSeat } from './LogSeat';
 export { default as ChristmasTree } from './ChristmasTree';
 export { default as Billboard } from './Billboard';
+export { createIglooInfoBoard } from './IglooInfoBoard';
 
 // Quality of life props
 export { default as Mailbox } from './Mailbox';

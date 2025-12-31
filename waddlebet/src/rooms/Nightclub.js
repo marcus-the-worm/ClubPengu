@@ -554,6 +554,20 @@ class Nightclub extends BaseRoom {
         group.add(banner);
         this.materials.push(bannerMat);
         
+        // Store banner data for zoom overlay
+        banner.userData.bannerData = {
+            type: 'image',
+            title: 'Nightclub Banner',
+            description: 'Nightclub advertisement banner',
+            imagePath: '/advert.jpg'
+        };
+        
+        // Store banner mesh reference
+        if (!this.bannerMeshes) {
+            this.bannerMeshes = [];
+        }
+        this.bannerMeshes.push(banner);
+        
         group.position.set(cx, 5, backWallZ - 0.3);
         group.rotation.y = Math.PI;
         scene.add(group);

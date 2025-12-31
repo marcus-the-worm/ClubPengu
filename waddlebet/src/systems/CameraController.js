@@ -212,8 +212,9 @@ class CameraController {
         this._spherical.setFromVector3(this._offset);
         
         // Adjust phi (vertical angle), clamped to valid range
+        // Allow looking almost straight up (0.02) when zoomed in
         this._spherical.phi = Math.max(
-            this.controls.minPolarAngle || 0.1,
+            this.controls.minPolarAngle || 0.02,
             Math.min(
                 this.controls.maxPolarAngle || (Math.PI / 2 - 0.1),
                 this._spherical.phi + delta
