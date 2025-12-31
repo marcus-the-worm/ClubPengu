@@ -63,6 +63,7 @@ export function MultiplayerProvider({ children }) {
     
     // Current room
     const [serverRoom, setServerRoom] = useState(null);
+    const serverRoomRef = useRef(null);
     
     // Connection error state
     const [connectionError, setConnectionError] = useState(null);
@@ -737,7 +738,11 @@ export function MultiplayerProvider({ children }) {
             // ==================== ROOM/PLAYER MESSAGES ====================
             case 'room_state':
                 console.log(`📍 Entered ${message.room} with ${message.players.length} other players`);
+                const previousRoom = serverRoomRef.current;
+                const isRoomChange = previousRoom && previousRoom !== message.room;
+                
                 setServerRoom(message.room);
+                serverRoomRef.current = message.room;
                 
                 if (message.worldTime !== undefined) {
                     worldTimeRef.current = message.worldTime;
@@ -759,28 +764,48 @@ export function MultiplayerProvider({ children }) {
                     }
                 }
                 
-                playersDataRef.current.clear();
+                // Only clear players if we're changing rooms, not if we're just updating state in the same room
+                // This prevents appearance updates from clearing other players
+                if (isRoomChange) {
+                    console.log(`🔄 Room change detected: ${previousRoom} -> ${message.room}, clearing player data`);
+                    playersDataRef.current.clear();
+                } else {
+                    console.log(`🔄 Room state update in same room (${message.room}), merging player data instead of clearing`);
+                    // Merge player data instead of clearing - update existing players, add new ones, remove ones not in list
+                    const currentPlayerIds = new Set(playersDataRef.current.keys());
+                    const newPlayerIds = new Set(message.players.map(p => p.id));
+                    
+                    // Remove players that are no longer in the room
+                    for (const id of currentPlayerIds) {
+                        if (!newPlayerIds.has(id)) {
+                            playersDataRef.current.delete(id);
+                        }
+                    }
+                }
+                
                 const ids = [];
                 message.players.forEach(p => {
                     console.log(`  - ${p.name}`, p.puffle ? `with ${p.puffle.color} puffle` : '(no puffle)', p.emote ? `emoting: ${p.emote}` : '', p.isAfk ? '(AFK)' : '', p.isAuthenticated ? '✓' : '');
+                    const existingPlayer = playersDataRef.current.get(p.id);
                     const playerData = {
                         id: p.id,
                         name: p.name,
-                        position: p.position,
-                        rotation: p.rotation,
-                        appearance: p.appearance,
-                        puffle: p.puffle || null,
-                        pufflePosition: p.pufflePosition || null,
-                        emote: p.emote || null,
-                        emoteStartTime: p.emote ? Date.now() : null,
-                        seatedOnFurniture: p.seatedOnFurniture || false,
-                        isAfk: p.isAfk || false,
-                        afkMessage: p.afkMessage || null,
-                        chatMessage: p.isAfk ? p.afkMessage : null,
-                        chatTime: p.isAfk ? Date.now() : null,
-                        isAfkBubble: p.isAfk || false,
-                        isAuthenticated: p.isAuthenticated || false,
-                        needsMesh: true
+                        position: p.position || existingPlayer?.position,
+                        rotation: p.rotation || existingPlayer?.rotation,
+                        appearance: p.appearance || existingPlayer?.appearance,
+                        puffle: p.puffle || existingPlayer?.puffle || null,
+                        pufflePosition: p.pufflePosition || existingPlayer?.pufflePosition || null,
+                        emote: p.emote || existingPlayer?.emote || null,
+                        emoteStartTime: p.emote ? Date.now() : (existingPlayer?.emoteStartTime || null),
+                        seatedOnFurniture: p.seatedOnFurniture || existingPlayer?.seatedOnFurniture || false,
+                        isAfk: p.isAfk || existingPlayer?.isAfk || false,
+                        afkMessage: p.afkMessage || existingPlayer?.afkMessage || null,
+                        chatMessage: p.isAfk ? p.afkMessage : (existingPlayer?.chatMessage || null),
+                        chatTime: p.isAfk ? Date.now() : (existingPlayer?.chatTime || null),
+                        isAfkBubble: p.isAfk || existingPlayer?.isAfkBubble || false,
+                        isAuthenticated: p.isAuthenticated || existingPlayer?.isAuthenticated || false,
+                        needsMesh: existingPlayer ? existingPlayer.needsMesh : true, // Preserve needsMesh if player already exists
+                        needsMeshRebuild: existingPlayer?.needsMeshRebuild || false // Preserve needsMeshRebuild flag
                     };
                     playersDataRef.current.set(p.id, playerData);
                     ids.push(p.id);
@@ -847,8 +872,11 @@ export function MultiplayerProvider({ children }) {
             case 'player_appearance':
                 const appearancePlayer = playersDataRef.current.get(message.playerId);
                 if (appearancePlayer) {
+                    console.log(`🎨 Received appearance update for ${appearancePlayer.name} (${message.playerId})`);
                     appearancePlayer.appearance = message.appearance;
                     appearancePlayer.needsMeshRebuild = true;
+                } else {
+                    console.warn(`⚠️ Received appearance update for unknown player ${message.playerId}`);
                 }
                 break;
                 

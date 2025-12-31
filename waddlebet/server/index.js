@@ -54,6 +54,7 @@ const ts = () => new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
 const players = new Map(); // playerId -> { id, name, room, position, rotation, appearance, puffle, ip, walletAddress, isAuthenticated, ... }
 const rooms = new Map(); // roomId -> Set of playerIds
 const ipConnections = new Map(); // ip -> Set of playerIds
+const bannedIPs = new Set(); // Set of banned IP addresses
 
 // PvE Activity tracking (for spectator banners)
 // playerId -> { activity: 'fishing'|'blackjack', room, state, position, playerName }
@@ -703,6 +704,12 @@ function generateGuestName() {
 }
 
 function canIPConnect(ip) {
+    // Check if IP is banned (blocks all connections from this IP)
+    if (bannedIPs.has(ip)) {
+        console.log(`🚫 Blocked connection attempt from banned IP: ${ip}`);
+        return false;
+    }
+    
     if (IS_DEV) return true;
     cleanupStaleConnections(ip);
     const connections = ipConnections.get(ip);
@@ -1031,6 +1038,18 @@ async function handleMatchPayout(match, winnerId, isDraw = false) {
 // ==================== CONNECTION HANDLER ====================
 wss.on('connection', (ws, req) => {
     const clientIP = getClientIP(req);
+    
+    // Check if IP is banned first (before any other checks)
+    if (bannedIPs.has(clientIP)) {
+        console.log(`🚫 Blocked connection from banned IP: ${clientIP}`);
+        ws.send(JSON.stringify({
+            type: 'error',
+            code: 'IP_BANNED',
+            message: 'Your IP address has been banned. Access denied.'
+        }));
+        ws.close(1008, 'IP banned');
+        return;
+    }
     
     if (!canIPConnect(clientIP)) {
         ws.send(JSON.stringify({
@@ -2150,11 +2169,15 @@ async function handleMessage(playerId, message) {
             }
             
             if (player.room) {
+                // Broadcast appearance update to all players in the room (except sender)
                 broadcastToRoom(player.room, {
                     type: 'player_appearance',
                     playerId,
                     appearance: player.appearance
                 }, playerId);
+                console.log(`🎨 Broadcasted appearance update for ${player.name} (${playerId}) to room ${player.room}`);
+            } else {
+                console.warn(`⚠️ Cannot broadcast appearance update - player ${player.name} (${playerId}) not in a room`);
             }
             break;
         }

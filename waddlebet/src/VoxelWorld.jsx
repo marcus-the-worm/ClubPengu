@@ -1822,12 +1822,43 @@ const VoxelWorld = ({
 
         // --- INPUT HANDLING ---
         const handleDown = (e) => {
-            if (document.activeElement.tagName === 'INPUT') {
-                if(e.code === 'Escape') {
-                    document.activeElement.blur();
-                }
+            const activeElement = document.activeElement;
+            const isInputFocused = activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA';
+            
+            // Handle Escape key for any input
+            if (isInputFocused && e.code === 'Escape') {
+                activeElement.blur();
                 return;
             }
+            
+            // Handle Enter and Slash keys to open chat (only if no input is focused, or chat input is focused)
+            if (e.code === 'Enter' || e.code === 'Slash') {
+                const chatInput = document.getElementById('chat-input-field');
+                if (chatInput) {
+                    // If chat input is already focused, allow normal behavior (Enter sends, Slash types)
+                    if (activeElement === chatInput) {
+                        // Don't prevent default - let Enter send message, let Slash type
+                        return;
+                    }
+                    // If another input is focused, don't interfere
+                    if (isInputFocused) {
+                        return;
+                    }
+                    // Otherwise, focus chat input
+                    chatInput.focus();
+                    // Prevent "/" from being typed when opening chat
+                    if (e.code === 'Slash') {
+                        e.preventDefault();
+                    }
+                    return; // Don't process movement keys when opening chat
+                }
+            }
+            
+            // Don't process game keys if an input is focused
+            if (isInputFocused) {
+                return;
+            }
+            
             keysRef.current[e.code] = true;
             
             if (['KeyW', 'KeyS', 'KeyA', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
@@ -1865,11 +1896,6 @@ const VoxelWorld = ({
                         return !prev;
                     });
                 }
-            }
-            if(e.code === 'Enter') {
-                 const input = document.getElementById('chat-input-field');
-                 // Only focus if not already focused (prevents re-focusing after sendChat blurs)
-                 if(input && document.activeElement !== input) input.focus();
             }
         };
         const handleUp = (e) => {
@@ -6667,12 +6693,22 @@ const VoxelWorld = ({
                 onClose={() => setPenguinCreatorOpen(false)}
                 currentData={penguinData}
                 onSave={(newData) => {
+                    console.log('🎨 Saving appearance from golden igloo wardrobe:', newData);
+                    
                     // Update local state immediately (for instant visual feedback)
                     if (onPenguinDataChange) {
                         onPenguinDataChange(newData);
                     }
+                    
                     // Update appearance on server (broadcasts to all players)
-                    mpUpdateAppearance(newData);
+                    // Ensure all appearance fields are included
+                    const fullAppearance = {
+                        ...newData,
+                        // Ensure mountEnabled is preserved if it exists
+                        mountEnabled: newData.mountEnabled !== undefined ? newData.mountEnabled : true
+                    };
+                    mpUpdateAppearance(fullAppearance);
+                    console.log('📤 Sent appearance update to server:', fullAppearance);
                     
                     // Force a position update to ensure other players see us moving
                     // This fixes the issue where players appear stuck after appearance update
@@ -6686,8 +6722,23 @@ const VoxelWorld = ({
                                 rot,
                                 pufflePos
                             );
+                            console.log('📍 Sent position update after appearance change (100ms delay)');
                         }
                     }, 100);
+                    
+                    // Send another position update after a longer delay to ensure it's received
+                    setTimeout(() => {
+                        if (posRef.current && sendPosition && playerRef.current) {
+                            const rot = playerRef.current.rotation.y || 0;
+                            const pufflePos = playerPuffleRef.current?.position || null;
+                            sendPosition(
+                                { x: posRef.current.x, y: posRef.current.y, z: posRef.current.z },
+                                rot,
+                                pufflePos
+                            );
+                            console.log('📍 Sent position update after appearance change (500ms delay)');
+                        }
+                    }, 500);
                 }}
              />
              

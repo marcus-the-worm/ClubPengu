@@ -510,15 +510,18 @@ export async function handleGiftMessage(playerId, player, message, sendToPlayer,
                     success: true,
                     message: `Sent item to ${recipient.username}!`
                 });
+                return true; // Ensure we return true after successful gift
                 
             } catch (error) {
                 console.error('🎁 Error in gift_send_item:', error);
+                console.error('🎁 Error stack:', error.stack);
                 sendToPlayer(playerId, {
                     type: 'gift_result',
                     success: false,
                     error: 'SERVER_ERROR',
-                    message: 'Failed to send item'
+                    message: error.message || 'Failed to send item'
                 });
+                return true; // Ensure we return true to indicate message was handled
             }
             return true;
         }

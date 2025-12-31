@@ -221,6 +221,20 @@ x403 Protocol - Learn more: https://github.com/ByrgerBib/webx403`;
                 console.log(`📝 Migrated username lock for ${user.username}`);
             }
             
+            // CRITICAL: Check if user is banned BEFORE updating connection state
+            if (user.isBanned) {
+                // Check if ban has expired
+                if (user.banExpires && user.banExpires < new Date()) {
+                    user.isBanned = false;
+                    user.banReason = null;
+                    user.banExpires = null;
+                    await user.save();
+                } else {
+                    // User is banned - throw error to prevent authentication
+                    throw new Error('BANNED');
+                }
+            }
+            
             // Update connection state
             user.isConnected = true;
             user.currentPlayerId = playerId;

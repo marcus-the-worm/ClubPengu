@@ -105,51 +105,27 @@ class PebbleService {
             console.warn('   ⚠️ DB check failed, continuing...');
         }
         
-        // Verify transaction exists and succeeded on-chain
+        // CRITICAL SECURITY: Verify the transaction actually sent SOL to the rake wallet
+        // This prevents users from sending transactions to other addresses and still getting pebbles
         try {
-            const status = await this.connection.getSignatureStatus(txSignature);
+            const verification = await this.solanaPaymentService.verifyNativeSOLTransfer(
+                txSignature,
+                walletAddress,           // sender
+                this.rakeWallet,         // recipient (rake wallet) - MUST match
+                expectedLamports,        // amount - MUST match
+                { transactionType: 'pebble_deposit' }
+            );
             
-            if (!status?.value) {
-                console.log(`   ⏳ Tx pending, waiting...`);
-                await new Promise(r => setTimeout(r, 2000));
-                const retry = await this.connection.getSignatureStatus(txSignature);
-                if (!retry?.value) {
-                    return { success: false, error: 'TX_NOT_FOUND', message: 'Transaction not found' };
-                }
+            if (!verification.success) {
+                console.log(`   ❌ Verification failed: ${verification.error}`);
+                return { success: false, error: verification.error, message: verification.message || 'Transaction verification failed' };
             }
             
-            const txStatus = status?.value || (await this.connection.getSignatureStatus(txSignature))?.value;
-            
-            if (txStatus.err) {
-                console.log(`   ❌ Tx failed:`, txStatus.err);
-                return { success: false, error: 'TX_FAILED', message: 'Transaction failed on-chain' };
-            }
-            
-            if (txStatus.confirmationStatus === 'confirmed' || txStatus.confirmationStatus === 'finalized') {
-                console.log(`   ✅ Tx confirmed (${txStatus.confirmationStatus})`);
-            } else {
-                console.log(`   ⏳ Tx status: ${txStatus.confirmationStatus}`);
-            }
+            console.log(`   ✅ SOL transfer verified: ${expectedSolAmount} SOL from ${walletAddress.slice(0, 8)}... to rake wallet`);
             
         } catch (error) {
             console.error(`   ❌ Verification error:`, error.message);
             return { success: false, error: 'VERIFICATION_FAILED', message: error.message };
-        }
-        
-        // Mark tx as used
-        try {
-            await SolanaTransaction.create({
-                signature: txSignature,
-                sender: walletAddress,
-                recipient: this.rakeWallet,
-                amount: expectedLamports.toString(),
-                currency: 'SOL',
-                transactionType: 'pebble_deposit'
-            });
-        } catch (e) {
-            if (e.code === 11000) {
-                return { success: false, error: 'TX_ALREADY_USED', message: 'Transaction already processed' };
-            }
         }
         
         // Credit pebbles
@@ -318,12 +294,32 @@ class PebbleService {
         }
         
         // Server-side balance check (no client trust)
-        const user = await User.findOne({ walletAddress }, 'pebbles');
+        const user = await User.findOne({ walletAddress }, 'pebbles pebbleStats');
         if (!user) {
             return { success: false, error: 'USER_NOT_FOUND', message: 'User not found' };
         }
         if (user.pebbles < pebbleAmount) {
             return { success: false, error: 'INSUFFICIENT_PEBBLES', message: `You have ${user.pebbles} Pebbles, need ${pebbleAmount}` };
+        }
+        
+        // CRITICAL: Only allow withdrawal of pebbles that were actually purchased (deposited)
+        // This prevents withdrawing gifted pebbles, which would drain the custodial wallet
+        // Gifted pebbles can be spent on gacha but cannot be withdrawn to SOL
+        const totalDeposited = user.pebbleStats?.totalDeposited || 0;
+        const totalWithdrawn = user.pebbleStats?.totalWithdrawn || 0;
+        const withdrawablePebbles = Math.max(0, totalDeposited - totalWithdrawn);
+        
+        if (pebbleAmount > withdrawablePebbles) {
+            const giftedAmount = user.pebbles - withdrawablePebbles;
+            console.log(`   ⚠️ Withdrawal blocked: ${pebbleAmount} requested, but only ${withdrawablePebbles} withdrawable (${giftedAmount} from gifts)`);
+            console.log(`   📊 Stats: ${totalDeposited} deposited, ${totalWithdrawn} withdrawn, ${user.pebbles} current balance`);
+            return { 
+                success: false, 
+                error: 'CANNOT_WITHDRAW_GIFTED', 
+                message: `You can only withdraw pebbles you purchased. You have ${withdrawablePebbles} withdrawable pebbles (${giftedAmount} pebbles from gifts cannot be withdrawn).`,
+                withdrawableAmount: withdrawablePebbles,
+                giftedAmount: giftedAmount
+            };
         }
         
         // Calculate amounts
