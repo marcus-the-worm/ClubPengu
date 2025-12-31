@@ -54,14 +54,45 @@ export function drawBubbleBackground(ctx, canvas) {
 }
 
 /**
+ * Format wager display text (coins + tokens if present)
+ * Shows token ticker and amount when crypto is being wagered
+ */
+function formatWagerText(wager, wagerToken) {
+    // Format token amount (handle decimals)
+    const formatTokenAmount = (amount) => {
+        if (amount >= 1000) {
+            return amount.toLocaleString(undefined, { maximumFractionDigits: 0 });
+        } else if (amount >= 1) {
+            return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        } else {
+            return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
+        }
+    };
+    
+    if (wagerToken?.tokenAmount > 0 && wager > 0) {
+        // Both coins and tokens
+        return `💰 ${wager} + ${formatTokenAmount(wagerToken.tokenAmount)} ${wagerToken.tokenSymbol}`;
+    } else if (wagerToken?.tokenAmount > 0) {
+        // Only tokens (crypto wager)
+        return `🪙 ${formatTokenAmount(wagerToken.tokenAmount)} ${wagerToken.tokenSymbol}`;
+    } else if (wager > 0) {
+        // Only coins
+        return `💰 ${wager}`;
+    } else {
+        // No wager (friendly match)
+        return '💰 0';
+    }
+}
+
+/**
  * Render Card Jitsu match banner (matches original exactly)
  */
-export function renderCardJitsuBanner(ctx, canvas, players, state, wager) {
+export function renderCardJitsuBanner(ctx, canvas, players, state, wager, wagerToken = null) {
     // Header
     ctx.fillStyle = '#FBBF24';
     ctx.font = 'bold 22px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`⚔️ CARD JITSU • 💰 ${wager}`, canvas.width / 2, 35);
+    ctx.fillText(`⚔️ CARD JITSU • ${formatWagerText(wager, wagerToken)}`, canvas.width / 2, 35);
     
     // Player names
     ctx.fillStyle = '#FFFFFF';
@@ -110,12 +141,12 @@ export function renderCardJitsuBanner(ctx, canvas, players, state, wager) {
 /**
  * Render Tic Tac Toe match banner (matches original exactly)
  */
-export function renderTicTacToeBanner(ctx, canvas, players, state, wager) {
+export function renderTicTacToeBanner(ctx, canvas, players, state, wager, wagerToken = null) {
     // Header
     ctx.fillStyle = '#FBBF24';
     ctx.font = 'bold 22px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`⭕ TIC TAC TOE • 💰 ${wager}`, canvas.width / 2, 35);
+    ctx.fillText(`⭕ TIC TAC TOE • ${formatWagerText(wager, wagerToken)}`, canvas.width / 2, 35);
     
     // Player names
     ctx.fillStyle = '#FFFFFF';
@@ -187,12 +218,12 @@ export function renderTicTacToeBanner(ctx, canvas, players, state, wager) {
 /**
  * Render Connect 4 match banner (matches original exactly)
  */
-export function renderConnect4Banner(ctx, canvas, players, state, wager) {
+export function renderConnect4Banner(ctx, canvas, players, state, wager, wagerToken = null) {
     // Header
     ctx.fillStyle = '#FBBF24';
     ctx.font = 'bold 22px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`🔴 CONNECT 4 • 💰 ${wager}`, canvas.width / 2, 35);
+    ctx.fillText(`🔴 CONNECT 4 • ${formatWagerText(wager, wagerToken)}`, canvas.width / 2, 35);
     
     // Player names
     ctx.fillStyle = '#FFFFFF';
@@ -276,7 +307,7 @@ export function renderConnect4Banner(ctx, canvas, players, state, wager) {
 /**
  * Render Monopoly match banner (taller 280px canvas)
  */
-export function renderMonopolyBanner(ctx, canvas, players, state, wager) {
+export function renderMonopolyBanner(ctx, canvas, players, state, wager, wagerToken = null) {
     // Property colors for mini board display
     const PROPERTY_COLORS = {
         1: '#8B4513', 3: '#8B4513',  // Brown
@@ -303,7 +334,7 @@ export function renderMonopolyBanner(ctx, canvas, players, state, wager) {
         const winnerName = state.winner === 'player1' ? players[0]?.name : players[1]?.name;
         ctx.fillText(`🏆 ${winnerName} WINS! 🏆`, canvas.width / 2, 35);
     } else {
-        ctx.fillText(`🎩 MONOPOLY • 💰 ${wager}`, canvas.width / 2, 35);
+        ctx.fillText(`🎩 MONOPOLY • ${formatWagerText(wager, wagerToken)}`, canvas.width / 2, 35);
     }
     
     // Player names and money (row below header)
@@ -482,7 +513,7 @@ export function renderMonopolyBanner(ctx, canvas, players, state, wager) {
 /**
  * Render UNO match banner
  */
-export function renderUnoBanner(ctx, canvas, players, state, wager) {
+export function renderUnoBanner(ctx, canvas, players, state, wager, wagerToken = null) {
     // Color mapping for UNO
     const COLOR_HEX = {
         Red: '#ff3333',
@@ -521,7 +552,7 @@ export function renderUnoBanner(ctx, canvas, players, state, wager) {
     }
     ctx.font = 'bold 24px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`🃏 UNO • 💰 ${wager}`, canvas.width / 2, 35);
+    ctx.fillText(`🃏 UNO • ${formatWagerText(wager, wagerToken)}`, canvas.width / 2, 35);
     
     // Player names
     const p1Name = (players[0]?.name || 'Player 1').substring(0, 10);
@@ -622,7 +653,7 @@ export function renderUnoBanner(ctx, canvas, players, state, wager) {
 /**
  * Render Blackjack match banner
  */
-export function renderBlackjackBanner(ctx, canvas, players, state, wager) {
+export function renderBlackjackBanner(ctx, canvas, players, state, wager, wagerToken = null) {
     const isComplete = state.phase === 'complete' || state.winner || state.isComplete;
     // P2P blackjack only - no PvE spectator banners, so always show card counts (not hands)
     
@@ -630,7 +661,7 @@ export function renderBlackjackBanner(ctx, canvas, players, state, wager) {
     ctx.fillStyle = isComplete ? '#FBBF24' : '#10B981'; // Gold when complete, green when playing
     ctx.font = 'bold 24px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`🎰 BLACKJACK • 💰 ${wager}`, canvas.width / 2, 35);
+    ctx.fillText(`🎰 BLACKJACK • ${formatWagerText(wager, wagerToken)}`, canvas.width / 2, 35);
     
     // Player names
     const p1Name = (players[0]?.name || 'Player').substring(0, 10);
@@ -718,14 +749,14 @@ export function renderBlackjackBanner(ctx, canvas, players, state, wager) {
 /**
  * Render Battleship match banner
  */
-export function renderBattleshipBanner(ctx, canvas, players, state, wager) {
+export function renderBattleshipBanner(ctx, canvas, players, state, wager, wagerToken = null) {
     const isComplete = state.winner || state.status === 'complete';
     
     // Header - Naval themed
     ctx.fillStyle = isComplete ? '#FBBF24' : '#3B82F6';
     ctx.font = 'bold 24px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`🚢 BATTLESHIP • 💰 ${wager}`, canvas.width / 2, 35);
+    ctx.fillText(`🚢 BATTLESHIP • ${formatWagerText(wager, wagerToken)}`, canvas.width / 2, 35);
     
     // Player names
     const p1Name = (players[0]?.name || 'Player 1').substring(0, 10);
@@ -1146,34 +1177,34 @@ export function renderBannerToCanvas(ctx, matchData) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawBubbleBackground(ctx, canvas);
     
-    const { gameType, players, state, wagerAmount } = matchData;
+    const { gameType, players, state, wagerAmount, wagerToken } = matchData;
     const wager = wagerAmount || 0;
     
     // Handle both naming conventions for game types
     switch (gameType) {
         case 'tic_tac_toe':
         case 'ticTacToe':
-            renderTicTacToeBanner(ctx, canvas, players, state, wager);
+            renderTicTacToeBanner(ctx, canvas, players, state, wager, wagerToken);
             break;
         case 'blackjack':
-            renderBlackjackBanner(ctx, canvas, players, state, wager);
+            renderBlackjackBanner(ctx, canvas, players, state, wager, wagerToken);
             break;
         case 'connect4':
-            renderConnect4Banner(ctx, canvas, players, state, wager);
+            renderConnect4Banner(ctx, canvas, players, state, wager, wagerToken);
             break;
         case 'monopoly':
-            renderMonopolyBanner(ctx, canvas, players, state, wager);
+            renderMonopolyBanner(ctx, canvas, players, state, wager, wagerToken);
             break;
         case 'uno':
-            renderUnoBanner(ctx, canvas, players, state, wager);
+            renderUnoBanner(ctx, canvas, players, state, wager, wagerToken);
             break;
         case 'battleship':
-            renderBattleshipBanner(ctx, canvas, players, state, wager);
+            renderBattleshipBanner(ctx, canvas, players, state, wager, wagerToken);
             break;
         case 'card_jitsu':
         case 'cardJitsu':
         default:
-            renderCardJitsuBanner(ctx, canvas, players, state, wager);
+            renderCardJitsuBanner(ctx, canvas, players, state, wager, wagerToken);
             break;
     }
 }
@@ -1233,6 +1264,7 @@ export function updateMatchBanners(params) {
             ...match,
             state: matchState,
             wagerAmount: spectateData?.wagerAmount || match.wagerAmount,
+            wagerToken: spectateData?.wagerToken || match.wagerToken || null, // Include token wager for display
             gameType: spectateData?.gameType || match.gameType || 'card_jitsu'
         };
         

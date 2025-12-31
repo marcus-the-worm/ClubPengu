@@ -2682,6 +2682,7 @@ class MatchService {
                     ],
                     gameType: match.gameType,
                     wagerAmount: match.wagerAmount,
+                    wagerToken: match.wagerToken || null, // Include token wager info for spectator banners
                     state: spectatorState
                 });
             }
