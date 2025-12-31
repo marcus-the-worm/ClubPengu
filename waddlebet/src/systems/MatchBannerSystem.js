@@ -493,8 +493,20 @@ export function renderUnoBanner(ctx, canvas, players, state, wager) {
     };
     
     const isComplete = state.winner || state.status === 'complete';
-    const activeColor = state.activeColor || 'Red';
-    const activeValue = state.activeValue || '';
+    
+    // Get active color and value from state, or from topCard if available
+    let activeColor = state.activeColor;
+    let activeValue = state.activeValue;
+    
+    // If activeColor/activeValue not in state, try to get from topCard
+    if (!activeColor && state.topCard) {
+        activeColor = state.topCard.color || 'Red';
+        activeValue = state.topCard.value || '';
+    }
+    
+    // Fallback defaults
+    activeColor = activeColor || 'Red';
+    activeValue = activeValue || '';
     
     // Header - UNO themed (multicolor gradient or winner gold)
     if (isComplete) {
@@ -700,6 +712,87 @@ export function renderBlackjackBanner(ctx, canvas, players, state, wager) {
         ctx.fillStyle = p2Status === 'bust' ? '#ff4757' : (p2Status === 'blackjack' ? '#ffd700' : '#7bed9f');
         ctx.textAlign = 'right';
         ctx.fillText(p2Status.toUpperCase(), canvas.width - 30, 135);
+    }
+}
+
+/**
+ * Render Battleship match banner
+ */
+export function renderBattleshipBanner(ctx, canvas, players, state, wager) {
+    const isComplete = state.winner || state.status === 'complete';
+    
+    // Header - Naval themed
+    ctx.fillStyle = isComplete ? '#FBBF24' : '#3B82F6';
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🚢 BATTLESHIP • 💰 ${wager}`, canvas.width / 2, 35);
+    
+    // Player names
+    const p1Name = (players[0]?.name || 'Player 1').substring(0, 10);
+    const p2Name = (players[1]?.name || 'Player 2').substring(0, 10);
+    
+    ctx.font = 'bold 22px Arial';
+    ctx.fillStyle = '#22D3EE'; // Cyan for player 1
+    ctx.textAlign = 'left';
+    ctx.fillText(p1Name, 30, 70);
+    
+    ctx.fillStyle = '#F472B6'; // Pink for player 2
+    ctx.textAlign = 'right';
+    ctx.fillText(p2Name, canvas.width - 30, 70);
+    
+    // Ship counts (sunk/total)
+    const p1Sunk = state.player1ShipsSunk ?? 0;
+    const p2Sunk = state.player2ShipsSunk ?? 0;
+    const totalShips = state.totalShips ?? 5;
+    const p1Remaining = totalShips - p1Sunk;
+    const p2Remaining = totalShips - p2Sunk;
+    
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'left';
+    ctx.fillText(`🚢 ${p1Remaining}/${totalShips} ships`, 30, 95);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${p2Remaining}/${totalShips} ships 🚢`, canvas.width - 30, 95);
+    
+    // Phase indicator (placement, playing, complete)
+    const phase = state.phase || 'placement';
+    let phaseText = '';
+    if (phase === 'placement') {
+        const p1Ready = state.player1Ready || false;
+        const p2Ready = state.player2Ready || false;
+        if (!p1Ready && !p2Ready) phaseText = 'Both placing ships...';
+        else if (!p1Ready) phaseText = `${p1Name} placing ships...`;
+        else if (!p2Ready) phaseText = `${p2Name} placing ships...`;
+        else phaseText = 'Ready to play!';
+    } else if (phase === 'playing') {
+        const turnName = state.currentTurn === 'player1' ? p1Name : p2Name;
+        phaseText = `${turnName}'s turn`;
+    } else {
+        phaseText = 'Game complete';
+    }
+    
+    // Status
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    
+    let statusText = '';
+    if (isComplete) {
+        const winnerName = state.winner === 'player1' ? p1Name : p2Name;
+        statusText = `🏆 ${winnerName} wins!`;
+    } else {
+        statusText = phaseText;
+    }
+    
+    ctx.fillText(statusText.substring(0, 35), canvas.width / 2, 155);
+    
+    // Last action indicator
+    if (state.lastAction && phase === 'playing') {
+        ctx.font = '14px Arial';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        const actionPlayer = state.lastAction.player === 'player1' ? p1Name : p2Name;
+        const actionType = state.lastAction.type === 'hit' ? '💥 HIT!' : '💨 MISS';
+        ctx.fillText(`${actionPlayer}: ${actionType}`, canvas.width / 2, 175);
     }
 }
 
@@ -1074,6 +1167,9 @@ export function renderBannerToCanvas(ctx, matchData) {
         case 'uno':
             renderUnoBanner(ctx, canvas, players, state, wager);
             break;
+        case 'battleship':
+            renderBattleshipBanner(ctx, canvas, players, state, wager);
+            break;
         case 'card_jitsu':
         case 'cardJitsu':
         default:
@@ -1092,15 +1188,23 @@ export function updateMatchBanners(params) {
     
     const banners = bannersRef;
     
-    // Get current match IDs
+    // Get current match IDs from activeMatches (only active matches)
     const currentMatchIds = new Set(activeMatches.map(m => m.matchId));
     
-    // Remove banners for ended matches
+    // Remove banners for ended matches (matches no longer in activeMatches)
+    // This happens after the 5-second grace period for showing final results
     for (const [matchId, bannerData] of banners) {
         if (!currentMatchIds.has(matchId)) {
-            scene.remove(bannerData.sprite);
-            bannerData.sprite.material.map?.dispose();
-            bannerData.sprite.material.dispose();
+            // Clean up banner resources properly
+            if (bannerData.sprite) {
+                scene.remove(bannerData.sprite);
+                if (bannerData.sprite.material) {
+                    if (bannerData.sprite.material.map) {
+                        bannerData.sprite.material.map.dispose();
+                    }
+                    bannerData.sprite.material.dispose();
+                }
+            }
             banners.delete(matchId);
         }
     }
@@ -1109,9 +1213,25 @@ export function updateMatchBanners(params) {
     for (const match of activeMatches) {
         const matchId = match.matchId;
         const spectateData = spectatingMatch?.[matchId];
+        
+        // ALL game types should use spectator state when available
+        // Spectator state has the correct spectator-friendly fields (card counts, board state, etc.)
+        // Only fall back to match.state if spectateData doesn't exist yet (initial load)
+        let matchState = spectateData?.state || match.state || {};
+        
+        // Always prefer spectateData.state if it exists - it's the authoritative spectator view
+        if (spectateData?.state) {
+            matchState = spectateData.state;
+        }
+        
+        // Filter out completed matches (unless they're in the 5-second grace period)
+        // The grace period is handled by activeMatches still containing the match for 5 seconds
+        const isComplete = matchState.winner || matchState.status === 'complete';
+        // Still show completed matches briefly (they'll be removed from activeMatches after 5 seconds)
+        
         const matchData = {
             ...match,
-            state: spectateData?.state || match.state || {},
+            state: matchState,
             wagerAmount: spectateData?.wagerAmount || match.wagerAmount,
             gameType: spectateData?.gameType || match.gameType || 'card_jitsu'
         };
@@ -1164,12 +1284,27 @@ export function updateMatchBanners(params) {
             };
         }
         
-        // Update banner content
+        // Update banner content with latest state
+        // This ensures banners reflect real-time game state updates from match_spectate messages
         renderBannerToCanvas(bannerData.ctx, matchData);
         bannerData.texture.needsUpdate = true;
         
         // Position above players (8 units above ground)
         bannerData.sprite.position.set(midX, 8, midZ);
+        
+        // Update stored banner data for zoom overlay to reflect latest state
+        if (bannerData.sprite.userData.bannerData) {
+            bannerData.sprite.userData.bannerData.renderFn = (ctx, w, h) => {
+                renderBannerToCanvas(ctx, matchData);
+            };
+        }
+        
+        // Update stored banner data for zoom overlay to reflect latest state
+        if (bannerData.sprite.userData.bannerData) {
+            bannerData.sprite.userData.bannerData.renderFn = (ctx, w, h) => {
+                renderBannerToCanvas(ctx, matchData);
+            };
+        }
     }
 }
 
@@ -1194,6 +1329,7 @@ export default {
     renderMonopolyBanner,
     renderUnoBanner,
     renderBlackjackBanner,
+    renderBattleshipBanner,
     renderBannerToCanvas,
     updateMatchBanners,
     cleanupMatchBanners,

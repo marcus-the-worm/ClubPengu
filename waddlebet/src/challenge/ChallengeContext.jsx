@@ -220,7 +220,6 @@ export function ChallengeProvider({ children }) {
                 
                 case 'match_end':
                     const result = message.result;
-                    setIsInMatch(false);
                     
                     // Store the match result for UI to display (with token settlement info)
                     setMatchResult(result);
@@ -237,6 +236,30 @@ export function ChallengeProvider({ children }) {
                         setTimeout(() => setShouldDance(false), 5000);
                     }
                     
+                    // Update match state to show completion - this will trigger result screen in game components
+                    // Keep all existing state but mark as complete
+                    setMatchState(prevState => {
+                        if (!prevState) return prevState;
+                        return {
+                            ...prevState,
+                            phase: 'complete',
+                            winner: result.winner === 'player1' ? 'player1' : result.winner === 'player2' ? 'player2' : result.winner,
+                            isComplete: true,
+                            status: 'complete',
+                            // For blackjack, preserve scores and results
+                            ...(prevState.myScore !== undefined && { myScore: prevState.myScore }),
+                            ...(prevState.opponentScore !== undefined && { opponentScore: prevState.opponentScore }),
+                            ...(prevState.dealerScore !== undefined && { dealerScore: prevState.dealerScore }),
+                            ...(prevState.myResult !== undefined && { myResult: prevState.myResult }),
+                            ...(prevState.opponentResult !== undefined && { opponentResult: prevState.opponentResult }),
+                            ...(prevState.dealerStatus !== undefined && { dealerStatus: prevState.dealerStatus }),
+                            // For UNO, preserve card counts
+                            ...(prevState.player1CardCount !== undefined && { player1CardCount: prevState.player1CardCount }),
+                            ...(prevState.player2CardCount !== undefined && { player2CardCount: prevState.player2CardCount })
+                        };
+                    });
+                    
+                    // Show notification (but don't close overlay yet - let result screen show first)
                     if (result.reason === 'disconnect') {
                         showNotification(`⚠️ Match voided - opponent disconnected. Wager refunded.`, 'warning');
                     } else if (result.reason === 'forfeit') {
@@ -256,8 +279,24 @@ export function ChallengeProvider({ children }) {
                         showNotification(`😔 You lost the match.`, 'info');
                     }
                     
-                    // DON'T auto-close - let user close manually to view results
-                    // Match will be cleared when user clicks "Continue"
+                    // DON'T immediately close - keep isInMatch true so result screen can be shown
+                    // The game components will handle showing the result screen
+                    // setIsInMatch(false) will be called when user clicks "Continue" (via clearMatch)
+                    // Add a fallback timeout to auto-close after 30 seconds if user doesn't interact
+                    const matchIdToClose = message.matchId;
+                    setTimeout(() => {
+                        // Only auto-close if still in the same match (user hasn't clicked Continue)
+                        // Use a function to get current state to avoid stale closure
+                        setActiveMatch(currentMatch => {
+                            if (currentMatch?.matchId === matchIdToClose) {
+                                setIsInMatch(false);
+                                setMatchState(null);
+                                setMatchResult(null);
+                                return null;
+                            }
+                            return currentMatch;
+                        });
+                    }, 30000); // 30 second fallback - gives plenty of time to see result screen
                     break;
                     
                 case 'match_error':
@@ -265,12 +304,18 @@ export function ChallengeProvider({ children }) {
                     break;
                     
                 case 'match_spectate_start':
-                    setActiveMatches(prev => [...prev, {
-                        matchId: message.matchId,
-                        players: message.players,
-                        gameType: message.gameType,
-                        wagerAmount: message.wagerAmount
-                    }]);
+                    setActiveMatches(prev => {
+                        // Avoid duplicates
+                        if (prev.some(m => m.matchId === message.matchId)) {
+                            return prev;
+                        }
+                        return [...prev, {
+                            matchId: message.matchId,
+                            players: message.players,
+                            gameType: message.gameType,
+                            wagerAmount: message.wagerAmount
+                        }];
+                    });
                     break;
                     
                 case 'match_spectate':
