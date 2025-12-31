@@ -43,6 +43,8 @@ const PebblesPurchaseModal = ({ isOpen, onClose }) => {
     const [selectedBundle, setSelectedBundle] = useState(null);
     const [isPurchasing, setIsPurchasing] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState('SOL'); // 'SOL' | 'WADDLE'
+    const [waddlePrice, setWaddlePrice] = useState(null); // WADDLE price in SOL
+    const [loadingWaddlePrice, setLoadingWaddlePrice] = useState(false);
     
     // Withdraw state
     const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -74,6 +76,28 @@ const PebblesPurchaseModal = ({ isOpen, onClose }) => {
         send({ type: 'pebbles_withdrawals' });
     }, [send]);
     
+    // Fetch WADDLE price when payment method changes to WADDLE
+    useEffect(() => {
+        if (paymentMethod === 'WADDLE' && !waddlePrice && !loadingWaddlePrice) {
+            setLoadingWaddlePrice(true);
+            fetchTokenData()
+                .then(data => {
+                    if (data && data.priceNative && data.priceNative > 0) {
+                        setWaddlePrice(data.priceNative);
+                    } else {
+                        setError('Unable to fetch $WADDLE price. Please try again.');
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to fetch WADDLE price:', err);
+                    setError('Unable to fetch $WADDLE price. Please try again.');
+                })
+                .finally(() => {
+                    setLoadingWaddlePrice(false);
+                });
+        }
+    }, [paymentMethod, waddlePrice, loadingWaddlePrice]);
+
     // Reset state when modal opens
     useEffect(() => {
         if (isOpen) {
@@ -82,6 +106,7 @@ const PebblesPurchaseModal = ({ isOpen, onClose }) => {
             setSuccess(null);
             setWithdrawAmount('');
             setPaymentMethod('SOL'); // Default to SOL
+            setWaddlePrice(null); // Reset WADDLE price
             
             // Fetch withdrawal history when opening
             if (isAuthenticated) {
@@ -388,9 +413,32 @@ const PebblesPurchaseModal = ({ isOpen, onClose }) => {
                             )}
                             
                             {BUNDLES.map((bundle) => {
-                                const displayPrice = paymentMethod === 'SOL' 
-                                    ? bundle.sol 
-                                    : (bundle.sol * WADDLE_PREMIUM).toFixed(2);
+                                // Calculate display price
+                                let displayPrice;
+                                if (paymentMethod === 'SOL') {
+                                    displayPrice = bundle.sol;
+                                } else {
+                                    // For WADDLE, calculate actual token amount needed
+                                    if (waddlePrice && waddlePrice > 0) {
+                                        const solAmountNeeded = bundle.sol * WADDLE_PREMIUM;
+                                        const waddleTokensNeeded = solAmountNeeded / waddlePrice;
+                                        // Format large numbers nicely
+                                        if (waddleTokensNeeded >= 1000) {
+                                            displayPrice = waddleTokensNeeded.toLocaleString(undefined, { 
+                                                maximumFractionDigits: 0 
+                                            });
+                                        } else {
+                                            displayPrice = waddleTokensNeeded.toLocaleString(undefined, { 
+                                                maximumFractionDigits: 2,
+                                                minimumFractionDigits: 0
+                                            });
+                                        }
+                                    } else {
+                                        // Show loading state
+                                        displayPrice = '...';
+                                    }
+                                }
+                                
                                 const displayPebbles = paymentMethod === 'SOL'
                                     ? bundle.pebbles
                                     : bundle.pebbles; // Same pebbles, but costs 1.5x more with WADDLE
@@ -430,7 +478,13 @@ const PebblesPurchaseModal = ({ isOpen, onClose }) => {
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-white font-bold">
-                                                    {displayPrice} {paymentMethod === 'SOL' ? 'SOL' : '$WADDLE'}
+                                                    {displayPrice === '...' ? (
+                                                        <span className="text-white/60">Loading...</span>
+                                                    ) : (
+                                                        <>
+                                                            {displayPrice} {paymentMethod === 'SOL' ? 'SOL' : '$WADDLE'}
+                                                        </>
+                                                    )}
                                                 </div>
                                                 {bundle.featured && (
                                                     <div className="text-xs text-yellow-400">⭐ Popular</div>
