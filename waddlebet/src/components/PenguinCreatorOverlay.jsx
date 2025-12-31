@@ -240,11 +240,18 @@ function PenguinCreatorOverlay({ isOpen, onClose, currentData, onSave }) {
             .map(id => id.replace('skin_', ''));
         const unlockedSkinOptions = [...new Set([...FREE_SKIN_COLORS, ...ownedSkinColors])];
         
+        // Ensure 'beak' and 'normal' are always in the lists (they're defaults, not selectable but should be visible)
+        const mouthOptions = allOptions.mouth.filter(k => k === 'none' || k === 'beak' || isCosmeticUnlocked(k, 'mouth'));
+        if (!mouthOptions.includes('beak')) mouthOptions.push('beak');
+        
+        const eyesOptions = allOptions.eyes.filter(k => k === 'none' || k === 'normal' || isCosmeticUnlocked(k, 'eyes'));
+        if (!eyesOptions.includes('normal')) eyesOptions.push('normal');
+        
         return {
             skin: unlockedSkinOptions,
             head: allOptions.head.filter(k => k === 'none' || isCosmeticUnlocked(k, 'hat')),
-            eyes: allOptions.eyes.filter(k => k === 'none' || k === 'normal' || isCosmeticUnlocked(k, 'eyes')),
-            mouth: allOptions.mouth.filter(k => k === 'none' || k === 'beak' || isCosmeticUnlocked(k, 'mouth')),
+            eyes: eyesOptions,
+            mouth: mouthOptions,
             body: allOptions.body.filter(k => k === 'none' || isCosmeticUnlocked(k, 'bodyItem')),
             mounts: allOptions.mounts.filter(k => k === 'none' || isMountUnlocked(k))
         };
@@ -658,6 +665,11 @@ function PenguinCreatorOverlay({ isOpen, onClose, currentData, onSave }) {
         setBodyItem('none');
         setMount('none');
         setCharacterType('penguin');
+        // Reset character-specific colors to defaults
+        setDogPrimaryColor('#D2691E');
+        setDogSecondaryColor('#8B4513');
+        setFrogPrimaryColor('#6B8E23');
+        setFrogSecondaryColor('#556B2F');
     }, []);
     
     // Handle promo code submission

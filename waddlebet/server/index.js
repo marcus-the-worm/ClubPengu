@@ -1635,6 +1635,8 @@ async function handleMessage(playerId, message) {
                             currentCustom.mount !== newCustom.mount ||
                             currentCustom.dogPrimaryColor !== newCustom.dogPrimaryColor ||
                             currentCustom.dogSecondaryColor !== newCustom.dogSecondaryColor ||
+                            currentCustom.frogPrimaryColor !== newCustom.frogPrimaryColor ||
+                            currentCustom.frogSecondaryColor !== newCustom.frogSecondaryColor ||
                             user.characterType !== newCustom.characterType;
                         
                         if (hasChanges) {

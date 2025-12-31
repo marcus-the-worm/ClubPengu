@@ -166,7 +166,14 @@ function buildPenguin(THREE, group, appearance) {
         group.remove(child);
     }
     
-    const characterType = appearance.characterType || 'penguin';
+    // Normalize character type - handle both camelCase (from DB) and snake_case (from code)
+    let characterType = appearance.characterType || 'penguin';
+    // Convert snake_case to camelCase for whale types to match database enum
+    if (characterType === 'white_whale') characterType = 'whiteWhale';
+    else if (characterType === 'black_whale') characterType = 'blackWhale';
+    else if (characterType === 'silver_whale') characterType = 'silverWhale';
+    else if (characterType === 'gold_whale') characterType = 'goldWhale';
+    
     const skinName = appearance.skin || 'blue';
     const skinColor = SKIN_COLORS[skinName] || SKIN_COLORS.blue;
     
@@ -174,7 +181,7 @@ function buildPenguin(THREE, group, appearance) {
     
     // Generate voxels based on character type
     if (characterType === 'penguin') {
-        const palette = {
+        characterPalette = {
             main: skinColor.color,
             mainLight: skinColor.highlight,
             mainDark: skinColor.shadow,
@@ -187,39 +194,40 @@ function buildPenguin(THREE, group, appearance) {
         };
         
         voxels = [
-            ...generateBaseBody(palette.main),
-            ...generateHead(palette.main),
-            ...generateFlippers(palette.main, true),  // Left flipper
-            ...generateFlippers(palette.main, false), // Right flipper
+            ...generateBaseBody(characterPalette.main),
+            ...generateHead(characterPalette.main),
+            ...generateFlippers(characterPalette.main, true),  // Left flipper
+            ...generateFlippers(characterPalette.main, false), // Right flipper
             ...generateFeet()
         ];
     } else if (characterType === 'doginal') {
-        const palette = generateDogPalette(
+        characterPalette = generateDogPalette(
             appearance.dogPrimaryColor || '#D2691E',
             appearance.dogSecondaryColor || '#8B4513'
         );
         voxels = [
-            ...DoginalGenerators.generateDogBody(palette),
-            ...DoginalGenerators.generateDogHead(palette),
-            ...DoginalGenerators.generateDogFlipper(true, palette),
-            ...DoginalGenerators.generateDogFlipper(false, palette),
-            ...DoginalGenerators.generateDogFoot(true, palette),
-            ...DoginalGenerators.generateDogFoot(false, palette)
+            ...DoginalGenerators.generateDogBody(characterPalette),
+            ...DoginalGenerators.generateDogHead(characterPalette),
+            ...DoginalGenerators.generateDogFlipper(true, characterPalette),
+            ...DoginalGenerators.generateDogFlipper(false, characterPalette),
+            ...DoginalGenerators.generateDogFoot(true, characterPalette),
+            ...DoginalGenerators.generateDogFoot(false, characterPalette)
         ];
     } else if (characterType === 'frog') {
-        const palette = generateFrogPalette(
+        characterPalette = generateFrogPalette(
             appearance.frogPrimaryColor || '#6B8E23',
             appearance.frogSecondaryColor || '#556B2F'
         );
         voxels = [
-            ...FrogGenerators.generateFrogBody(palette),
-            ...FrogGenerators.generateFrogHead(palette),
-            ...FrogGenerators.generateFrogFlipper(true, palette),
-            ...FrogGenerators.generateFrogFlipper(false, palette),
-            ...FrogGenerators.generateFrogFoot(true, palette),
-            ...FrogGenerators.generateFrogFoot(false, palette)
+            ...FrogGenerators.generateFrogBody(characterPalette),
+            ...FrogGenerators.generateFrogHead(characterPalette),
+            ...FrogGenerators.generateFrogFlipper(true, characterPalette),
+            ...FrogGenerators.generateFrogFlipper(false, characterPalette),
+            ...FrogGenerators.generateFrogFoot(true, characterPalette),
+            ...FrogGenerators.generateFrogFoot(false, characterPalette)
         ];
     } else if (characterType === 'marcus') {
+        characterPalette = MARCUS_PALETTE;
         voxels = [
             ...MarcusGenerators.generateMarcusBody(MARCUS_PALETTE),
             ...MarcusGenerators.generateMarcusHead(MARCUS_PALETTE),
@@ -228,7 +236,8 @@ function buildPenguin(THREE, group, appearance) {
             ...MarcusGenerators.generateMarcusFoot(true, MARCUS_PALETTE),
             ...MarcusGenerators.generateMarcusFoot(false, MARCUS_PALETTE)
         ];
-    } else if (characterType === 'white_whale') {
+    } else if (characterType === 'whiteWhale' || characterType === 'white_whale') {
+        characterPalette = WHITE_WHALE_PALETTE;
         voxels = [
             ...WhiteWhaleGenerators.generateWhaleBody(WHITE_WHALE_PALETTE),
             ...WhiteWhaleGenerators.generateWhaleHead(WHITE_WHALE_PALETTE),
@@ -236,7 +245,8 @@ function buildPenguin(THREE, group, appearance) {
             ...WhiteWhaleGenerators.generateWhaleFlipper(false, WHITE_WHALE_PALETTE),
             ...WhiteWhaleGenerators.generateWhaleTail(WHITE_WHALE_PALETTE)
         ];
-    } else if (characterType === 'black_whale') {
+    } else if (characterType === 'blackWhale' || characterType === 'black_whale') {
+        characterPalette = BLACK_WHALE_PALETTE;
         voxels = [
             ...BlackWhaleGenerators.generateWhaleBody(BLACK_WHALE_PALETTE),
             ...BlackWhaleGenerators.generateWhaleHead(BLACK_WHALE_PALETTE),
@@ -244,7 +254,8 @@ function buildPenguin(THREE, group, appearance) {
             ...BlackWhaleGenerators.generateWhaleFlipper(false, BLACK_WHALE_PALETTE),
             ...BlackWhaleGenerators.generateWhaleTail(BLACK_WHALE_PALETTE)
         ];
-    } else if (characterType === 'silver_whale') {
+    } else if (characterType === 'silverWhale' || characterType === 'silver_whale') {
+        characterPalette = SILVER_WHALE_PALETTE;
         voxels = [
             ...SilverWhaleGenerators.generateWhaleBody(SILVER_WHALE_PALETTE),
             ...SilverWhaleGenerators.generateWhaleHead(SILVER_WHALE_PALETTE),
@@ -252,7 +263,8 @@ function buildPenguin(THREE, group, appearance) {
             ...SilverWhaleGenerators.generateWhaleFlipper(false, SILVER_WHALE_PALETTE),
             ...SilverWhaleGenerators.generateWhaleTail(SILVER_WHALE_PALETTE)
         ];
-    } else if (characterType === 'gold_whale') {
+    } else if (characterType === 'goldWhale' || characterType === 'gold_whale') {
+        characterPalette = GOLD_WHALE_PALETTE;
         voxels = [
             ...GoldWhaleGenerators.generateWhaleBody(GOLD_WHALE_PALETTE),
             ...GoldWhaleGenerators.generateWhaleHead(GOLD_WHALE_PALETTE),
@@ -270,9 +282,13 @@ function buildPenguin(THREE, group, appearance) {
     
     voxels.forEach(v => {
         let color = v.c;
-        // Resolve palette color names to hex
+        // Resolve palette color names to hex using the character's palette
         if (typeof color === 'string' && !color.startsWith('#')) {
-            if (characterType === 'penguin') {
+            if (characterPalette) {
+                // Use the character-specific palette (works for all character types)
+                color = characterPalette[color] || color;
+            } else if (characterType === 'penguin') {
+                // Fallback for penguin if palette wasn't set
                 const palette = {
                     main: skinColor.color,
                     mainLight: skinColor.highlight,
@@ -286,6 +302,7 @@ function buildPenguin(THREE, group, appearance) {
                 };
                 color = palette[color] || skinColor.color;
             } else {
+                // Last resort fallback
                 color = skinColor.color;
             }
         }
@@ -308,19 +325,26 @@ function buildPenguin(THREE, group, appearance) {
     });
     
     // Add cosmetics (hat, eyes, mouth, body item)
-    addCosmetics(THREE, group, appearance, characterType, skinColor);
+    // Pass characterPalette for proper color resolution in cosmetics
+    addCosmetics(THREE, group, appearance, characterType, characterPalette || skinColor);
     
     // Add mount if present
     addMount(THREE, group, appearance);
 }
 
 // Add cosmetics to the penguin
-function addCosmetics(THREE, group, appearance, characterType, skinColor) {
+function addCosmetics(THREE, group, appearance, characterType, paletteOrSkinColor) {
+    // Determine the palette to use for cosmetics
+    // If paletteOrSkinColor is an object (palette), use it; otherwise use default PALETTE
+    const cosmeticsPalette = (paletteOrSkinColor && typeof paletteOrSkinColor === 'object' && !paletteOrSkinColor.color) 
+        ? paletteOrSkinColor 
+        : PALETTE;
+    
     // Add hat
     if (appearance.hat && appearance.hat !== 'none' && ASSETS.HATS && ASSETS.HATS[appearance.hat]) {
         const hatVoxels = ASSETS.HATS[appearance.hat];
         if (hatVoxels && hatVoxels.length > 0) {
-            const hatGroup = buildVoxelGroup(THREE, hatVoxels, PALETTE);
+            const hatGroup = buildVoxelGroup(THREE, hatVoxels, cosmeticsPalette);
             hatGroup.name = 'hat';
             group.add(hatGroup);
         }
@@ -331,7 +355,7 @@ function addCosmetics(THREE, group, appearance, characterType, skinColor) {
     if (ASSETS.EYES && ASSETS.EYES[eyesKey]) {
         const eyesVoxels = ASSETS.EYES[eyesKey];
         if (eyesVoxels && eyesVoxels.length > 0) {
-            const eyesGroup = buildVoxelGroup(THREE, eyesVoxels, PALETTE);
+            const eyesGroup = buildVoxelGroup(THREE, eyesVoxels, cosmeticsPalette);
             eyesGroup.name = 'eyes';
             group.add(eyesGroup);
         }
@@ -342,7 +366,7 @@ function addCosmetics(THREE, group, appearance, characterType, skinColor) {
     if (ASSETS.MOUTH && ASSETS.MOUTH[mouthKey]) {
         const mouthVoxels = ASSETS.MOUTH[mouthKey];
         if (mouthVoxels && mouthVoxels.length > 0) {
-            const mouthGroup = buildVoxelGroup(THREE, mouthVoxels, PALETTE);
+            const mouthGroup = buildVoxelGroup(THREE, mouthVoxels, cosmeticsPalette);
             mouthGroup.name = 'mouth';
             group.add(mouthGroup);
         }
@@ -356,7 +380,7 @@ function addCosmetics(THREE, group, appearance, characterType, skinColor) {
         if (!isHideBodyItem) {
             const bodyVoxels = bodyItemInfo?.voxels || bodyItemInfo || [];
             if (bodyVoxels && bodyVoxels.length > 0) {
-                const bodyGroup = buildVoxelGroup(THREE, bodyVoxels, PALETTE);
+                const bodyGroup = buildVoxelGroup(THREE, bodyVoxels, cosmeticsPalette);
                 bodyGroup.name = 'bodyItem';
                 group.add(bodyGroup);
             }

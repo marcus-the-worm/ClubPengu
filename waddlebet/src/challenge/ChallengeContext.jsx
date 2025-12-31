@@ -48,6 +48,10 @@ export function ChallengeProvider({ children }) {
     // PvE Activity Spectating state (fishing, blackjack vs dealer, etc.)
     const [activePveActivities, setActivePveActivities] = useState({}); // playerId -> activity state
     
+    // Refs for cleanup of timeouts
+    const matchEndTimeoutRef = useRef(null);
+    const danceTimeoutRef = useRef(null);
+    
     // UI state
     const [showInbox, setShowInbox] = useState(false);
     const [showWagerModal, setShowWagerModal] = useState(false);
@@ -232,30 +236,28 @@ export function ChallengeProvider({ children }) {
                     // Set dance flag if we won
                     if (result.winnerPlayerId === playerId && result.reason !== 'disconnect') {
                         setShouldDance(true);
+                        // Clear any existing dance timeout
+                        if (danceTimeoutRef.current) {
+                            clearTimeout(danceTimeoutRef.current);
+                        }
                         // Clear dance flag after a few seconds
-                        setTimeout(() => setShouldDance(false), 5000);
+                        danceTimeoutRef.current = setTimeout(() => {
+                            setShouldDance(false);
+                            danceTimeoutRef.current = null;
+                        }, 5000);
                     }
                     
                     // Update match state to show completion - this will trigger result screen in game components
-                    // Keep all existing state but mark as complete
+                    // Keep all existing state but mark as complete (spread operator preserves all fields)
                     setMatchState(prevState => {
                         if (!prevState) return prevState;
+                        // Preserve all existing state and just update completion fields
                         return {
-                            ...prevState,
+                            ...prevState, // Preserves ALL fields (scores, card counts, positions, money, etc.)
                             phase: 'complete',
                             winner: result.winner === 'player1' ? 'player1' : result.winner === 'player2' ? 'player2' : result.winner,
                             isComplete: true,
-                            status: 'complete',
-                            // For blackjack, preserve scores and results
-                            ...(prevState.myScore !== undefined && { myScore: prevState.myScore }),
-                            ...(prevState.opponentScore !== undefined && { opponentScore: prevState.opponentScore }),
-                            ...(prevState.dealerScore !== undefined && { dealerScore: prevState.dealerScore }),
-                            ...(prevState.myResult !== undefined && { myResult: prevState.myResult }),
-                            ...(prevState.opponentResult !== undefined && { opponentResult: prevState.opponentResult }),
-                            ...(prevState.dealerStatus !== undefined && { dealerStatus: prevState.dealerStatus }),
-                            // For UNO, preserve card counts
-                            ...(prevState.player1CardCount !== undefined && { player1CardCount: prevState.player1CardCount }),
-                            ...(prevState.player2CardCount !== undefined && { player2CardCount: prevState.player2CardCount })
+                            status: 'complete'
                         };
                     });
                     
@@ -284,7 +286,15 @@ export function ChallengeProvider({ children }) {
                     // setIsInMatch(false) will be called when user clicks "Continue" (via clearMatch)
                     // Add a fallback timeout to auto-close after 30 seconds if user doesn't interact
                     const matchIdToClose = message.matchId;
-                    setTimeout(() => {
+                    
+                    // Clear any existing match end timeout (in case match_end is received multiple times)
+                    if (matchEndTimeoutRef.current) {
+                        clearTimeout(matchEndTimeoutRef.current);
+                        matchEndTimeoutRef.current = null;
+                    }
+                    
+                    // Set new timeout for auto-close
+                    matchEndTimeoutRef.current = setTimeout(() => {
                         // Only auto-close if still in the same match (user hasn't clicked Continue)
                         // Use a function to get current state to avoid stale closure
                         setActiveMatch(currentMatch => {
@@ -292,6 +302,7 @@ export function ChallengeProvider({ children }) {
                                 setIsInMatch(false);
                                 setMatchState(null);
                                 setMatchResult(null);
+                                matchEndTimeoutRef.current = null;
                                 return null;
                             }
                             return currentMatch;
@@ -502,6 +513,20 @@ export function ChallengeProvider({ children }) {
         
         return () => unsubscribe();
     }, [connected]);
+    
+    // Cleanup timeouts on unmount
+    useEffect(() => {
+        return () => {
+            if (matchEndTimeoutRef.current) {
+                clearTimeout(matchEndTimeoutRef.current);
+                matchEndTimeoutRef.current = null;
+            }
+            if (danceTimeoutRef.current) {
+                clearTimeout(danceTimeoutRef.current);
+                danceTimeoutRef.current = null;
+            }
+        };
+    }, []);
     
     // Send message helper - only send if WebSocket is fully open
     const send = useCallback((message) => {
@@ -759,6 +784,12 @@ export function ChallengeProvider({ children }) {
     
     // Clear match state (called when user clicks Continue after match ends)
     const clearMatch = useCallback(() => {
+        // Clear any pending timeouts
+        if (matchEndTimeoutRef.current) {
+            clearTimeout(matchEndTimeoutRef.current);
+            matchEndTimeoutRef.current = null;
+        }
+        
         setIsInMatch(false);
         setActiveMatch(null);
         setMatchState(null);
