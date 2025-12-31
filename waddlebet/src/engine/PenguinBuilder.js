@@ -758,8 +758,9 @@ export function createPenguinBuilder(THREE) {
         if (data.hat && data.hat !== 'none' && ASSETS.HATS[data.hat]) {
             const hatVoxels = ASSETS.HATS[data.hat];
             if (hatVoxels && hatVoxels.length > 0) {
-                // Offset hat voxels to sit on frog's head (Y+2 for head height, Z+2 for head forward offset)
-                const offsetHatVoxels = hatVoxels.map(v => ({ ...v, y: v.y + 2, z: v.z + 2 }));
+                // Offset hat voxels to sit on frog's head (Y+1 for head height, Z+2 for head forward offset)
+                // Lowered by 1 voxel from Y+2 to Y+1 for better fit
+                const offsetHatVoxels = hatVoxels.map(v => ({ ...v, y: v.y + 1, z: v.z + 2 }));
                 const hat = buildPartMerged(offsetHatVoxels, PALETTE);
                 hat.name = 'hat';
                 group.add(hat);
@@ -822,8 +823,9 @@ export function createPenguinBuilder(THREE) {
             const bodyItemData = ASSETS.BODY[data.bodyItem];
             const bodyItemVoxels = bodyItemData?.voxels || bodyItemData || [];
             if (bodyItemVoxels.length > 0) {
-                // Offset body item voxels for frog body (similar to dog)
-                const offsetBodyVoxels = bodyItemVoxels.map(v => ({ ...v, y: v.y - 4 }));
+                // Raise clothing by 2 voxels on Y axis for better fit on frog
+                // Changed from y: v.y - 4 to y: v.y - 2 (raised by 2 voxels)
+                const offsetBodyVoxels = bodyItemVoxels.map(v => ({ ...v, y: v.y - 2 }));
                 const bodyItemMesh = buildPartMerged(offsetBodyVoxels, PALETTE);
                 bodyItemMesh.name = 'bodyItem';
                 group.add(bodyItemMesh);

@@ -278,18 +278,19 @@ function PenguinCreatorOverlay({ isOpen, onClose, currentData, onSave }) {
     // Cycle function for cosmetics
     // Only skip "none" for eyes (default: "normal") and mouth (default: "beak")
     // Other categories can have "none" as a selectable option
+    // NOTE: "normal" and "beak" should be selectable options, not just defaults
     const cycle = useCallback((current, list, setter, dir, defaultVal = null) => {
-        // For eyes and mouth, filter out "none" and the default value
+        // For eyes and mouth, only filter out "none" (keep defaultVal like "normal" and "beak" as selectable)
         // For other categories, allow "none" to be selectable
         const shouldSkipNone = defaultVal !== null && defaultVal !== 'none';
         const filteredList = shouldSkipNone 
-            ? list.filter(item => item !== 'none' && item !== defaultVal)
+            ? list.filter(item => item !== 'none')  // Only filter out 'none', keep defaultVal in the list
             : list;
         
         if (filteredList.length === 0) return;
         
-        // If current is "none" or default (for eyes/mouth), start from first/last item
-        if (shouldSkipNone && (current === 'none' || current === defaultVal)) {
+        // If current is "none" (for eyes/mouth), start from first/last item
+        if (shouldSkipNone && current === 'none') {
             setter(dir > 0 ? filteredList[0] : filteredList[filteredList.length - 1]);
             return;
         }
@@ -552,16 +553,19 @@ function PenguinCreatorOverlay({ isOpen, onClose, currentData, onSave }) {
             // Add hat support for frog (offset for frog head position)
             const frogHatVoxels = ASSETS.HATS[hat] || [];
             if (frogHatVoxels.length > 0) {
-                // Offset hat voxels to sit on frog's head (Y+2 for head height, Z+2 for head forward offset)
-                const offsetHatVoxels = frogHatVoxels.map(v => ({ ...v, y: v.y + 2, z: v.z + 2 }));
+                // Offset hat voxels to sit on frog's head (Y+1 for head height, Z+2 for head forward offset)
+                // Lowered by 1 voxel from Y+2 to Y+1 for better fit
+                const offsetHatVoxels = frogHatVoxels.map(v => ({ ...v, y: v.y + 1, z: v.z + 2 }));
                 frogVoxels.push(...offsetHatVoxels);
             }
             
-            // Add body item for frog
+            // Add body item for frog - raise by 2 voxels for better fit
             const frogBodyItemData = ASSETS.BODY[bodyItem];
             const frogBodyItemVoxels = frogBodyItemData?.voxels || frogBodyItemData || [];
             if (frogBodyItemVoxels.length > 0) {
-                frogVoxels.push(...frogBodyItemVoxels);
+                // Raise clothing by 2 voxels on Y axis for better fit on frog
+                const offsetBodyVoxels = frogBodyItemVoxels.map(v => ({ ...v, y: v.y + 2 }));
+                frogVoxels.push(...offsetBodyVoxels);
             }
             
             voxels = frogVoxels;
@@ -734,8 +738,9 @@ function PenguinCreatorOverlay({ isOpen, onClose, currentData, onSave }) {
     const handleSave = useCallback(() => {
         // Check if trying to save locked items
         const isHatLocked = hat !== 'none' && !isCosmeticUnlocked(hat, 'hat');
-        const isEyesLocked = eyes !== 'normal' && eyes !== 'none' && !isCosmeticUnlocked(eyes, 'eyes');
-        const isMouthLocked = mouth !== 'beak' && mouth !== 'none' && !isCosmeticUnlocked(mouth, 'mouth');
+        // Skip eyes/mouth validation for frog character (they don't apply)
+        const isEyesLocked = characterType === 'frog' ? false : (eyes !== 'normal' && eyes !== 'none' && !isCosmeticUnlocked(eyes, 'eyes'));
+        const isMouthLocked = characterType === 'frog' ? false : (mouth !== 'beak' && mouth !== 'none' && !isCosmeticUnlocked(mouth, 'mouth'));
         const isBodyLocked = bodyItem !== 'none' && !isCosmeticUnlocked(bodyItem, 'bodyItem');
         const isMountLocked = mount !== 'none' && !isMountUnlocked(mount);
         const isSkinLocked = !isSkinColorUnlocked(skinColor);
@@ -748,8 +753,9 @@ function PenguinCreatorOverlay({ isOpen, onClose, currentData, onSave }) {
         const finalData = {
             skin: skinColor,
             hat,
-            eyes,
-            mouth,
+            // For frog character, don't save eyes/mouth (they don't apply)
+            eyes: characterType === 'frog' ? 'normal' : eyes,
+            mouth: characterType === 'frog' ? 'beak' : mouth,
             bodyItem,
             mount,
             characterType,
@@ -1099,7 +1105,15 @@ function PenguinCreatorOverlay({ isOpen, onClose, currentData, onSave }) {
                                     { label: 'MOUTH', key: 'mouth', val: mouth, set: setMouth, list: options.mouth, category: 'mouth', defaultVal: 'beak' },
                                     { label: 'CLOTHING', key: 'body', val: bodyItem, set: setBodyItem, list: options.body, category: 'bodyItem', defaultVal: null },
                                     { label: 'MOUNTS', key: 'mounts', val: mount, set: setMount, list: options.mounts, isMount: true, defaultVal: null },
-                                ].map((opt) => {
+                                ]
+                                // Filter out eyes and mouth options for frog character (only hat and clothing work)
+                                .filter(opt => {
+                                    if (characterType === 'frog') {
+                                        return opt.key === 'head' || opt.key === 'body';
+                                    }
+                                    return true; // Show all options for other characters
+                                })
+                                .map((opt) => {
                                     const isCurrentLocked = opt.isMount 
                                         ? (opt.val !== 'none' && !isMountUnlocked(opt.val))
                                         : (opt.val !== 'none' && opt.val !== opt.defaultVal && !isCosmeticUnlocked(opt.val, opt.category));

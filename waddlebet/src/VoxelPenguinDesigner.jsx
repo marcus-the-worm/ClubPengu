@@ -820,30 +820,32 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
             // Add hat support for frog (offset for frog head position)
             const frogHatVoxels = ASSETS.HATS[hat] || [];
             if (frogHatVoxels.length > 0) {
-                // Offset hat voxels to sit on frog's head (Y+2 for head height, Z+2 for head forward offset)
-                const offsetHatVoxels = frogHatVoxels.map(v => ({ ...v, y: v.y + 2, z: v.z + 2 }));
+                // Offset hat voxels to sit on frog's head (Y+1 for head height, Z+2 for head forward offset)
+                // Lowered by 1 voxel from Y+2 to Y+1 for better fit
+                const offsetHatVoxels = frogHatVoxels.map(v => ({ ...v, y: v.y + 1, z: v.z + 2 }));
                 addPart(offsetHatVoxels, 'hat');
                 
                 // Add wizard hat glow effect (magic tip light) - offset for frog head
                 if (hat === 'wizardHat') {
                     const wizardLight = new THREE.PointLight(0xFF69B4, 1.5, 8); // Pink magic glow
-                    wizardLight.position.set(0, (17 + 2) * VOXEL_SIZE, 2 * VOXEL_SIZE);
+                    wizardLight.position.set(0, (17 + 1) * VOXEL_SIZE, 2 * VOXEL_SIZE);
                     group.add(wizardLight);
                     if (mirrorGroup) mirrorGroup.add(wizardLight.clone());
                     
                     const starLight = new THREE.PointLight(0xFFD700, 0.8, 5); // Gold glow
-                    starLight.position.set(0, (14 + 2) * VOXEL_SIZE, 4 * VOXEL_SIZE);
+                    starLight.position.set(0, (14 + 1) * VOXEL_SIZE, 4 * VOXEL_SIZE);
                     group.add(starLight);
                     if (mirrorGroup) mirrorGroup.add(starLight.clone());
                 }
             }
             
-            // Add body item for Frog
+            // Add body item for Frog - raise by 2 voxels for better fit
             const frogBodyItemData = ASSETS.BODY[bodyItem];
             const frogBodyItemVoxels = frogBodyItemData?.voxels || frogBodyItemData || [];
             if (frogBodyItemVoxels.length > 0) {
-                // Offset for frog body position
-                const offsetBodyVoxels = frogBodyItemVoxels.map(v => ({ ...v, y: v.y - 4 }));
+                // Raise clothing by 2 voxels on Y axis for better fit on frog
+                // Changed from y: v.y - 4 to y: v.y - 2 (raised by 2 voxels)
+                const offsetBodyVoxels = frogBodyItemVoxels.map(v => ({ ...v, y: v.y - 2 }));
                 addPart(offsetBodyVoxels, 'bodyItem');
             }
         } else if (characterType?.includes('Whale')) {
@@ -1259,18 +1261,19 @@ function VoxelPenguinDesigner({ onEnterWorld, currentData, updateData }) {
     // Cycle function - allows selecting ANY item for window shopping/preview
     // Only skip "none" for eyes (default: "normal") and mouth (default: "beak")
     // Other categories can have "none" as a selectable option
+    // NOTE: "normal" and "beak" should be selectable options, not just defaults
     const cycle = (current, list, setter, dir, defaultVal = null) => {
-        // For eyes and mouth, filter out "none" and the default value
+        // For eyes and mouth, only filter out "none" (keep defaultVal like "normal" and "beak" as selectable)
         // For other categories, allow "none" to be selectable
         const shouldSkipNone = defaultVal !== null && defaultVal !== 'none';
         const filteredList = shouldSkipNone 
-            ? list.filter(item => item !== 'none' && item !== defaultVal)
+            ? list.filter(item => item !== 'none')  // Only filter out 'none', keep defaultVal in the list
             : list;
         
         if (filteredList.length === 0) return; // Nothing to cycle
         
-        // If current is "none" or default (for eyes/mouth), start from first/last item
-        if (shouldSkipNone && (current === 'none' || current === defaultVal)) {
+        // If current is "none" (for eyes/mouth), start from first/last item
+        if (shouldSkipNone && current === 'none') {
             setter(dir > 0 ? filteredList[0] : filteredList[filteredList.length - 1]);
             return;
         }
