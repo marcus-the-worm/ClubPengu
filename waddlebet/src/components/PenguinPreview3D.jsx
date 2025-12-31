@@ -158,6 +158,12 @@ const PenguinPreview3D = ({
 
 // Build penguin mesh from appearance data
 function buildPenguin(THREE, group, appearance) {
+    // Validate appearance object
+    if (!appearance || typeof appearance !== 'object') {
+        console.warn('buildPenguin: Invalid appearance object, using defaults');
+        appearance = {};
+    }
+    
     // Clear existing
     while (group.children.length > 0) {
         const child = group.children[0];
@@ -178,6 +184,7 @@ function buildPenguin(THREE, group, appearance) {
     const skinColor = SKIN_COLORS[skinName] || SKIN_COLORS.blue;
     
     let voxels = [];
+    let characterPalette = null; // Declare at function scope - will be set in character type blocks
     
     // Generate voxels based on character type
     if (characterType === 'penguin') {
@@ -271,6 +278,27 @@ function buildPenguin(THREE, group, appearance) {
             ...GoldWhaleGenerators.generateWhaleFlipper(true, GOLD_WHALE_PALETTE),
             ...GoldWhaleGenerators.generateWhaleFlipper(false, GOLD_WHALE_PALETTE),
             ...GoldWhaleGenerators.generateWhaleTail(GOLD_WHALE_PALETTE)
+        ];
+    } else {
+        // Fallback for unknown character types - use penguin palette
+        console.warn(`Unknown character type: ${characterType}, using penguin as fallback`);
+        characterPalette = {
+            main: skinColor.color,
+            mainLight: skinColor.highlight,
+            mainDark: skinColor.shadow,
+            belly: '#FFFFFF',
+            bellyShade: '#E5E5E5',
+            beak: '#FFB347',
+            beakDark: '#FF8C00',
+            feet: '#FFB347',
+            feetDark: '#FF8C00'
+        };
+        voxels = [
+            ...generateBaseBody(characterPalette.main),
+            ...generateHead(characterPalette.main),
+            ...generateFlippers(characterPalette.main, true),
+            ...generateFlippers(characterPalette.main, false),
+            ...generateFeet()
         ];
     }
     
